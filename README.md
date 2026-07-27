@@ -36,13 +36,13 @@ tests                          跨语言、浏览器、视觉与安装门禁
 安装 Web Runtime：
 
 ```bash
-npm install @baron1996/klinecharts-runtime
+npm install --save-exact @baron1996/klinecharts-runtime@0.1.0
 ```
 
 安装 CLI：
 
 ```bash
-npm install --global @baron1996/klinecharts-cli
+npm install --global @baron1996/klinecharts-cli@0.1.0
 baron-kline install-browser
 ```
 
@@ -67,6 +67,26 @@ npm run example:vanilla
 该文件由固定种子、固定算法和固定结束日期生成；有意修改生成规则后运行
 `npm run generate:mock` 更新，检查当前文件能否逐字节重建则运行
 `npm run check:mock`。
+
+### 其他工程接入与源码隔离
+
+其他工程只能消费发布到 npm、PyPI 或 GitHub Release 的版本化产物，并通过
+`ChartScene JSON` 交换行情与标注。不得将本仓库源码作为其他工程的实时依赖：
+
+- 禁止使用 `npm link`、`file:` 依赖或将本仓库加入其他工程的 npm workspace；
+- 禁止通过 Git submodule 把本仓库源码检出到其他工程内部；
+- 禁止在其他工程中使用 `pip install -e` 指向本仓库；
+- 禁止直接引用 `packages/*/src`、`python/baron-klinecharts/src` 或复制源码；
+- 禁止把本仓库路径加入其他工程或 Agent 的可写 workspace。
+
+消费方必须安装明确版本并提交自己的 lockfile，例如
+`@baron1996/klinecharts-runtime@0.1.0` 和 `baron-klinecharts==0.1.0`。升级只能
+通过本仓库发布新版本后，由消费方主动修改依赖版本完成；不得直接修改本仓库来
+适配某个业务工程。
+
+这些约束用于切断消费方与本仓库源码之间的实时连接，不等同于操作系统级文件
+写保护。如果某个进程或 Agent 已被授予本仓库写权限，它仍然可以修改文件，因此
+其他工程的开发任务不应获得本仓库路径的写权限。
 
 Web Runtime 的最小生命周期：
 
