@@ -1,0 +1,45 @@
+{
+  "name": "@baron1996/klinecharts-runtime",
+  "version": "0.1.0",
+  "description": "Web runtime for deterministic KLineCharts scenes.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/git54496/baron-klinecharts.git",
+    "directory": "packages/web-runtime"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": "^22.12.0 || ^24.0.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "licenses"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "pretest:browser": "npm run build --workspace @baron1996/klinecharts-adapter",
+    "test:browser": "playwright test test --grep @browser",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@baron1996/kline-scene-schema": "0.1.0",
+    "@baron1996/klinecharts-adapter": "0.1.0"
+  }
+}

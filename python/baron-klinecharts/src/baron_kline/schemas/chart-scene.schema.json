@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://baron.dev/kline-scene/chart-scene.schema.json",
+  "title": "ChartScene",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "runtime",
+    "symbol",
+    "period",
+    "data",
+    "chart",
+    "panes",
+    "overlays",
+    "viewport",
+    "render",
+    "metadata"
+  ],
+  "properties": {
+    "schema": {
+      "const": "@baron1996/kline-scene"
+    },
+    "version": {
+      "const": 1
+    },
+    "runtime": {
+      "$ref": "https://baron.dev/kline-scene/runtime.schema.json"
+    },
+    "symbol": {
+      "$ref": "#/$defs/symbol"
+    },
+    "period": {
+      "$ref": "#/$defs/period"
+    },
+    "data": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000000,
+      "items": {
+        "$ref": "https://baron.dev/kline-scene/market-data.schema.json"
+      }
+    },
+    "chart": {
+      "$ref": "https://baron.dev/kline-scene/chart-config.schema.json"
+    },
+    "panes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "$ref": "https://baron.dev/kline-scene/pane.schema.json"
+      }
+    },
+    "overlays": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "https://baron.dev/kline-scene/overlay.schema.json"
+      }
+    },
+    "viewport": {
+      "$ref": "#/$defs/viewport"
+    },
+    "render": {
+      "$ref": "#/$defs/render"
+    },
+    "metadata": {
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/metadata"
+    }
+  },
+  "$defs": {
+    "symbol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticker",
+        "pricePrecision",
+        "volumePrecision"
+      ],
+      "properties": {
+        "ticker": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "pricePrecision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        },
+        "volumePrecision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        }
+      }
+    },
+    "period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "span",
+        "type"
+      ],
+      "properties": {
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "type": {
+          "enum": [
+            "second",
+            "minute",
+            "hour",
+            "day",
+            "week",
+            "month",
+            "year"
+          ]
+        }
+      }
+    },
+    "viewport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "barSpace",
+        "rightOffsetDistance",
+        "anchorTimestamp"
+      ],
+      "properties": {
+        "barSpace": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "rightOffsetDistance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "anchorTimestamp": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/safeInteger"
+        }
+      }
+    },
+    "render": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "width",
+        "height",
+        "deviceScaleFactor",
+        "background",
+        "fontFamily",
+        "timeoutMs"
+      ],
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 320,
+          "maximum": 8192
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 240,
+          "maximum": 8192
+        },
+        "deviceScaleFactor": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 4
+        },
+        "background": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        },
+        "fontFamily": {
+          "enum": [
+            "Baron Sans"
+          ]
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 120000
+        }
+      }
+    }
+  }
+}

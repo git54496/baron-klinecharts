@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://baron.dev/kline-scene/chart-config.schema.json",
+  "title": "ChartConfig",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "locale",
+    "timezone",
+    "layout",
+    "candle",
+    "grid",
+    "thousandsSeparator",
+    "decimalFold",
+    "zoomAnchor",
+    "dateFormat",
+    "largeNumberFormat"
+  ],
+  "properties": {
+    "locale": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$"
+    },
+    "timezone": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z_+-]+(?:/[A-Za-z0-9_+-]+)*$"
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backgroundColor",
+        "textColor",
+        "fontFamily",
+        "fontSize"
+      ],
+      "properties": {
+        "backgroundColor": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        },
+        "textColor": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        },
+        "fontFamily": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "fontSize": {
+          "type": "number",
+          "minimum": 8,
+          "maximum": 32
+        }
+      }
+    },
+    "candle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "upColor",
+        "downColor",
+        "noChangeColor",
+        "upBorderColor",
+        "downBorderColor",
+        "noChangeBorderColor",
+        "upWickColor",
+        "downWickColor",
+        "noChangeWickColor"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "candle_solid",
+            "candle_stroke",
+            "candle_up_stroke",
+            "candle_down_stroke",
+            "ohlc"
+          ]
+        },
+        "upColor": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        },
+        "downColor": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        },
+        "noChangeColor": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        },
+        "upBorderColor": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        },
+        "downBorderColor": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        },
+        "noChangeBorderColor": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        },
+        "upWickColor": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        },
+        "downWickColor": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        },
+        "noChangeWickColor": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        }
+      }
+    },
+    "grid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "horizontalColor",
+        "verticalColor"
+      ],
+      "properties": {
+        "horizontalColor": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        },
+        "verticalColor": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        }
+      }
+    },
+    "thousandsSeparator": {
+      "enum": [
+        "",
+        ",",
+        " ",
+        "_"
+      ]
+    },
+    "decimalFold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "threshold"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "threshold": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        }
+      }
+    },
+    "zoomAnchor": {
+      "enum": [
+        "cursor",
+        "right"
+      ]
+    },
+    "dateFormat": {
+      "enum": [
+        "yyyy-MM-dd",
+        "yyyy-MM-dd HH:mm",
+        "yyyy-MM-dd HH:mm:ss"
+      ]
+    },
+    "largeNumberFormat": {
+      "enum": [
+        "western",
+        "chinese",
+        "plain"
+      ]
+    }
+  }
+}

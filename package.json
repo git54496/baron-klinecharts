@@ -1,0 +1,51 @@
+{
+  "name": "@baron1996/klinecharts-scene-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/git54496/baron-klinecharts.git"
+  },
+  "packageManager": "npm@10.8.2",
+  "engines": {
+    "node": "^22.12.0 || ^24.0.0"
+  },
+  "workspaces": [
+    "packages/scene-schema",
+    "packages/klinecharts-adapter",
+    "packages/web-runtime",
+    "packages/render-runtime",
+    "packages/cli"
+  ],
+  "scripts": {
+    "audit:production": "npm audit --omit=dev --audit-level=high",
+    "build": "npm run build --workspaces",
+    "generate": "npm run generate --workspace @baron1996/kline-scene-schema && npm run sync:python --workspace @baron1996/kline-scene-schema && npm run generate --workspace @baron1996/klinecharts-render-runtime && npm run sync:python --workspace @baron1996/klinecharts-render-runtime && npm run build --workspace @baron1996/klinecharts-render-runtime && node tools/sync-legal.mjs",
+    "release:build-npm": "node tools/release/build-npm-artifacts.mjs",
+    "release:check-version": "node tools/release/check-release-version.mjs",
+    "test": "npm run test:unit",
+    "test:browser": "playwright test tests/browser --config playwright.config.ts",
+    "pretest:cross-language": "npm run build --workspaces",
+    "test:cross-language": "node tests/cross-language/chart-scene-roundtrip.mjs",
+    "test:installation": "node --test tests/installation/*.mjs && python3 tests/installation/python-package.py",
+    "test:python": "python3 -m unittest discover -s python/baron-klinecharts/tests -p 'test_*.py'",
+    "test:rendering": "playwright test tests/rendering --config playwright.config.ts",
+    "test:unit": "npm run test --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "verify:packages": "npm run verify:package --workspace @baron1996/kline-scene-schema && npm run verify:package --workspace @baron1996/klinecharts-cli && npm run test:installation",
+    "verify": "npm run generate && npm run typecheck && npm run test:unit && npm run test:browser && npm run test:rendering && npm run test:python && npm run test:cross-language && npm run verify:packages && npm audit --omit=dev --audit-level=high"
+  },
+  "devDependencies": {
+    "@fontsource-variable/noto-sans-sc": "5.3.0",
+    "@playwright/test": "1.61.0",
+    "@types/node": "22.20.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "typescript": "5.9.3",
+    "vite": "7.3.6",
+    "vitest": "4.1.10",
+    "vue": "3.5.34"
+  }
+}

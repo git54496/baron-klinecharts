@@ -1,0 +1,832 @@
+{
+  "schema": "@baron1996/kline-scene",
+  "version": 1,
+  "runtime": {
+    "engine": "klinecharts",
+    "engineVersion": "10.0.0",
+    "runtimeVersion": "0.1.0"
+  },
+  "symbol": {
+    "ticker": "000001.SZ",
+    "name": "平安银行",
+    "pricePrecision": 2,
+    "volumePrecision": 0
+  },
+  "period": {
+    "span": 1,
+    "type": "day"
+  },
+  "data": [
+    {
+      "timestamp": 1784736000000,
+      "open": 12.34,
+      "high": 12.68,
+      "low": 12.21,
+      "close": 12.55,
+      "volume": 102400,
+      "turnover": 1285120
+    },
+    {
+      "timestamp": 1784822400000,
+      "open": 12.55,
+      "high": 12.83,
+      "low": 12.42,
+      "close": 12.74,
+      "volume": 119800,
+      "turnover": 1526252
+    },
+    {
+      "timestamp": 1784908800000,
+      "open": 12.74,
+      "high": 12.91,
+      "low": 12.5,
+      "close": 12.63,
+      "volume": 98400,
+      "turnover": 1242792
+    }
+  ],
+  "chart": {
+    "locale": "zh-CN",
+    "timezone": "Asia/Shanghai",
+    "layout": {
+      "backgroundColor": "rgba(255, 255, 255, 1)",
+      "textColor": "rgba(34, 34, 34, 1)",
+      "fontFamily": "Baron Sans",
+      "fontSize": 12
+    },
+    "candle": {
+      "type": "candle_solid",
+      "upColor": "rgba(239, 83, 80, 1)",
+      "downColor": "rgba(38, 166, 154, 1)",
+      "noChangeColor": "rgba(120, 123, 134, 1)",
+      "upBorderColor": "rgba(239, 83, 80, 1)",
+      "downBorderColor": "rgba(38, 166, 154, 1)",
+      "noChangeBorderColor": "rgba(120, 123, 134, 1)",
+      "upWickColor": "rgba(239, 83, 80, 1)",
+      "downWickColor": "rgba(38, 166, 154, 1)",
+      "noChangeWickColor": "rgba(120, 123, 134, 1)"
+    },
+    "grid": {
+      "horizontalColor": "rgba(225, 226, 230, 1)",
+      "verticalColor": "rgba(225, 226, 230, 1)"
+    },
+    "thousandsSeparator": ",",
+    "decimalFold": {
+      "enabled": false,
+      "threshold": 8
+    },
+    "zoomAnchor": "cursor",
+    "dateFormat": "yyyy-MM-dd",
+    "largeNumberFormat": "western"
+  },
+  "panes": [
+    {
+      "id": "pane-candle",
+      "kind": "candle",
+      "order": 0,
+      "height": 480,
+      "minHeight": 180,
+      "state": "normal",
+      "yAxes": [
+        {
+          "id": "axis-price",
+          "role": "primary",
+          "position": "right",
+          "reverse": false,
+          "inside": false,
+          "scrollZoomEnabled": true,
+          "topGap": 0.15,
+          "bottomGap": 0.1
+        }
+      ],
+      "indicators": []
+    }
+  ],
+  "overlays": [
+    {
+      "id": "overlay-horizontalRayLine-0",
+      "type": "horizontalRayLine",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 0,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "value": 12.5,
+      "startTimestamp": 1784736000000,
+      "endTimestamp": 1784822400000
+    },
+    {
+      "id": "overlay-horizontalSegment-1",
+      "type": "horizontalSegment",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 1,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "value": 12.5,
+      "startTimestamp": 1784736000000,
+      "endTimestamp": 1784822400000
+    },
+    {
+      "id": "overlay-horizontalStraightLine-2",
+      "type": "horizontalStraightLine",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 2,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "anchor": {
+        "value": 12.5
+      }
+    },
+    {
+      "id": "overlay-verticalRayLine-3",
+      "type": "verticalRayLine",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 3,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "timestamp": 1784822400000,
+      "startValue": 12.2,
+      "endValue": 12.8
+    },
+    {
+      "id": "overlay-verticalSegment-4",
+      "type": "verticalSegment",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 4,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "timestamp": 1784822400000,
+      "startValue": 12.2,
+      "endValue": 12.8
+    },
+    {
+      "id": "overlay-verticalStraightLine-5",
+      "type": "verticalStraightLine",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 5,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "anchor": {
+        "timestamp": 1784736000000
+      }
+    },
+    {
+      "id": "overlay-rayLine-6",
+      "type": "rayLine",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 6,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "points": [
+        {
+          "timestamp": 1784736000000,
+          "value": 12.4
+        },
+        {
+          "timestamp": 1784822400000,
+          "value": 12.7
+        }
+      ]
+    },
+    {
+      "id": "overlay-segment-7",
+      "type": "segment",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 7,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "points": [
+        {
+          "timestamp": 1784736000000,
+          "value": 12.4
+        },
+        {
+          "timestamp": 1784822400000,
+          "value": 12.7
+        }
+      ]
+    },
+    {
+      "id": "overlay-straightLine-8",
+      "type": "straightLine",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 8,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "points": [
+        {
+          "timestamp": 1784736000000,
+          "value": 12.4
+        },
+        {
+          "timestamp": 1784822400000,
+          "value": 12.7
+        }
+      ]
+    },
+    {
+      "id": "overlay-priceLine-9",
+      "type": "priceLine",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 9,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "anchor": {
+        "value": 12.5
+      }
+    },
+    {
+      "id": "overlay-priceChannelLine-10",
+      "type": "priceChannelLine",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 10,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "points": [
+        {
+          "timestamp": 1784736000000,
+          "value": 12.4
+        },
+        {
+          "timestamp": 1784822400000,
+          "value": 12.7
+        },
+        {
+          "timestamp": 1784908800000,
+          "value": 12.5
+        }
+      ]
+    },
+    {
+      "id": "overlay-parallelStraightLine-11",
+      "type": "parallelStraightLine",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 11,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "points": [
+        {
+          "timestamp": 1784736000000,
+          "value": 12.4
+        },
+        {
+          "timestamp": 1784822400000,
+          "value": 12.7
+        },
+        {
+          "timestamp": 1784908800000,
+          "value": 12.5
+        }
+      ]
+    },
+    {
+      "id": "overlay-fibonacciLine-12",
+      "type": "fibonacciLine",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 12,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "points": [
+        {
+          "timestamp": 1784736000000,
+          "value": 12.4
+        },
+        {
+          "timestamp": 1784822400000,
+          "value": 12.7
+        }
+      ]
+    },
+    {
+      "id": "overlay-brush-13",
+      "type": "brush",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 13,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "points": [
+        {
+          "timestamp": 1784736000000,
+          "value": 12.4
+        },
+        {
+          "timestamp": 1784822400000,
+          "value": 12.7
+        },
+        {
+          "timestamp": 1784908800000,
+          "value": 12.5
+        }
+      ]
+    },
+    {
+      "id": "overlay-simpleAnnotation-14",
+      "type": "simpleAnnotation",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 14,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "point": {
+        "timestamp": 1784736000000,
+        "value": 12.4
+      },
+      "text": "注释"
+    },
+    {
+      "id": "overlay-simpleTag-15",
+      "type": "simpleTag",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 15,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "anchor": {
+        "value": 12.5
+      },
+      "text": "标签"
+    },
+    {
+      "id": "overlay-rectangle-16",
+      "type": "rectangle",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 16,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "start": {
+        "timestamp": 1784736000000,
+        "value": 12.4
+      },
+      "end": {
+        "timestamp": 1784822400000,
+        "value": 12.7
+      }
+    },
+    {
+      "id": "overlay-arrow-17",
+      "type": "arrow",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 17,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "start": {
+        "timestamp": 1784736000000,
+        "value": 12.4
+      },
+      "end": {
+        "timestamp": 1784822400000,
+        "value": 12.7
+      }
+    },
+    {
+      "id": "overlay-crossLine-18",
+      "type": "crossLine",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 18,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "point": {
+        "timestamp": 1784736000000,
+        "value": 12.4
+      }
+    },
+    {
+      "id": "overlay-callout-19",
+      "type": "callout",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 19,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "point": {
+        "timestamp": 1784736000000,
+        "value": 12.4
+      },
+      "text": "气泡"
+    },
+    {
+      "id": "overlay-text-20",
+      "type": "text",
+      "paneId": "pane-candle",
+      "visible": true,
+      "locked": false,
+      "zLevel": 20,
+      "mode": "normal",
+      "styles": {
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 1,
+          "style": "solid"
+        },
+        "fill": {
+          "color": "rgba(41, 98, 255, 0.15)"
+        },
+        "text": {
+          "color": "rgba(255, 255, 255, 1)",
+          "size": 12,
+          "family": "Baron Sans",
+          "weight": "normal",
+          "backgroundColor": "rgba(41, 98, 255, 1)",
+          "borderColor": "rgba(41, 98, 255, 1)"
+        }
+      },
+      "point": {
+        "timestamp": 1784736000000,
+        "value": 12.4
+      },
+      "text": "文本"
+    }
+  ],
+  "viewport": {
+    "barSpace": 10,
+    "rightOffsetDistance": 48,
+    "anchorTimestamp": 1784908800000
+  },
+  "render": {
+    "width": 1000,
+    "height": 600,
+    "deviceScaleFactor": 1,
+    "background": "rgba(255, 255, 255, 1)",
+    "fontFamily": "Baron Sans",
+    "timeoutMs": 10000
+  },
+  "metadata": {
+    "source": "fixture"
+  }
+}

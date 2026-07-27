@@ -1,0 +1,40 @@
+{
+  "name": "@baron1996/klinecharts-render-runtime",
+  "version": "0.1.0",
+  "description": "Private deterministic HTML and PNG render runtime.",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/git54496/baron-klinecharts.git",
+    "directory": "packages/render-runtime"
+  },
+  "engines": {
+    "node": "^22.12.0 || ^24.0.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "generated",
+    "LICENSE",
+    "NOTICE",
+    "licenses"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "pregenerate": "npm run build --workspace @baron1996/kline-scene-schema && npm run build --workspace @baron1996/klinecharts-adapter && npm run build --workspace @baron1996/klinecharts-runtime",
+    "generate": "node scripts/build-runtime.mjs",
+    "sync:python": "node scripts/sync-python-runtime.mjs",
+    "test": "vitest run",
+    "pretest:browser": "npm run generate",
+    "test:browser": "playwright test test --grep @browser",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@baron1996/kline-scene-schema": "0.1.0",
+    "@baron1996/klinecharts-runtime": "0.1.0",
+    "playwright": "1.61.0"
+  }
+}

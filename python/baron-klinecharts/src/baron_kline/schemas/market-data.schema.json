@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://baron.dev/kline-scene/market-data.schema.json",
+  "title": "MarketData",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "timestamp",
+    "open",
+    "high",
+    "low",
+    "close"
+  ],
+  "properties": {
+    "timestamp": {
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/safeInteger"
+    },
+    "open": {
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/finiteNumber"
+    },
+    "high": {
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/finiteNumber"
+    },
+    "low": {
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/finiteNumber"
+    },
+    "close": {
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/finiteNumber"
+    },
+    "volume": {
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/nonNegativeNumber"
+    },
+    "turnover": {
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/nonNegativeNumber"
+    }
+  }
+}

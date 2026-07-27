@@ -1,0 +1,16 @@
+html,
+body {
+	margin: 0;
+	font-family: sans-serif;
+}
+
+.toolbar {
+	width: 1000px;
+	overflow-x: auto;
+	white-space: nowrap;
+}
+
+.chart {
+	width: 1000px;
+	height: 600px;
+}

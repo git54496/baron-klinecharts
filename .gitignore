@@ -1,0 +1,31 @@
+# Node.js and npm
+node_modules/
+npm-debug.log*
+
+# Python
+*.pyc
+__pycache__/
+.venv/
+*.egg-info/
+
+# Editors
+.idea/**
+.vscode/**
+*.sublime-project
+*.sublime-workspace
+
+# Build and test artifacts
+/coverage/
+/dist/
+/output/
+/release-artifacts/
+/test-results/
+/.playwright-cli/
+/playwright-report/
+/packages/*/dist/
+/packages/*/coverage/
+/packages/*/.vitest/
+/packages/*/test-results/
+/python/*/build/
+/python/*/dist/
+/tests/rendering/actual/

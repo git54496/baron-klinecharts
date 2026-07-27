@@ -1,0 +1,53 @@
+{
+  "name": "@baron1996/kline-scene-schema",
+  "version": "0.1.0",
+  "description": "Strict ChartScene schema, types, validation, and canonical serialization.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/git54496/baron-klinecharts.git",
+    "directory": "packages/scene-schema"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": "^22.12.0 || ^24.0.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./schema/*": "./schema/*"
+  },
+  "files": [
+    "dist",
+    "schema",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "licenses"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "generate": "node scripts/generate.mjs",
+    "generate:fixtures": "node scripts/generate-fixtures.mjs",
+    "sync:python": "node scripts/sync-python-schemas.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "verify:package": "node scripts/verify-package.mjs"
+  },
+  "devDependencies": {
+    "@apidevtools/json-schema-ref-parser": "11.9.3",
+    "ajv": "8.20.0",
+    "json-schema-to-typescript": "15.0.4"
+  },
+  "dependencies": {
+    "canonicalize": "3.0.0"
+  }
+}

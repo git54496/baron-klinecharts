@@ -1,0 +1,11 @@
+{
+  "name": "@baron1996/example-vue",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "vue": "3.5.34"
+  }
+}

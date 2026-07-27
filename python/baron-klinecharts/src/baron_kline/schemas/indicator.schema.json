@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://baron.dev/kline-scene/indicator.schema.json",
+  "title": "SceneIndicator",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "name",
+    "paneId",
+    "yAxisId",
+    "calcParams",
+    "precision",
+    "visible",
+    "zLevel",
+    "styles"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/stableId"
+    },
+    "name": {
+      "enum": [
+        "MA",
+        "EMA",
+        "SMA",
+        "BBI",
+        "VOL",
+        "MACD",
+        "BOLL",
+        "KDJ",
+        "RSI",
+        "BIAS",
+        "BRAR",
+        "CCI",
+        "DMI",
+        "CR",
+        "PSY",
+        "DMA",
+        "TRIX",
+        "OBV",
+        "VR",
+        "WR",
+        "MTM",
+        "EMV",
+        "SAR",
+        "AO",
+        "ROC",
+        "PVT",
+        "AVP"
+      ]
+    },
+    "paneId": {
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/stableId"
+    },
+    "yAxisId": {
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/stableId"
+    },
+    "calcParams": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "maximum": 100000
+      }
+    },
+    "precision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 16
+    },
+    "visible": {
+      "type": "boolean"
+    },
+    "zLevel": {
+      "type": "integer",
+      "minimum": -1000,
+      "maximum": 1000
+    },
+    "styles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lines",
+        "bars",
+        "circles"
+      ],
+      "properties": {
+        "lines": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/lineStyle"
+          }
+        },
+        "bars": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "upColor",
+              "downColor",
+              "noChangeColor"
+            ],
+            "properties": {
+              "upColor": {
+                "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+              },
+              "downColor": {
+                "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+              },
+              "noChangeColor": {
+                "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+              }
+            }
+          }
+        },
+        "circles": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "color",
+              "radius"
+            ],
+            "properties": {
+              "color": {
+                "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+              },
+              "radius": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 20
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

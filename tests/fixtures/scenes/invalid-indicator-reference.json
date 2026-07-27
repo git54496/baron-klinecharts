@@ -1,0 +1,799 @@
+{
+  "schema": "@baron1996/kline-scene",
+  "version": 1,
+  "runtime": {
+    "engine": "klinecharts",
+    "engineVersion": "10.0.0",
+    "runtimeVersion": "0.1.0"
+  },
+  "symbol": {
+    "ticker": "000001.SZ",
+    "name": "平安银行",
+    "pricePrecision": 2,
+    "volumePrecision": 0
+  },
+  "period": {
+    "span": 1,
+    "type": "day"
+  },
+  "data": [
+    {
+      "timestamp": 1784736000000,
+      "open": 12.34,
+      "high": 12.68,
+      "low": 12.21,
+      "close": 12.55,
+      "volume": 102400,
+      "turnover": 1285120
+    },
+    {
+      "timestamp": 1784822400000,
+      "open": 12.55,
+      "high": 12.83,
+      "low": 12.42,
+      "close": 12.74,
+      "volume": 119800,
+      "turnover": 1526252
+    },
+    {
+      "timestamp": 1784908800000,
+      "open": 12.74,
+      "high": 12.91,
+      "low": 12.5,
+      "close": 12.63,
+      "volume": 98400,
+      "turnover": 1242792
+    }
+  ],
+  "chart": {
+    "locale": "zh-CN",
+    "timezone": "Asia/Shanghai",
+    "layout": {
+      "backgroundColor": "rgba(255, 255, 255, 1)",
+      "textColor": "rgba(34, 34, 34, 1)",
+      "fontFamily": "Baron Sans",
+      "fontSize": 12
+    },
+    "candle": {
+      "type": "candle_solid",
+      "upColor": "rgba(239, 83, 80, 1)",
+      "downColor": "rgba(38, 166, 154, 1)",
+      "noChangeColor": "rgba(120, 123, 134, 1)",
+      "upBorderColor": "rgba(239, 83, 80, 1)",
+      "downBorderColor": "rgba(38, 166, 154, 1)",
+      "noChangeBorderColor": "rgba(120, 123, 134, 1)",
+      "upWickColor": "rgba(239, 83, 80, 1)",
+      "downWickColor": "rgba(38, 166, 154, 1)",
+      "noChangeWickColor": "rgba(120, 123, 134, 1)"
+    },
+    "grid": {
+      "horizontalColor": "rgba(225, 226, 230, 1)",
+      "verticalColor": "rgba(225, 226, 230, 1)"
+    },
+    "thousandsSeparator": ",",
+    "decimalFold": {
+      "enabled": false,
+      "threshold": 8
+    },
+    "zoomAnchor": "cursor",
+    "dateFormat": "yyyy-MM-dd",
+    "largeNumberFormat": "western"
+  },
+  "panes": [
+    {
+      "id": "pane-candle",
+      "kind": "candle",
+      "order": 0,
+      "height": 480,
+      "minHeight": 180,
+      "state": "normal",
+      "yAxes": [
+        {
+          "id": "axis-price",
+          "role": "primary",
+          "position": "right",
+          "reverse": false,
+          "inside": false,
+          "scrollZoomEnabled": true,
+          "topGap": 0.15,
+          "bottomGap": 0.1
+        }
+      ],
+      "indicators": []
+    },
+    {
+      "id": "pane-indicators",
+      "kind": "indicator",
+      "order": 1,
+      "height": 240,
+      "minHeight": 100,
+      "state": "normal",
+      "yAxes": [
+        {
+          "id": "axis-indicators",
+          "role": "primary",
+          "position": "right",
+          "reverse": false,
+          "inside": false,
+          "scrollZoomEnabled": true,
+          "topGap": 0.1,
+          "bottomGap": 0.1
+        }
+      ],
+      "indicators": [
+        {
+          "id": "indicator-ma-0",
+          "name": "MA",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-missing",
+          "calcParams": [
+            5,
+            10,
+            30,
+            60
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 0,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-ema-1",
+          "name": "EMA",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            6,
+            12,
+            20
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 1,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-sma-2",
+          "name": "SMA",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            12,
+            2
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 2,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-bbi-3",
+          "name": "BBI",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            3,
+            6,
+            12,
+            24
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 3,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-vol-4",
+          "name": "VOL",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            5,
+            10,
+            20
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 4,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-macd-5",
+          "name": "MACD",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            12,
+            26,
+            9
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 5,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-boll-6",
+          "name": "BOLL",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            20,
+            2
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 6,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-kdj-7",
+          "name": "KDJ",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            9,
+            3,
+            3
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 7,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-rsi-8",
+          "name": "RSI",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            6,
+            12,
+            24
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 8,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-bias-9",
+          "name": "BIAS",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            6,
+            12,
+            24
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 9,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-brar-10",
+          "name": "BRAR",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            26
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 10,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-cci-11",
+          "name": "CCI",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            20
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 11,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-dmi-12",
+          "name": "DMI",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            14,
+            6
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 12,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-cr-13",
+          "name": "CR",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            26,
+            10,
+            20,
+            40,
+            60
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 13,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-psy-14",
+          "name": "PSY",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            12,
+            6
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 14,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-dma-15",
+          "name": "DMA",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            10,
+            50,
+            10
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 15,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-trix-16",
+          "name": "TRIX",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            12,
+            9
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 16,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-obv-17",
+          "name": "OBV",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            30
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 17,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-vr-18",
+          "name": "VR",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            26,
+            6
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 18,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-wr-19",
+          "name": "WR",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            6,
+            10,
+            14
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 19,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-mtm-20",
+          "name": "MTM",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            12,
+            6
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 20,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-emv-21",
+          "name": "EMV",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            14,
+            9
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 21,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-sar-22",
+          "name": "SAR",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            2,
+            2,
+            20
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 22,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-ao-23",
+          "name": "AO",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            5,
+            34
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 23,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-roc-24",
+          "name": "ROC",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [
+            12,
+            6
+          ],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 24,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-pvt-25",
+          "name": "PVT",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 25,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        },
+        {
+          "id": "indicator-avp-26",
+          "name": "AVP",
+          "paneId": "pane-indicators",
+          "yAxisId": "axis-indicators",
+          "calcParams": [],
+          "precision": 2,
+          "visible": true,
+          "zLevel": 26,
+          "styles": {
+            "lines": [
+              {
+                "color": "rgba(41, 98, 255, 1)",
+                "size": 1,
+                "style": "solid"
+              }
+            ],
+            "bars": [],
+            "circles": []
+          }
+        }
+      ]
+    }
+  ],
+  "overlays": [],
+  "viewport": {
+    "barSpace": 10,
+    "rightOffsetDistance": 48,
+    "anchorTimestamp": 1784908800000
+  },
+  "render": {
+    "width": 1000,
+    "height": 600,
+    "deviceScaleFactor": 1,
+    "background": "rgba(255, 255, 255, 1)",
+    "fontFamily": "Baron Sans",
+    "timeoutMs": 10000
+  },
+  "metadata": {
+    "source": "fixture"
+  }
+}

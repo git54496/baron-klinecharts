@@ -1,0 +1,139 @@
+import { expect, test } from '@playwright/test';
+
+import { createSourceRuntime, loadScene } from './helpers.js';
+
+test('desktop mouse creates, selects, drags, updates, and deletes an Overlay', async ({ page }) => {
+	await createSourceRuntime(page, await loadScene('minimal-valid.json'));
+	await page.locator('[data-overlay-type="segment"]').click();
+	const canvas = page.locator('#chart canvas').nth(1);
+	const box = await canvas.boundingBox();
+	expect(box).not.toBeNull();
+	await canvas.click();
+	await page.waitForTimeout(350);
+	await canvas.click();
+	await expect.poll(() => page.evaluate(() => (
+		window as unknown as {
+			__baronTestRuntime: { listOverlays(): readonly unknown[] };
+		}
+	).__baronTestRuntime.listOverlays().length)).toBe(1);
+
+	const allOverlays = await loadScene('all-overlays.json');
+	const sourceSegment = allOverlays.overlays.find((overlay) => overlay.type === 'segment')!;
+	await page.evaluate((points) => {
+		const runtime = (
+			window as unknown as {
+				__baronTestRuntime: {
+					getOverlay(id: string): object;
+					updateOverlay(value: object): void;
+				};
+			}
+		).__baronTestRuntime;
+		runtime.updateOverlay({
+			...runtime.getOverlay('overlay-segment-0'),
+			points,
+		});
+	}, sourceSegment.points);
+	const start = { x: box!.x + 887, y: box!.y + 404 };
+	await page.mouse.click(start.x, start.y);
+	await expect.poll(() => page.evaluate(() => (
+		window as unknown as {
+			__baronTestRuntime: { getSelectedOverlayId(): string | undefined };
+		}
+	).__baronTestRuntime.getSelectedOverlayId())).toBe('overlay-segment-0');
+	const updatesBeforeDrag = await page.evaluate(() => (
+		window as unknown as { __baronTestEvents: Array<{ type: string }> }
+	).__baronTestEvents.filter((event) => event.type === 'overlay-updated').length);
+	await page.mouse.move(start.x, start.y);
+	await page.mouse.down();
+	await page.waitForTimeout(100);
+	await page.mouse.move(start.x + 40, start.y + 24, { steps: 5 });
+	await page.waitForTimeout(100);
+	await page.mouse.up();
+	await expect.poll(() => page.evaluate(() => (
+		window as unknown as { __baronTestEvents: Array<{ type: string }> }
+	).__baronTestEvents.filter((event) => event.type === 'overlay-updated').length))
+		.toBeGreaterThan(updatesBeforeDrag);
+
+	await page.locator('[data-action="delete"]').click();
+	await expect.poll(() => page.evaluate(() => (
+		window as unknown as {
+			__baronTestRuntime: { listOverlays(): readonly unknown[] };
+		}
+	).__baronTestRuntime.listOverlays().length)).toBe(0);
+});
+
+test('Chinese text input is persisted and pan/zoom is not persisted', async ({ page }) => {
+	const scene = await loadScene('minimal-valid.json');
+	await createSourceRuntime(page, scene);
+	const originalViewport = structuredClone(scene.viewport);
+	await page.locator('[data-action="overlay-text"]').fill('中文标注：突破');
+	await page.locator('[data-overlay-type="text"]').click();
+	const canvas = page.locator('#chart canvas').nth(1);
+	const box = await canvas.boundingBox();
+	expect(box).not.toBeNull();
+	await page.mouse.click(box!.x + 420, box!.y + 260);
+	await expect.poll(() => page.evaluate(() => (
+		window as unknown as {
+			__baronTestRuntime: { listOverlays(): readonly unknown[] };
+		}
+	).__baronTestRuntime.listOverlays().length)).toBe(1);
+
+	await page.mouse.move(box!.x + 700, box!.y + 300);
+	await page.mouse.wheel(0, -500);
+	await page.mouse.down();
+	await page.mouse.move(box!.x + 600, box!.y + 300, { steps: 5 });
+	await page.mouse.up();
+	const exported = await page.evaluate(() => (
+		window as unknown as {
+			__baronTestRuntime: {
+				exportScene(): { overlays: Array<{ text?: string }>; viewport: unknown };
+			};
+		}
+	).__baronTestRuntime.exportScene());
+	expect(exported.overlays[0]?.text).toBe('中文标注：突破');
+	expect(exported.viewport).toEqual(originalViewport);
+});
+
+test('mobile touch creates an Overlay and no undo/redo surface or hotkey exists', async ({ browser }) => {
+	const context = await browser.newContext({
+		hasTouch: true,
+		isMobile: true,
+		viewport: { width: 1200, height: 800 },
+		locale: 'zh-CN',
+		timezoneId: 'Asia/Shanghai',
+	});
+	try {
+		const page = await context.newPage();
+		await createSourceRuntime(page, await loadScene('minimal-valid.json'));
+		expect(await page.locator('[data-action="undo"], [data-action="redo"]').count()).toBe(0);
+		const methods = await page.evaluate(() => Object.getOwnPropertyNames(Object.getPrototypeOf(
+			(window as unknown as { __baronTestRuntime: object }).__baronTestRuntime,
+		)));
+		expect(methods).not.toEqual(expect.arrayContaining(['undo', 'redo']));
+		await page.locator('[data-overlay-type="crossLine"]').tap();
+		const canvas = page.locator('#chart canvas').nth(1);
+		const box = await canvas.boundingBox();
+		expect(box).not.toBeNull();
+		await page.touchscreen.tap(box!.x + 450, box!.y + 280);
+		await expect.poll(() => page.evaluate(() => (
+			window as unknown as {
+				__baronTestRuntime: { listOverlays(): readonly unknown[] };
+			}
+		).__baronTestRuntime.listOverlays().length)).toBe(1);
+		const before = await page.evaluate(() => JSON.stringify((
+			window as unknown as {
+				__baronTestRuntime: { exportScene(): unknown };
+			}
+		).__baronTestRuntime.exportScene()));
+		await page.keyboard.press('Control+Z');
+		await page.keyboard.press('Control+Shift+Z');
+		const after = await page.evaluate(() => JSON.stringify((
+			window as unknown as {
+				__baronTestRuntime: { exportScene(): unknown };
+			}
+		).__baronTestRuntime.exportScene()));
+		expect(after).toBe(before);
+	} finally {
+		await context.close();
+	}
+});

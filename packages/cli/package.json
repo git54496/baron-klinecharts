@@ -1,0 +1,45 @@
+{
+  "name": "@baron1996/klinecharts-cli",
+  "version": "0.1.0",
+  "description": "CLI for validating, editing, and rendering ChartScene files.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/git54496/baron-klinecharts.git",
+    "directory": "packages/cli"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": "^22.12.0 || ^24.0.0"
+  },
+  "bin": {
+    "baron-kline": "./dist/cli.js"
+  },
+  "main": "./dist/cli.js",
+  "types": "./dist/cli.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "licenses"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json --emitDeclarationOnly && node scripts/build.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "verify:package": "node scripts/verify-package.mjs"
+  },
+  "dependencies": {
+    "@baron1996/kline-scene-schema": "0.1.0",
+    "playwright": "1.61.0"
+  },
+  "devDependencies": {
+    "@baron1996/klinecharts-render-runtime": "0.1.0",
+    "esbuild": "0.25.2"
+  }
+}

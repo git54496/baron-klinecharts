@@ -1,0 +1,24 @@
+.baron-kline-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	align-items: center;
+	padding: 8px;
+	background: rgba(245, 247, 250, 1);
+	border-bottom: 1px solid rgba(225, 226, 230, 1);
+	font-family: "Baron Sans", sans-serif;
+}
+
+.baron-kline-toolbar button {
+	padding: 5px 8px;
+	color: rgba(34, 34, 34, 1);
+	background: rgba(255, 255, 255, 1);
+	border: 1px solid rgba(200, 203, 211, 1);
+	border-radius: 4px;
+	cursor: pointer;
+}
+
+.baron-kline-toolbar button:focus-visible {
+	outline: 2px solid rgba(41, 98, 255, 1);
+	outline-offset: 1px;
+}
