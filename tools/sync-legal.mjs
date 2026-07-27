@@ -2,6 +2,12 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
 const repositoryDirectory = resolve('.');
+
+async function readNormalizedText(path) {
+	const content = await readFile(path, 'utf8');
+	return Buffer.from(`${content.trimEnd()}\n`);
+}
+
 const rootLicense = await readFile(join(repositoryDirectory, 'LICENSE'));
 const rootNotice = await readFile(join(repositoryDirectory, 'NOTICE'));
 const legalFiles = new Map([
@@ -15,7 +21,7 @@ const legalFiles = new Map([
 	],
 	[
 		'TradingView-Lightweight-Charts-LICENSE',
-		await readFile(
+		await readNormalizedText(
 			join(
 				repositoryDirectory,
 				'node_modules',
@@ -36,6 +42,10 @@ const legalFiles = new Map([
 				'LICENSE',
 			),
 		),
+	],
+	[
+		'fflate-LICENSE',
+		await readFile(join(repositoryDirectory, 'node_modules', 'fflate', 'LICENSE')),
 	],
 ]);
 

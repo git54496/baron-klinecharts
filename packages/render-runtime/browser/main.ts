@@ -5,6 +5,7 @@ import {
 	type KLineSceneRuntime,
 } from '@baron1996/klinecharts-runtime';
 
+import { canonicalizePng } from '../src/png-codec.js';
 import './style.css';
 
 const SCENE_BASE64 = '__BARON_SCENE_BASE64__';
@@ -13,6 +14,20 @@ function decodeScene(): unknown {
 	const binary = atob(SCENE_BASE64);
 	const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
 	return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+}
+
+function decodeBase64(encoded: string): Uint8Array {
+	const binary = atob(encoded);
+	return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+	const chunkSize = 0x8000;
+	let binary = '';
+	for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+		binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+	}
+	return btoa(binary);
 }
 
 function nextAnimationFrame(): Promise<void> {
@@ -70,6 +85,9 @@ const ready = (async () => {
 
 window.__BARON_KLINE_SCENE__ = {
 	ready,
+	canonicalizePng(encoded) {
+		return encodeBase64(canonicalizePng(decodeBase64(encoded)));
+	},
 	exportScene() {
 		if (runtime === undefined) {
 			throw new Error('Scene Runtime is not ready.');

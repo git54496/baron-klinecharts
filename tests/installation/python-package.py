@@ -40,6 +40,7 @@ with tempfile.TemporaryDirectory(prefix="baron-python-package-") as raw_director
         assert any(name.endswith(".dist-info/licenses/NOTICE") for name in wheel_files)
         assert any("KLineCharts-LICENSE" in name for name in wheel_files)
         assert any("Noto-Sans-SC-OFL-1.1" in name for name in wheel_files)
+        assert any("fflate-LICENSE" in name for name in wheel_files)
     with tarfile.open(source) as archive:
         source_files = set(archive.getnames())
         assert any(name.endswith("/LICENSE") for name in source_files)

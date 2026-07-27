@@ -2,6 +2,7 @@ import type { ChartScene } from '@baron1996/kline-scene-schema';
 
 export interface BaronSceneBridge {
 	readonly ready: Promise<void>;
+	canonicalizePng(encoded: string): string;
 	exportScene(): ChartScene;
 	destroy(): void;
 }

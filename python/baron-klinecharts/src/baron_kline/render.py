@@ -126,13 +126,21 @@ def render_scene_png(
                                     f"{parsed['render']['timeoutMs']}ms.",
                                 ) from error
                             raise
-                        page.locator("[data-baron-render-root]").screenshot(
-                            path=temporary_path,
+                        screenshot = page.locator(
+                            "[data-baron-render-root]"
+                        ).screenshot(
                             type="png",
                             animations="disabled",
                             caret="hide",
                             scale="device",
                         )
+                        encoded = base64.b64encode(screenshot).decode("ascii")
+                        canonical = page.evaluate(
+                            "encoded => "
+                            "window.__BARON_KLINE_SCENE__.canonicalizePng(encoded)",
+                            encoded,
+                        )
+                        temporary_path.write_bytes(base64.b64decode(canonical))
                         page.evaluate("() => window.__BARON_KLINE_SCENE__.destroy()")
                     finally:
                         context.close()

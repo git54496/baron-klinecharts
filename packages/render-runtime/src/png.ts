@@ -2,6 +2,7 @@ import {
 	parseChartScene,
 	SceneError,
 } from '@baron1996/kline-scene-schema';
+import { writeFile } from 'node:fs/promises';
 import {
 	chromium,
 	type Browser,
@@ -9,6 +10,7 @@ import {
 } from 'playwright';
 
 import { buildStandaloneHtml } from './html.js';
+import { canonicalizePng } from './png-codec.js';
 
 type ChromiumLauncher = (options: LaunchOptions) => Promise<Browser>;
 
@@ -91,13 +93,13 @@ export async function renderScenePng(
 				() => typeof window.__BARON_KLINE_SCENE__ !== 'undefined',
 			);
 			await waitForBridgeReady(page, parsed.render.timeoutMs);
-			await page.locator('[data-baron-render-root]').screenshot({
-				path: outputPath,
+			const screenshot = await page.locator('[data-baron-render-root]').screenshot({
 				type: 'png',
 				animations: 'disabled',
 				caret: 'hide',
 				scale: 'device',
 			});
+			await writeFile(outputPath, canonicalizePng(screenshot));
 			await page.evaluate(() => window.__BARON_KLINE_SCENE__.destroy());
 		} finally {
 			await context.close();

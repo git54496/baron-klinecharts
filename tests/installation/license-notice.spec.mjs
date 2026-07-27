@@ -7,7 +7,9 @@ test('NOTICE retains engine, transitive chart, and embedded font attribution', a
 	assert.match(notice, /KLineChart/);
 	assert.match(notice, /TradingView/);
 	assert.match(notice, /Noto Sans SC/);
+	assert.match(notice, /fflate/);
 	assert.match(notice, /Apache License, Version 2\.0/);
+	assert.match(notice, /MIT License/);
 	assert.match(notice, /SIL Open Font License, Version 1\.1/);
 });
 
@@ -33,6 +35,7 @@ test('all distributable packages contain synchronized legal files', async () => 
 			'KLineCharts-NOTICE',
 			'TradingView-Lightweight-Charts-LICENSE',
 			'Noto-Sans-SC-OFL-1.1',
+			'fflate-LICENSE',
 		]) {
 			await readFile(`${directory}/licenses/${name}`);
 		}
