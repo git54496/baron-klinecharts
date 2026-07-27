@@ -12,12 +12,22 @@ test('verification workflow targets the clean main branch', async () => {
 		workflow.indexOf('  node-24:'),
 		workflow.indexOf('  python:'),
 	);
+	assert.match(node24Job, /runs-on:\s*ubuntu-24\.04/u);
+	assert.match(node24Job, /BARON_PNG_BASELINE:\s*github-ubuntu-24\.04/u);
 	const browserInstall = node24Job.indexOf(
 		'npx playwright install --with-deps chromium',
 	);
 	const unitTests = node24Job.indexOf('npm run test:unit');
 	assert.ok(browserInstall >= 0);
 	assert.ok(unitTests > browserInstall);
+
+	const fullStackJob = workflow.slice(
+		workflow.indexOf('  full-stack:'),
+		workflow.indexOf('  node-24:'),
+	);
+	assert.match(fullStackJob, /runs-on:\s*macos-15/u);
+	assert.match(fullStackJob, /BARON_PNG_BASELINE:\s*github-macos-15/u);
+	assert.equal((workflow.match(/actions\/upload-artifact@v4/gu) ?? []).length, 2);
 });
 
 test('release workflow is a build-once protected registry publication', async () => {

@@ -14,13 +14,24 @@ const cases = [
 	['all-overlays', 'all-overlays.json'],
 ] as const;
 
+function baselinePath(name: string): string {
+	const variant = process.env.BARON_PNG_BASELINE?.trim();
+	return resolve(
+		'tests',
+		'rendering',
+		'baselines',
+		...(variant === undefined || variant === '' ? [] : [variant]),
+		name,
+	);
+}
+
 for (const [baseline, fixture] of cases) {
 	test(`render baseline: ${baseline}`, async () => {
 		const directory = await mkdtemp(join(tmpdir(), 'baron-render-baseline-'));
 		const output = join(directory, `${baseline}.png`);
 		await renderScenePng(await loadScene(fixture), output);
 		expect(await readFile(output)).toEqual(
-			await readFile(resolve('tests', 'rendering', 'baselines', `${baseline}.png`)),
+			await readFile(baselinePath(`${baseline}.png`)),
 		);
 	});
 }
@@ -36,6 +47,6 @@ test('render baseline: controlled dark style', async () => {
 	const output = join(directory, 'minimal-dark.png');
 	await renderScenePng(scene, output);
 	expect(await readFile(output)).toEqual(
-		await readFile(resolve('tests', 'rendering', 'baselines', 'minimal-dark.png')),
+		await readFile(baselinePath('minimal-dark.png')),
 	);
 });

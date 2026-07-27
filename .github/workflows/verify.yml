@@ -9,6 +9,8 @@ on:
 jobs:
   full-stack:
     runs-on: macos-15
+    env:
+      BARON_PNG_BASELINE: github-macos-15
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -23,9 +25,20 @@ jobs:
       - run: pip install -e 'python/baron-klinecharts[dev]'
       - run: npx playwright install --with-deps chromium
       - run: npm run verify
+      - name: Capture macOS PNG baselines
+        if: failure()
+        run: node tools/render-png-baselines.mjs --output "test-results/png-baselines/${BARON_PNG_BASELINE}"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: png-baselines-github-macos-15
+          path: test-results/png-baselines/github-macos-15
+          if-no-files-found: error
 
   node-24:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    env:
+      BARON_PNG_BASELINE: github-ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -37,6 +50,15 @@ jobs:
       - run: npm run generate
       - run: npm run typecheck
       - run: npm run test:unit
+      - name: Capture Ubuntu PNG baselines
+        if: failure()
+        run: node tools/render-png-baselines.mjs --output "test-results/png-baselines/${BARON_PNG_BASELINE}"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: png-baselines-github-ubuntu-24.04
+          path: test-results/png-baselines/github-ubuntu-24.04
+          if-no-files-found: error
 
   python:
     runs-on: ubuntu-latest

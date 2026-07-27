@@ -112,6 +112,11 @@ render_scene_png(scene, "scene.png")
 revision、viewport、DPR、locale、timezone 和嵌入字体组合。跨操作系统输出仍应
 通过各平台独立基线验证。
 
+CI 分别使用 `tests/rendering/baselines/github-macos-15` 和
+`tests/rendering/baselines/github-ubuntu-24.04` 做严格的逐字节校验；失败时会
+上传该固定环境重新渲染的完整 PNG 集合供审阅。未设置 `BARON_PNG_BASELINE`
+时使用 `tests/rendering/baselines` 下的本机开发基线。
+
 ## 发布
 
 当前仓库版本为 `0.1.0`。GitHub Release tag、全部 npm workspace 和 Python

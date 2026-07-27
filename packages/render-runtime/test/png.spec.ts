@@ -23,6 +23,21 @@ function pngDimensions(bytes: Uint8Array): {
 	};
 }
 
+function baselinePath(name: string): string {
+	const variant = process.env.BARON_PNG_BASELINE?.trim();
+	return join(
+		import.meta.dirname,
+		'..',
+		'..',
+		'..',
+		'tests',
+		'rendering',
+		'baselines',
+		...(variant === undefined || variant === '' ? [] : [variant]),
+		name,
+	);
+}
+
 describe('deterministic PNG renderer', () => {
 	it('maps a missing pinned browser to BROWSER_NOT_INSTALLED', async () => {
 		await expect(
@@ -45,18 +60,7 @@ describe('deterministic PNG renderer', () => {
 			const scene = loadScene(fixtureName);
 			await renderScenePng(scene, output);
 			const actual = await readFile(output);
-			const baseline = await readFile(
-				join(
-					import.meta.dirname,
-					'..',
-					'..',
-					'..',
-					'tests',
-					'rendering',
-					'baselines',
-					baselineName,
-				),
-			);
+			const baseline = await readFile(baselinePath(baselineName));
 
 			expect(pngDimensions(actual)).toEqual({
 				width: scene.render.width * scene.render.deviceScaleFactor,
