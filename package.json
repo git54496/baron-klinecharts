@@ -22,7 +22,10 @@
   "scripts": {
     "audit:production": "npm audit --omit=dev --audit-level=high",
     "build": "npm run build --workspaces",
+    "check:mock": "npm run build --workspace @baron1996/kline-scene-schema && node tools/generate-mock-scene.mjs --check",
+    "example:vanilla": "vite --host 127.0.0.1 --port 4175 --strictPort --open /examples/vanilla/",
     "generate": "npm run generate --workspace @baron1996/kline-scene-schema && npm run sync:python --workspace @baron1996/kline-scene-schema && npm run generate --workspace @baron1996/klinecharts-render-runtime && npm run sync:python --workspace @baron1996/klinecharts-render-runtime && npm run build --workspace @baron1996/klinecharts-render-runtime && node tools/sync-legal.mjs",
+    "generate:mock": "npm run build --workspace @baron1996/kline-scene-schema && node tools/generate-mock-scene.mjs --write",
     "release:build-npm": "node tools/release/build-npm-artifacts.mjs",
     "release:check-version": "node tools/release/check-release-version.mjs",
     "test": "npm run test:unit",
@@ -30,6 +33,7 @@
     "pretest:cross-language": "npm run build --workspaces",
     "test:cross-language": "node tests/cross-language/chart-scene-roundtrip.mjs",
     "test:installation": "node --test tests/installation/*.mjs && python3 tests/installation/python-package.py",
+    "test:mock": "npm run build --workspace @baron1996/kline-scene-schema && node --test tests/mock/mock-scene.test.mjs",
     "test:python": "python3 -m unittest discover -s python/baron-klinecharts/tests -p 'test_*.py'",
     "test:rendering": "playwright test tests/rendering --config playwright.config.ts",
     "test:unit": "npm run test --workspaces",
