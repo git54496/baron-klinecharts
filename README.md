@@ -54,6 +54,20 @@ npm run generate
 npm run verify
 ```
 
+### 本地自包含验证页
+
+无需行情服务或账号即可运行 Vanilla 验证页：
+
+```bash
+npm ci
+npm run example:vanilla
+```
+
+页面只加载仓库内的 `examples/vanilla/mock-year.scene.json`，不会发起行情请求。
+该文件由固定种子、固定算法和固定结束日期生成；有意修改生成规则后运行
+`npm run generate:mock` 更新，检查当前文件能否逐字节重建则运行
+`npm run check:mock`。
+
 Web Runtime 的最小生命周期：
 
 ```ts

@@ -24,6 +24,7 @@ const environment = { ...process.env, PYTHONPATH: pythonPath };
 const pythonFlow = join(repositoryDirectory, 'tests', 'cross-language', 'python_flow.py');
 const cli = join(repositoryDirectory, 'packages', 'cli', 'dist', 'cli.js');
 const fixture = join(repositoryDirectory, 'tests', 'fixtures', 'scenes', 'minimal-valid.json');
+const mockFixture = join(repositoryDirectory, 'examples', 'vanilla', 'mock-year.scene.json');
 
 async function runPython(arguments_) {
 	return execFileAsync(python, [pythonFlow, ...arguments_], { env: environment });
@@ -31,6 +32,30 @@ async function runPython(arguments_) {
 
 async function runCli(arguments_) {
 	return execFileAsync(process.execPath, [cli, ...arguments_]);
+}
+
+const mockPythonCanonical = join(temporaryDirectory, 'mock-python-canonical.json');
+await runPython(['canonical', mockFixture, mockPythonCanonical]);
+const mockScene = parseChartScene(JSON.parse(await readFile(mockFixture, 'utf8')));
+const mockNodeCanonical = serializeCanonicalScene(mockScene);
+if (!Buffer.from(mockNodeCanonical).equals(await readFile(mockPythonCanonical))) {
+	throw new Error('TypeScript and Python canonical Mock Scene bytes differ.');
+}
+const mockNodeHash = await hashCanonicalScene(mockScene);
+const mockPythonHash = (await runPython(['hash', mockFixture])).stdout.trim();
+if (mockNodeHash !== mockPythonHash) {
+	throw new Error(
+		`TypeScript and Python Mock Scene hashes differ: ${mockNodeHash} != ${mockPythonHash}`,
+	);
+}
+
+const mockCliHtml = join(temporaryDirectory, 'mock-cli.html');
+const mockPythonHtml = join(temporaryDirectory, 'mock-python.html');
+const mockPythonPng = join(temporaryDirectory, 'mock-python.png');
+await runCli(['render', mockFixture, '--format', 'html', '--output', mockCliHtml]);
+await runPython(['render', mockFixture, mockPythonHtml, mockPythonPng]);
+if (!(await readFile(mockCliHtml)).equals(await readFile(mockPythonHtml))) {
+	throw new Error('CLI and Python standalone Mock Scene HTML bytes differ.');
 }
 
 const pythonCreated = join(temporaryDirectory, 'python-created.json');
@@ -137,5 +162,5 @@ for (const metadata of [
 }
 
 process.stdout.write(
-	`Cross-language round trip passed: ${nodeHash}; artifacts: ${temporaryDirectory}\n`,
+	`Cross-language round trip passed: mock=${mockNodeHash}; edited=${nodeHash}; artifacts: ${temporaryDirectory}\n`,
 );
