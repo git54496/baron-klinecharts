@@ -3,11 +3,31 @@
 	<head>
 		<meta charset="UTF-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<title>Baron KLineCharts Vanilla Example</title>
+		<meta
+			name="description"
+			content="使用固定种子静态行情验证 Baron KLineCharts Runtime 的自包含模板页。"
+		>
+		<title>Baron KLineCharts 自包含验证页</title>
 	</head>
 	<body>
-		<div id="toolbar" class="toolbar"></div>
-		<div id="chart" class="chart"></div>
-		<script type="module" src="/main.ts"></script>
+		<main class="example-shell">
+			<header class="example-header">
+				<div>
+					<p class="eyebrow">BARON KLINECHARTS · VANILLA</p>
+					<h1>确定性模拟行情</h1>
+					<p class="description">
+						页面只读取仓库内嵌的标准化静态场景，不请求任何真实行情服务。
+					</p>
+				</div>
+				<p class="status" data-example-status data-state="loading" aria-live="polite">
+					正在加载静态场景…
+				</p>
+			</header>
+			<section class="chart-panel" aria-label="K 线图验证区域">
+				<div id="toolbar" class="toolbar"></div>
+				<div id="chart" class="chart"></div>
+			</section>
+		</main>
+		<script type="module" src="./main.ts"></script>
 	</body>
 </html>

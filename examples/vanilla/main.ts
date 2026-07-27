@@ -2,20 +2,33 @@ import {
 	createKLineSceneRuntime,
 	createStandardToolbar,
 } from '@baron1996/klinecharts-runtime';
-import scene from '../../tests/fixtures/scenes/all-overlays.json';
+import scene from './mock-year.scene.json';
 
 import '../shared.css';
 
 const chart = document.querySelector<HTMLElement>('#chart');
 const toolbarRoot = document.querySelector<HTMLElement>('#toolbar');
-if (chart === null || toolbarRoot === null) {
+const status = document.querySelector<HTMLElement>('[data-example-status]');
+if (chart === null || toolbarRoot === null || status === null) {
 	throw new Error('Example mount elements are missing.');
 }
 
-const runtime = await createKLineSceneRuntime(chart, scene);
-const toolbar = createStandardToolbar(toolbarRoot, runtime);
+try {
+	const runtime = await createKLineSceneRuntime(chart, scene);
+	const toolbar = createStandardToolbar(toolbarRoot, runtime, {
+		downloadFileName: 'baron-mock-scene.json',
+	});
+	status.dataset.state = 'ready';
+	status.textContent = `已加载 ${scene.symbol.ticker} · ${scene.data.length} 根日 K`;
 
-window.addEventListener('beforeunload', () => {
-	toolbar.destroy();
-	runtime.destroy();
-}, { once: true });
+	window.addEventListener('beforeunload', () => {
+		toolbar.destroy();
+		runtime.destroy();
+	}, { once: true });
+} catch (error) {
+	status.dataset.state = 'error';
+	status.textContent = error instanceof Error
+		? `加载失败：${error.message}`
+		: '加载失败：未知错误';
+	throw error;
+}
