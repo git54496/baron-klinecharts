@@ -7,6 +7,17 @@ test('verification workflow targets the clean main branch', async () => {
 	assert.match(workflow, /^\s*pull_request:\s*$/mu);
 	assert.match(workflow, /^\s*-\s+main\s*$/mu);
 	assert.doesNotMatch(workflow, /^\s*-\s+master\s*$/mu);
+
+	const node24Job = workflow.slice(
+		workflow.indexOf('  node-24:'),
+		workflow.indexOf('  python:'),
+	);
+	const browserInstall = node24Job.indexOf(
+		'npx playwright install --with-deps chromium',
+	);
+	const unitTests = node24Job.indexOf('npm run test:unit');
+	assert.ok(browserInstall >= 0);
+	assert.ok(unitTests > browserInstall);
 });
 
 test('release workflow is a build-once protected registry publication', async () => {
