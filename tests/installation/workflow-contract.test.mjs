@@ -38,6 +38,13 @@ test('release workflow is a build-once protected registry publication', async ()
 	assert.match(workflow, /concurrency:/u);
 	assert.match(workflow, /cancel-in-progress:\s*false/u);
 
+	const buildJob = workflow.slice(
+		workflow.indexOf('  build:'),
+		workflow.indexOf('  publish-npm:'),
+	);
+	assert.match(buildJob, /runs-on:\s*macos-15/u);
+	assert.match(buildJob, /BARON_PNG_BASELINE:\s*github-macos-15/u);
+
 	const versionCheck = workflow.indexOf('release:check-version');
 	const fullVerification = workflow.indexOf('npm run verify');
 	assert.ok(versionCheck >= 0);
