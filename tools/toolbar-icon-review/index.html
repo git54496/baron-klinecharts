@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<meta
+			name="description"
+			content="Baron KLineCharts 标准工具栏图标映射评审页"
+		>
+		<title>Baron KLine Toolbar · Icon Mapping</title>
+		<link rel="icon" href="data:,">
+		<link rel="stylesheet" href="./styles.css">
+	</head>
+	<body>
+		<header class="app-header">
+			<a class="brand" href="#top" aria-label="返回页面顶部">
+				<span class="brand-mark" aria-hidden="true">
+					<span></span>
+					<span></span>
+					<span></span>
+				</span>
+				<span>BARON / KLINE</span>
+			</a>
+			<div class="review-state">
+				<span class="review-state-dot" aria-hidden="true"></span>
+				映射评审 · v0.1
+			</div>
+		</header>
+
+		<main id="top">
+			<section class="intro" aria-labelledby="page-title">
+				<div>
+					<p class="eyebrow">STANDARD TOOLBAR / ICON SYSTEM</p>
+					<h1 id="page-title">23 个工具，<br>一套图形语法。</h1>
+					<p class="intro-copy">
+						图标遵循 Tabler 的 24×24 网格与 2px 描边。端点、方向点和贯穿边界分别表示线段、射线与无限直线。
+					</p>
+				</div>
+				<dl class="system-facts" aria-label="图标系统摘要">
+					<div>
+						<dt>23</dt>
+						<dd>工具与操作</dd>
+					</div>
+					<div>
+						<dt>10</dt>
+						<dd>Tabler 原始图标</dd>
+					</div>
+					<div>
+						<dt>13</dt>
+						<dd>同规范专业扩展</dd>
+					</div>
+					<div>
+						<dt>24 / 2</dt>
+						<dd>网格 / 描边</dd>
+					</div>
+				</dl>
+			</section>
+
+			<section class="preview-section" aria-labelledby="preview-title">
+				<div class="section-heading">
+					<div>
+						<p class="section-index">01 / 图表外实际排列</p>
+						<h2 id="preview-title">工具栏与图表位置关系</h2>
+					</div>
+					<p>工具栏位于图表外部并紧贴图表上沿，不占用行情绘制空间；选择任意图标可同步查看工具含义。</p>
+				</div>
+
+				<div class="chart-frame">
+					<div class="window-bar" aria-hidden="true">
+						<div class="window-controls">
+							<span></span><span></span><span></span>
+						</div>
+						<span>PLACEMENT PROPOSAL · 1200 × 520</span>
+						<span>TOP DOCK</span>
+					</div>
+					<div class="toolbar-placement">
+						<div class="toolbar-shell">
+							<div
+								id="toolbar-preview"
+								class="toolbar-preview"
+								role="toolbar"
+								aria-label="标准工具栏图标排列预览"
+							></div>
+						</div>
+					</div>
+
+					<div class="chart-surface">
+						<div class="chart-status">
+							<div id="placement-selection" class="placement-selection" aria-live="polite"></div>
+						</div>
+
+						<div class="chart-visual" aria-hidden="true">
+							<div class="chart-meta">
+								<strong>BTCUSDT</strong>
+								<span>64,284.12</span>
+								<em>+1.84%</em>
+							</div>
+							<svg class="chart-drawing" viewBox="0 0 1200 360" preserveAspectRatio="none">
+							<defs>
+								<linearGradient id="area-fill" x1="0" y1="0" x2="0" y2="1">
+									<stop offset="0" stop-color="#4f7cff" stop-opacity=".14"/>
+									<stop offset="1" stop-color="#4f7cff" stop-opacity="0"/>
+								</linearGradient>
+							</defs>
+							<path
+								class="area"
+								d="M0 272 C90 266 128 241 198 249 S312 229 375 239 S480 189 555 207 S669 166 735 177 S850 109 925 128 S1032 88 1200 46 L1200 360 L0 360 Z"
+							/>
+							<path
+								class="price-path"
+								d="M0 272 C90 266 128 241 198 249 S312 229 375 239 S480 189 555 207 S669 166 735 177 S850 109 925 128 S1032 88 1200 46"
+							/>
+							<g class="candles">
+								<path d="M84 246v44M76 257h16v20H76z"/>
+								<path d="M132 229v48M124 239h16v24h-16z"/>
+								<path d="M180 233v37M172 240h16v17h-16z"/>
+								<path d="M228 211v51M220 224h16v25h-16z"/>
+								<path d="M276 218v43M268 228h16v19h-16z"/>
+								<path d="M324 196v49M316 208h16v24h-16z"/>
+								<path d="M372 203v37M364 211h16v18h-16z"/>
+								<path d="M420 179v50M412 191h16v25h-16z"/>
+								<path d="M468 165v43M460 176h16v20h-16z"/>
+								<path d="M516 174v46M508 185h16v22h-16z"/>
+								<path d="M564 144v53M556 157h16v26h-16z"/>
+								<path d="M612 153v42M604 163h16v20h-16z"/>
+								<path d="M660 128v48M652 140h16v23h-16z"/>
+								<path d="M708 136v38M700 146h16v18h-16z"/>
+								<path d="M756 107v50M748 119h16v24h-16z"/>
+								<path d="M804 95v43M796 106h16v20h-16z"/>
+								<path d="M852 102v45M844 113h16v22h-16z"/>
+								<path d="M900 77v49M892 89h16v23h-16z"/>
+								<path d="M948 84v38M940 94h16v18h-16z"/>
+								<path d="M996 60v47M988 72h16v22h-16z"/>
+								<path d="M1044 52v41M1036 62h16v19h-16z"/>
+								<path d="M1092 34v46M1084 45h16v22h-16z"/>
+							</g>
+							</svg>
+							<div class="price-marker">64,284.12</div>
+							<div class="chart-price-scale">
+								<span>65,000</span>
+								<span>64,500</span>
+								<span>64,000</span>
+								<span>63,500</span>
+								<span>63,000</span>
+							</div>
+							<div class="chart-time-scale">
+								<span>09:30</span>
+								<span>11:00</span>
+								<span>13:30</span>
+								<span>15:00</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="placement-specs" aria-label="工具栏位置规范">
+						<div>
+							<strong>0 px</strong>
+							<span>工具栏与图表上沿间距</span>
+						</div>
+						<div>
+							<strong>34 / 19</strong>
+							<span>按钮尺寸 / 图标视觉尺寸</span>
+						</div>
+						<div>
+							<strong>8 + 1</strong>
+							<span>分组间距 + 分隔线</span>
+						</div>
+						<div class="placement-order">
+							<strong>ORDER</strong>
+							<span>水平 → 垂直 → 趋势 → 价格分析 → 标注 → 形状文本 → 操作</span>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section class="mapping-section" aria-labelledby="mapping-title">
+				<div class="section-heading">
+					<div>
+						<p class="section-index">02 / 完整映射</p>
+						<h2 id="mapping-title">工具与图标对应关系</h2>
+					</div>
+					<div class="source-legend" aria-label="图标来源图例">
+						<span><i class="source-dot source-dot--tabler"></i>Tabler 原始</span>
+						<span><i class="source-dot source-dot--adapted"></i>同规范专业扩展</span>
+					</div>
+				</div>
+
+				<div class="filter-bar">
+					<label class="search-field">
+						<span class="visually-hidden">搜索工具名称或底层类型</span>
+						<svg aria-hidden="true" viewBox="0 0 24 24">
+							<circle cx="11" cy="11" r="7"></circle>
+							<path d="m20 20-4-4"></path>
+						</svg>
+						<input
+							id="tool-search"
+							type="search"
+							placeholder="搜索名称或 overlay type"
+							autocomplete="off"
+						>
+					</label>
+					<div id="group-filters" class="group-filters" aria-label="工具分类筛选"></div>
+					<span id="result-count" class="result-count" aria-live="polite"></span>
+				</div>
+
+				<div class="mapping-workspace">
+					<div>
+						<div class="mapping-columns" aria-hidden="true">
+							<span>图标</span>
+							<span>工具</span>
+							<span>底层类型</span>
+							<span>图形含义</span>
+							<span>来源</span>
+						</div>
+						<div id="mapping-list" class="mapping-list"></div>
+						<div id="empty-state" class="empty-state" hidden>
+							没有匹配的工具。请尝试其他关键词。
+						</div>
+					</div>
+
+					<aside id="tool-inspector" class="tool-inspector" aria-live="polite">
+						<p class="inspector-kicker">SELECTED TOOL</p>
+						<div id="inspector-icon" class="inspector-icon" aria-hidden="true"></div>
+						<p id="inspector-group" class="inspector-group"></p>
+						<h3 id="inspector-name"></h3>
+						<code id="inspector-type"></code>
+						<p id="inspector-description" class="inspector-description"></p>
+						<dl>
+							<div>
+								<dt>图形语义</dt>
+								<dd id="inspector-grammar"></dd>
+							</div>
+							<div>
+								<dt>图标来源</dt>
+								<dd id="inspector-source"></dd>
+							</div>
+						</dl>
+					</aside>
+				</div>
+			</section>
+
+			<section class="grammar-section" aria-labelledby="grammar-title">
+				<div class="section-heading">
+					<div>
+						<p class="section-index">03 / 识别规则</p>
+						<h2 id="grammar-title">不用文字，也能区分三种线</h2>
+					</div>
+				</div>
+				<div class="grammar-demo">
+					<div>
+						<span class="grammar-number">A</span>
+						<div id="grammar-segment" class="grammar-icon"></div>
+						<h3>线段</h3>
+						<p>两个实心端点，线只存在于端点之间。</p>
+					</div>
+					<div>
+						<span class="grammar-number">B</span>
+						<div id="grammar-ray" class="grammar-icon"></div>
+						<h3>射线</h3>
+						<p>一个起点、一个方向点，线向边界继续延伸。</p>
+					</div>
+					<div>
+						<span class="grammar-number">C</span>
+						<div id="grammar-straight" class="grammar-icon"></div>
+						<h3>无限直线</h3>
+						<p>两个方向点，线在两侧都贯穿图标边界。</p>
+					</div>
+				</div>
+			</section>
+		</main>
+
+		<footer>
+			<p>Baron KLineCharts · Toolbar icon mapping review</p>
+			<p>Tabler Icons 3.45.0 · MIT License · 24×24 / 2px</p>
+		</footer>
+
+		<div id="toolbar-tooltip" class="toolbar-tooltip" role="tooltip" hidden>
+			<strong id="toolbar-tooltip-name"></strong>
+			<code id="toolbar-tooltip-type"></code>
+		</div>
+
+		<script type="module" src="./main.js"></script>
+	</body>
+</html>

@@ -91,41 +91,6 @@ h1 {
 
 .toolbar {
 	width: 100%;
-	padding: 12px;
-	border-bottom: 1px solid #e4e8ef;
-	overflow-x: auto;
-	white-space: nowrap;
-}
-
-.baron-kline-toolbar {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	width: max-content;
-}
-
-.baron-kline-toolbar input,
-.baron-kline-toolbar button {
-	height: 34px;
-	border: 1px solid #cad2e0;
-	border-radius: 8px;
-	background: #ffffff;
-	color: #253047;
-}
-
-.baron-kline-toolbar input {
-	width: 180px;
-	padding: 0 10px;
-}
-
-.baron-kline-toolbar button {
-	padding: 0 11px;
-	cursor: pointer;
-}
-
-.baron-kline-toolbar button:hover {
-	border-color: #687997;
-	background: #f5f7fa;
 }
 
 .chart {

@@ -41,6 +41,7 @@ test('100 Runtime and toolbar lifecycles leave no DOM, listener, editor, or obje
 			chartChildren: document.querySelector('#chart')!.childElementCount,
 			toolbarChildren: document.querySelector('#toolbar')!.childElementCount,
 			editors: document.querySelectorAll('[data-action="overlay-text"]').length,
+			tooltips: document.querySelectorAll('.baron-kline-toolbar-tooltip').length,
 			objectUrls: createdUrls.size,
 			eventCount,
 		};
@@ -50,6 +51,7 @@ test('100 Runtime and toolbar lifecycles leave no DOM, listener, editor, or obje
 		chartChildren: 0,
 		toolbarChildren: 0,
 		editors: 0,
+		tooltips: 0,
 		objectUrls: 0,
 		eventCount: 100,
 	});

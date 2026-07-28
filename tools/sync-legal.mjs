@@ -47,6 +47,12 @@ const legalFiles = new Map([
 		'fflate-LICENSE',
 		await readFile(join(repositoryDirectory, 'node_modules', 'fflate', 'LICENSE')),
 	],
+	[
+		'Tabler-Icons-LICENSE',
+		await readFile(
+			join(repositoryDirectory, 'licenses', 'Tabler-Icons-LICENSE'),
+		),
+	],
 ]);
 
 async function writeIfChanged(path, content) {

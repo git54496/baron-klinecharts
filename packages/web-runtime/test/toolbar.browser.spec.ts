@@ -16,10 +16,10 @@ test('@browser toolbar uses registered tools and DOM APIs with explicit teardown
 			document.querySelector<HTMLElement>('#chart')!,
 			scene,
 		);
-		const calls: string[] = [];
+		const calls: Array<{ type: string; text: string | undefined }> = [];
 		const originalStart = runtime.startOverlayDrawing.bind(runtime);
-		runtime.startOverlayDrawing = ((type: string) => {
-			calls.push(type);
+		runtime.startOverlayDrawing = ((type: string, options?: { text?: string }) => {
+			calls.push({ type, text: options?.text });
 			return `test-${type}`;
 		}) as typeof runtime.startOverlayDrawing;
 		const toolbar = createStandardToolbar(
@@ -28,6 +28,9 @@ test('@browser toolbar uses registered tools and DOM APIs with explicit teardown
 		);
 		const buttons = [...toolbar.element.querySelectorAll<HTMLButtonElement>('[data-overlay-type]')];
 		buttons[0]!.click();
+		const textInput = toolbar.element.querySelector<HTMLInputElement>('[data-action="overlay-text"]')!;
+		textInput.value = '压力位';
+		toolbar.element.querySelector<HTMLButtonElement>('[data-overlay-type="simpleAnnotation"]')!.click();
 		const types = buttons.map((button) => button.dataset.overlayType);
 		void originalStart;
 		runtime.destroy();
@@ -40,8 +43,154 @@ test('@browser toolbar uses registered tools and DOM APIs with explicit teardown
 	}, minimalScene);
 
 	expect(result.types).toEqual(result.expected);
-	expect(result.calls).toEqual([result.expected[0]]);
+	expect(result.calls).toEqual([
+		{ type: result.expected[0], text: undefined },
+		{ type: 'simpleAnnotation', text: '压力位' },
+	]);
 	expect(result.remaining).toBe(0);
+});
+
+test('@browser toolbar renders the approved icon groups in normal flow', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const result = await page.evaluate(async (scene) => {
+		const {
+			createKLineSceneRuntime,
+			createStandardToolbar,
+		} = await import('/src/index.ts');
+		const chartRoot = document.querySelector<HTMLElement>('#chart')!;
+		const runtime = await createKLineSceneRuntime(chartRoot, scene);
+		const toolbar = createStandardToolbar(
+			document.querySelector<HTMLElement>('#toolbar')!,
+			runtime,
+		);
+		const overlayButtons = [
+			...toolbar.element.querySelectorAll<HTMLButtonElement>('[data-overlay-type]'),
+		];
+		const actionButtons = [
+			...toolbar.element.querySelectorAll<HTMLButtonElement>('[data-action="delete"], [data-action="export"]'),
+		];
+		overlayButtons[7]!.click();
+		const toolbarRect = toolbar.element.getBoundingClientRect();
+		const chartRect = chartRoot.getBoundingClientRect();
+		const firstIcon = overlayButtons[0]!.querySelector('svg');
+		const viewport = toolbar.element.querySelector<HTMLElement>('.baron-kline-toolbar__viewport');
+		const data = {
+			labels: overlayButtons.map((button) => button.getAttribute('aria-label')),
+			actions: actionButtons.map((button) => button.getAttribute('aria-label')),
+			groups: [
+				...toolbar.element.querySelectorAll<HTMLElement>('[data-toolbar-group]'),
+			].map((group) => group.getAttribute('aria-label')),
+			buttonText: [...overlayButtons, ...actionButtons].map((button) => button.textContent),
+			viewBox: firstIcon?.getAttribute('viewBox'),
+			strokeWidth: firstIcon?.getAttribute('stroke-width'),
+			buttonSize: {
+				width: getComputedStyle(overlayButtons[0]!).width,
+				height: getComputedStyle(overlayButtons[0]!).height,
+			},
+			iconSize: firstIcon === null
+				? undefined
+				: {
+						width: getComputedStyle(firstIcon).width,
+						height: getComputedStyle(firstIcon).height,
+					},
+			pressed: overlayButtons.map((button) => button.getAttribute('aria-pressed')),
+			hasTextInput: toolbar.element.querySelector('[data-action="overlay-text"]') !== null,
+			chartGap: Math.round(chartRect.top - toolbarRect.bottom),
+			hasViewport: viewport !== null,
+		};
+		toolbar.destroy();
+		runtime.destroy();
+		return data;
+	}, minimalScene);
+
+	expect(result.labels).toEqual([
+		'水平射线',
+		'水平线段',
+		'水平直线',
+		'垂直射线',
+		'垂直线段',
+		'垂直直线',
+		'射线',
+		'线段',
+		'直线',
+		'价格线',
+		'价格通道',
+		'平行直线',
+		'斐波那契线',
+		'画笔',
+		'简易标注',
+		'简易标签',
+		'矩形',
+		'箭头',
+		'十字线',
+		'注释框',
+		'文本',
+	]);
+	expect(result.actions).toEqual(['删除选中标注', '导出场景']);
+	expect(result.groups).toEqual([
+		'水平线',
+		'垂直线',
+		'趋势线',
+		'价格与分析',
+		'标注',
+		'形状与文本',
+		'操作',
+	]);
+	expect(result.buttonText).toEqual(Array.from({ length: 23 }, () => ''));
+	expect(result.viewBox).toBe('0 0 24 24');
+	expect(result.strokeWidth).toBe('2');
+	expect(result.buttonSize).toEqual({ width: '34px', height: '34px' });
+	expect(result.iconSize).toEqual({ width: '19px', height: '19px' });
+	expect(result.pressed[7]).toBe('true');
+	expect(result.pressed.filter((value) => value === 'true')).toHaveLength(1);
+	expect(result.hasTextInput).toBe(true);
+	expect(result.chartGap).toBe(0);
+	expect(result.hasViewport).toBe(true);
+});
+
+test('@browser toolbar Tooltip supports hover, focus, viewport clamping, and narrow scrolling', async ({ page }) => {
+	await page.setViewportSize({ width: 420, height: 760 });
+	await page.goto('/test/fixture.html');
+	await page.evaluate(async (scene) => {
+		const {
+			createKLineSceneRuntime,
+			createStandardToolbar,
+		} = await import('/src/index.ts');
+		const chartRoot = document.querySelector<HTMLElement>('#chart')!;
+		const toolbarRoot = document.querySelector<HTMLElement>('#toolbar')!;
+		chartRoot.style.width = '360px';
+		toolbarRoot.style.width = '360px';
+		const runtime = await createKLineSceneRuntime(chartRoot, scene);
+		createStandardToolbar(toolbarRoot, runtime);
+	}, minimalScene);
+
+	const horizontalRay = page.locator('[data-overlay-type="horizontalRayLine"]');
+	await horizontalRay.hover();
+	const tooltip = page.locator('.baron-kline-toolbar-tooltip');
+	await expect(tooltip).toBeVisible();
+	await expect(tooltip.locator('strong')).toHaveText('水平射线');
+	await expect(tooltip.locator('code')).toHaveText('horizontalRayLine');
+
+	const hoverGeometry = await page.evaluate(() => {
+		const tip = document.querySelector<HTMLElement>('.baron-kline-toolbar-tooltip')!.getBoundingClientRect();
+		const viewport = document.querySelector<HTMLElement>('.baron-kline-toolbar__viewport')!.getBoundingClientRect();
+		return {
+			leftInside: tip.left >= viewport.left,
+			rightInside: tip.right <= viewport.right,
+			pageWidth: document.documentElement.scrollWidth,
+			clientWidth: document.documentElement.clientWidth,
+			toolbarScrollWidth: document.querySelector<HTMLElement>('.baron-kline-toolbar__viewport')!.scrollWidth,
+			toolbarClientWidth: document.querySelector<HTMLElement>('.baron-kline-toolbar__viewport')!.clientWidth,
+		};
+	});
+	expect(hoverGeometry.leftInside).toBe(true);
+	expect(hoverGeometry.rightInside).toBe(true);
+	expect(hoverGeometry.pageWidth).toBe(hoverGeometry.clientWidth);
+	expect(hoverGeometry.toolbarScrollWidth).toBeGreaterThan(hoverGeometry.toolbarClientWidth);
+
+	await page.locator('[data-overlay-type="verticalSegment"]').focus();
+	await expect(tooltip.locator('strong')).toHaveText('垂直线段');
+	await expect(tooltip.locator('code')).toHaveText('verticalSegment');
 });
 
 test('@browser toolbar deletes only an unlocked selected Overlay and revokes export URLs', async ({ page }) => {
