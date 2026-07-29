@@ -84,8 +84,6 @@ jobs:
           name: release-artifacts
           path: release-artifacts
       - name: Publish the verified npm tarballs in dependency order
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         shell: bash
         run: |
           node --input-type=module -e '
@@ -135,6 +133,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "${{ github.event.release.tag_name }}" \
+            --repo "${{ github.repository }}" \
             release-artifacts/npm/*.tgz \
             release-artifacts/npm/npm-artifacts.json \
             release-artifacts/python/* \

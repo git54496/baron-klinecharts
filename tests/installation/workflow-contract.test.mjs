@@ -56,8 +56,8 @@ test('release workflow is a build-once protected registry publication', async ()
 
 	assert.equal((workflow.match(/environment:\s*release/gu) ?? []).length, 2);
 	assert.equal((workflow.match(/id-token:\s*write/gu) ?? []).length, 2);
-	assert.match(workflow, /secrets\.NPM_TOKEN/u);
-	assert.equal((workflow.match(/secrets\.NPM_TOKEN/gu) ?? []).length, 1);
+	assert.doesNotMatch(workflow, /NODE_AUTH_TOKEN/u);
+	assert.doesNotMatch(workflow, /secrets\.NPM_TOKEN/u);
 	assert.match(workflow, /npm publish/u);
 	assert.match(workflow, /--access public/u);
 	assert.match(workflow, /--provenance/u);
@@ -66,5 +66,6 @@ test('release workflow is a build-once protected registry publication', async ()
 	assert.doesNotMatch(workflow, /PYPI_TOKEN/u);
 	assert.doesNotMatch(workflow, /^\s*(username|password):/gmu);
 	assert.match(workflow, /gh release upload/u);
+	assert.match(workflow, /--repo\s+"\$\{\{\s*github\.repository\s*\}\}"/u);
 	assert.match(workflow, /contents:\s*write/u);
 });
