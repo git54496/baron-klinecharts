@@ -272,7 +272,19 @@ def _validate_overlay_shape(
     issues: list[SceneIssue],
 ) -> None:
     overlay_type = overlay["type"]
-    if overlay_type in {"horizontalStraightLine", "priceLine"}:
+    if overlay_type == "horizontalStraightLine":
+        _require_overlay_keys(overlay, path, ["anchor"], issues)
+        if "anchor" not in overlay or "value" not in overlay["anchor"]:
+            issues.append(_issue(
+                "SCENE_SCHEMA_INVALID", f"{path}/anchor",
+                "A value anchor is required.",
+            ))
+        elif set(overlay["anchor"]) != {"value"}:
+            issues.append(_issue(
+                "SCENE_SCHEMA_INVALID", f"{path}/anchor",
+                "horizontalStraightLine anchor must contain only value.",
+            ))
+    elif overlay_type == "priceLine":
         _require_overlay_keys(overlay, path, ["anchor"], issues)
         if "anchor" not in overlay or "value" not in overlay["anchor"]:
             issues.append(_issue(

@@ -24,6 +24,13 @@ const environment = { ...process.env, PYTHONPATH: pythonPath };
 const pythonFlow = join(repositoryDirectory, 'tests', 'cross-language', 'python_flow.py');
 const cli = join(repositoryDirectory, 'packages', 'cli', 'dist', 'cli.js');
 const fixture = join(repositoryDirectory, 'tests', 'fixtures', 'scenes', 'minimal-valid.json');
+const m1Fixture = join(
+	repositoryDirectory,
+	'tests',
+	'fixtures',
+	'scenes',
+	'm1-candle-horizontal-line.json',
+);
 const mockFixture = join(repositoryDirectory, 'examples', 'vanilla', 'mock-year.scene.json');
 
 async function runPython(arguments_) {
@@ -46,6 +53,21 @@ const mockPythonHash = (await runPython(['hash', mockFixture])).stdout.trim();
 if (mockNodeHash !== mockPythonHash) {
 	throw new Error(
 		`TypeScript and Python Mock Scene hashes differ: ${mockNodeHash} != ${mockPythonHash}`,
+	);
+}
+
+const m1PythonCanonical = join(temporaryDirectory, 'm1-python-canonical.json');
+await runPython(['canonical', m1Fixture, m1PythonCanonical]);
+const m1Scene = parseChartScene(JSON.parse(await readFile(m1Fixture, 'utf8')));
+const m1NodeCanonical = serializeCanonicalScene(m1Scene);
+if (!Buffer.from(m1NodeCanonical).equals(await readFile(m1PythonCanonical))) {
+	throw new Error('TypeScript and Python canonical M1 Scene bytes differ.');
+}
+const m1NodeHash = await hashCanonicalScene(m1Scene);
+const m1PythonHash = (await runPython(['hash', m1Fixture])).stdout.trim();
+if (m1NodeHash !== m1PythonHash) {
+	throw new Error(
+		`TypeScript and Python M1 Scene hashes differ: ${m1NodeHash} != ${m1PythonHash}`,
 	);
 }
 
@@ -162,5 +184,5 @@ for (const metadata of [
 }
 
 process.stdout.write(
-	`Cross-language round trip passed: mock=${mockNodeHash}; edited=${nodeHash}; artifacts: ${temporaryDirectory}\n`,
+	`Cross-language round trip passed: mock=${mockNodeHash}; m1=${m1NodeHash}; edited=${nodeHash}; artifacts: ${temporaryDirectory}\n`,
 );

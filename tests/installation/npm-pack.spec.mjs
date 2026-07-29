@@ -22,6 +22,15 @@ test('public npm tarballs contain runtime artifacts, declarations, schemas, and 
 			[...paths].some((path) => path.startsWith('dist/') && path.endsWith('.d.ts')),
 			`${packed.directory} is missing declarations`,
 		);
+		assert.ok(
+			![...paths].some((path) =>
+				path.startsWith('src/') ||
+				path.startsWith('test/') ||
+				path.startsWith('tests/')
+			),
+			`${packed.directory} exposes source or test files`,
+		);
+		assert.ok(!paths.has('package-lock.json'));
 		if (packed.directory.endsWith('scene-schema')) {
 			assert.ok(paths.has('schema/chart-scene.schema.json'));
 		}

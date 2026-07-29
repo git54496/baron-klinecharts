@@ -1,0 +1,336 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { createServer } from 'node:http';
+import {
+	access,
+	copyFile,
+	lstat,
+	mkdir,
+	mkdtemp,
+	readFile,
+	writeFile,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, extname, join, resolve } from 'node:path';
+import { test } from 'node:test';
+
+import { chromium } from '@playwright/test';
+
+import { packPublicPackages, runNpm } from './helpers/pack.mjs';
+
+const publicPackages = [
+	'@baron1996/kline-scene-schema',
+	'@baron1996/klinecharts-adapter',
+	'@baron1996/klinecharts-runtime',
+	'@baron1996/klinecharts-cli',
+];
+
+async function loadConsumerPackages() {
+	const artifactDirectory = process.env.BARON_NPM_RELEASE_CANDIDATE_DIR;
+	if (artifactDirectory === undefined) {
+		return packPublicPackages();
+	}
+
+	const absoluteArtifactDirectory = resolve(artifactDirectory);
+	const artifactManifest = JSON.parse(
+		await readFile(
+			join(absoluteArtifactDirectory, 'npm-artifacts.json'),
+			'utf8',
+		),
+	);
+	assert.deepEqual(
+		artifactManifest.packages.map((entry) => entry.name),
+		publicPackages,
+	);
+	const packages = artifactManifest.packages.map((entry) => {
+		assert.equal(entry.version, '0.1.0');
+		assert.equal(basename(entry.filename), entry.filename);
+		return {
+			...entry,
+			tarball: join(absoluteArtifactDirectory, entry.filename),
+		};
+	});
+	for (const packed of packages) {
+		await access(packed.tarball);
+	}
+
+	return {
+		directory: await mkdtemp(join(tmpdir(), 'baron-m1-release-consumer-')),
+		packages,
+	};
+}
+
+async function pathExists(path) {
+	try {
+		await access(path);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function contentType(path) {
+	switch (extname(path)) {
+		case '.css':
+			return 'text/css; charset=utf-8';
+		case '.html':
+			return 'text/html; charset=utf-8';
+		case '.js':
+			return 'text/javascript; charset=utf-8';
+		default:
+			return 'application/octet-stream';
+	}
+}
+
+async function serveDirectory(directory) {
+	const server = createServer(async (request, response) => {
+		const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+		const pathname = url.pathname === '/' ? '/index.html' : url.pathname;
+		if (pathname.includes('..')) {
+			response.writeHead(400);
+			response.end();
+			return;
+		}
+		try {
+			const bytes = await readFile(join(directory, pathname));
+			response.writeHead(200, { 'content-type': contentType(pathname) });
+			response.end(bytes);
+		} catch {
+			response.writeHead(404);
+			response.end();
+		}
+	});
+	await new Promise((resolveListen, rejectListen) => {
+		server.once('error', rejectListen);
+		server.listen(0, '127.0.0.1', resolveListen);
+	});
+	const address = server.address();
+	assert.ok(address !== null && typeof address === 'object');
+	return {
+		close: () => new Promise((resolveClose, rejectClose) => {
+			server.close((error) => {
+				if (error === undefined) {
+					resolveClose();
+				} else {
+					rejectClose(error);
+				}
+			});
+		}),
+		url: `http://127.0.0.1:${address.port}`,
+	};
+}
+
+test('runtime README documents the minimum M1 create, draw, export, and recreate journey', async () => {
+	const readme = await readFile(
+		resolve('packages', 'web-runtime', 'README.md'),
+		'utf8',
+	);
+	for (const publicApi of [
+		'parseChartScene',
+		'createKLineSceneRuntime',
+		"startOverlayDrawing('horizontalStraightLine'",
+		'exportScene()',
+		'JSON.stringify',
+	]) {
+		assert.match(readme, new RegExp(publicApi.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+	}
+	assert.doesNotMatch(readme, /fetch\s*\(/);
+	assert.doesNotMatch(readme, /(?:确认|价位|结构|信号|规则)/);
+	assert.doesNotMatch(
+		readme,
+		/(?:packages\/.+\/src|file:|workspace:|git\+|[/\\](?:Users|var|tmp)[/\\])/,
+	);
+});
+
+test('four public tarballs support the M1 Runtime journey through package exports', async () => {
+	const { directory, packages } = await loadConsumerPackages();
+	assert.equal(packages.length, publicPackages.length);
+
+	const installPrefix = join(directory, 'consumer-prefix');
+	const consumer = join(installPrefix, 'lib');
+	await mkdir(consumer, { recursive: true });
+	const manifest = '{"private":true,"type":"module"}\n';
+	await writeFile(join(consumer, 'package.json'), manifest);
+	runNpm(
+		[
+			'install',
+			'--global',
+			'--prefix',
+			installPrefix,
+			'--ignore-scripts',
+			...packages.map((packed) => packed.tarball),
+		],
+		{ cwd: consumer, stdio: 'inherit' },
+	);
+
+	assert.equal(await readFile(join(consumer, 'package.json'), 'utf8'), manifest);
+	for (const lockfile of [
+		join(installPrefix, 'package-lock.json'),
+		join(consumer, 'package-lock.json'),
+		join(consumer, 'node_modules', '.package-lock.json'),
+	]) {
+		assert.equal(await pathExists(lockfile), false);
+	}
+	for (const packageName of publicPackages) {
+		const installedDirectory = join(consumer, 'node_modules', packageName);
+		assert.equal((await lstat(installedDirectory)).isSymbolicLink(), false);
+		const installedManifest = JSON.parse(
+			await readFile(
+				join(installedDirectory, 'package.json'),
+				'utf8',
+			),
+		);
+		assert.equal(installedManifest.version, '0.1.0');
+		for (const dependencySpec of Object.values(installedManifest.dependencies ?? {})) {
+			assert.doesNotMatch(
+				dependencySpec,
+				/(?:file:|workspace:|git\+|[/\\](?:Users|var|tmp)[/\\])/,
+			);
+		}
+	}
+
+	const publicDirectory = join(consumer, 'public');
+	await mkdir(publicDirectory);
+	const fixture = join(publicDirectory, 'm1-scene.json');
+	await copyFile(
+		resolve('tests', 'fixtures', 'scenes', 'm1-candle-horizontal-line.json'),
+		fixture,
+	);
+	const cli = join(installPrefix, 'bin', 'baron-kline');
+	execFileSync(cli, ['validate', fixture], { cwd: consumer, stdio: 'inherit' });
+
+	const boundaryProbe = join(consumer, 'boundary-probe.mjs');
+	await writeFile(
+		boundaryProbe,
+		[
+			"const schema = await import('@baron1996/kline-scene-schema');",
+			"const adapter = await import('@baron1996/klinecharts-adapter');",
+			"const runtime = await import('@baron1996/klinecharts-runtime');",
+			"if (schema.SCENE_PACKAGE_VERSION !== '0.1.0') throw new Error('Schema root export failed.');",
+			"if (adapter.ADAPTER_PACKAGE_VERSION !== '0.1.0') throw new Error('Adapter root export failed.');",
+			"if (runtime.WEB_RUNTIME_PACKAGE_VERSION !== '0.1.0') throw new Error('Runtime root export failed.');",
+			'const adapterMethods = Object.getOwnPropertyNames(adapter.KLineChartsSceneAdapter.prototype);',
+			"if (adapterMethods.includes('getChart') || adapterMethods.includes('getEngine')) throw new Error('Adapter exposes its internal Chart.');",
+			'for (const specifier of [',
+			"  '@baron1996/klinecharts-adapter/src/adapter.js',",
+			"  '@baron1996/klinecharts-runtime/src/runtime.js',",
+			"  '@baron1996/klinecharts-render-runtime',",
+			']) {',
+			'  try {',
+			'    await import(specifier);',
+			"    throw new Error(`Private import unexpectedly resolved: ${specifier}`);",
+			'  } catch (error) {',
+			"    if (!['ERR_PACKAGE_PATH_NOT_EXPORTED', 'ERR_MODULE_NOT_FOUND'].includes(error.code)) throw error;",
+			'  }',
+			'}',
+		].join('\n'),
+	);
+	execFileSync(process.execPath, [boundaryProbe], {
+		cwd: consumer,
+		stdio: 'inherit',
+	});
+
+	const sourceDirectory = join(consumer, 'src');
+	await mkdir(sourceDirectory);
+	const consumerSource = [
+		"import { parseChartScene } from '@baron1996/kline-scene-schema';",
+		"import { ADAPTER_PACKAGE_VERSION } from '@baron1996/klinecharts-adapter';",
+		"import { createKLineSceneRuntime } from '@baron1996/klinecharts-runtime';",
+		'',
+		"const scene = parseChartScene(await (await fetch('/m1-scene.json')).json());",
+		'const sourceOverlay = scene.overlays[0];',
+		'const events = [];',
+		'const container = document.querySelector("#chart");',
+		'const runtime = await createKLineSceneRuntime(container, scene, {',
+		'  onEvent: (event) => events.push(event),',
+		'});',
+		"const startedId = runtime.startOverlayDrawing('horizontalStraightLine', {",
+		"  id: 'overlay-m1-consumer-horizontal',",
+		'  paneId: sourceOverlay.paneId,',
+		'  styles: sourceOverlay.styles,',
+		'  metadata: sourceOverlay.metadata,',
+		'});',
+		'window.__M1_CONSUMER__ = { adapterVersion: ADAPTER_PACKAGE_VERSION, events, startedId };',
+		'window.__COMPLETE_M1_ROUND_TRIP__ = async () => {',
+		'  const firstScene = runtime.exportScene();',
+		'  const firstOverlay = runtime.getOverlay(startedId);',
+		'  const serialized = JSON.stringify(firstScene);',
+		'  runtime.destroy();',
+		'  const childrenAfterDestroy = container.childElementCount;',
+		'  const recreated = await createKLineSceneRuntime(container, JSON.parse(serialized));',
+		'  const secondScene = recreated.exportScene();',
+		'  const secondOverlay = recreated.getOverlay(startedId);',
+		'  const result = {',
+		'    childrenAfterDestroy,',
+		'    firstOverlay,',
+		'    firstOverlayIds: firstScene.overlays.map((overlay) => overlay.id),',
+		'    methodNames: Object.getOwnPropertyNames(Object.getPrototypeOf(recreated)),',
+		'    secondOverlay,',
+		'    secondOverlayIds: secondScene.overlays.map((overlay) => overlay.id),',
+		'  };',
+		'  window.__M1_RESULT__ = result;',
+		'  return result;',
+		'};',
+	].join('\n');
+	assert.doesNotMatch(
+		consumerSource,
+		/(?:packages\/.+\/src|klinecharts-render-runtime|file:|workspace:|git\+)/,
+	);
+	await writeFile(join(sourceDirectory, 'main.js'), consumerSource);
+	await writeFile(
+		join(consumer, 'index.html'),
+		[
+			'<!doctype html>',
+			'<meta charset="utf-8">',
+			'<style>html,body,#chart{width:100%;height:100%;margin:0}#chart{min-height:600px}</style>',
+			'<div id="chart"></div>',
+			'<script type="module" src="/src/main.js"></script>',
+		].join('\n'),
+	);
+
+	const outputDirectory = join(directory, 'browser-bundle');
+	execFileSync(
+		resolve('node_modules', '.bin', 'vite'),
+		['build', '.', '--outDir', outputDirectory, '--emptyOutDir'],
+		{ cwd: consumer, stdio: 'inherit' },
+	);
+
+	const server = await serveDirectory(outputDirectory);
+	const browser = await chromium.launch();
+	try {
+		const page = await browser.newPage({ viewport: { width: 1200, height: 720 } });
+		await page.goto(server.url);
+		await page.waitForFunction(() => window.__M1_CONSUMER__?.startedId !== undefined);
+		const readiness = await page.evaluate(() => window.__M1_CONSUMER__);
+		assert.equal(readiness.adapterVersion, '0.1.0');
+		assert.equal(readiness.startedId, 'overlay-m1-consumer-horizontal');
+
+		const drawingCanvas = page.locator('#chart canvas').nth(1);
+		await drawingCanvas.waitFor({ state: 'visible' });
+		await drawingCanvas.click({ position: { x: 500, y: 170 } });
+		await page.waitForFunction(() =>
+			window.__M1_CONSUMER__.events
+				.filter((event) => event.type === 'overlay-created').length === 1
+		);
+
+		const result = await page.evaluate(() => window.__COMPLETE_M1_ROUND_TRIP__());
+		assert.equal(result.childrenAfterDestroy, 0);
+		assert.deepEqual(
+			result.firstOverlayIds,
+			[
+				'overlay-m1-horizontal-reference',
+				'overlay-m1-consumer-horizontal',
+			],
+		);
+		assert.deepEqual(result.secondOverlayIds, result.firstOverlayIds);
+		assert.deepEqual(result.secondOverlay, result.firstOverlay);
+		assert.equal(result.firstOverlay.type, 'horizontalStraightLine');
+		assert.deepEqual(Object.keys(result.firstOverlay.anchor), ['value']);
+		assert.ok(Number.isFinite(result.firstOverlay.anchor.value));
+		assert.ok(!result.methodNames.includes('getChart'));
+		assert.ok(!result.methodNames.includes('getEngine'));
+	} finally {
+		await browser.close();
+		await server.close();
+	}
+});

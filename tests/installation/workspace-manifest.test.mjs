@@ -21,4 +21,12 @@ test('workspace manifest exposes only the KLineCharts scene packages', async () 
 		/npm run sync:python --workspace @baron1996\/klinecharts-render-runtime && npm run build --workspace @baron1996\/klinecharts-render-runtime/u,
 	);
 	assert.equal(manifest.scripts['pretest:cross-language'], 'npm run build --workspaces');
+	assert.equal(
+		manifest.scripts['test:browser:packages'],
+		'npm run test:browser --workspace @baron1996/klinecharts-adapter && npm run test:browser --workspace @baron1996/klinecharts-runtime && npm run test:browser --workspace @baron1996/klinecharts-render-runtime',
+	);
+	assert.match(
+		manifest.scripts.verify,
+		/npm run test:browser && npm run test:browser:packages && npm run test:rendering/u,
+	);
 });

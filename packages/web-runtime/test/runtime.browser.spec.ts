@@ -4,6 +4,7 @@ import { loadScene } from './load-scene.js';
 
 const minimalScene = loadScene('minimal-valid.json');
 const allOverlays = loadScene('all-overlays.json');
+const m1Scene = loadScene('m1-candle-horizontal-line.json');
 
 test('@browser Runtime owns overlay CRUD, clone boundaries, and pure-data events', async ({ page }) => {
 	await page.goto('/test/fixture.html');
@@ -129,4 +130,193 @@ test('@browser commits completed drawing geometry and emits overlay-created', as
 	expect(result.events).toEqual(
 		expect.arrayContaining([expect.objectContaining({ type: 'overlay-created' })]),
 	);
+});
+
+test('@browser completes the M1 horizontal line lifecycle with stable Scene data', async ({ page }) => {
+	const createdId = 'overlay-m1-runtime-horizontal';
+	const drawPosition = { x: 500, y: 170 };
+	await page.goto('/test/fixture.html');
+	const setup = await page.evaluate(async ({ scene, id }) => {
+		const { createKLineSceneRuntime } = await import('/src/index.ts');
+		const events: Array<{ type: string; id?: string }> = [];
+		const source = scene.overlays[0]!;
+		const runtime = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			scene,
+			{ onEvent: (event) => events.push(event) },
+		);
+		const startedId = runtime.startOverlayDrawing(
+			'horizontalStraightLine',
+			{
+				id,
+				paneId: source.paneId,
+				styles: source.styles,
+				metadata: source.metadata,
+			},
+		);
+		Object.assign(window, {
+			__baronM1Runtime: runtime,
+			__baronM1Events: events,
+		});
+		return {
+			initialIds: runtime.listOverlays().map((overlay) => overlay.id),
+			startedId,
+		};
+	}, { scene: m1Scene, id: createdId });
+
+	expect(setup.startedId).toBe(createdId);
+	expect(setup.initialIds).toEqual(['overlay-m1-horizontal-reference']);
+
+	const drawingCanvas = page.locator('#chart canvas').nth(1);
+	await expect(drawingCanvas).toBeVisible();
+	await drawingCanvas.click({ position: drawPosition });
+	await expect.poll(() => page.evaluate(() => {
+		const events = (
+			window as unknown as {
+				__baronM1Events: Array<{ type: string }>;
+			}
+		).__baronM1Events;
+		return events.filter((event) => event.type === 'overlay-created').length;
+	})).toBe(1);
+
+	const roundTrip = await page.evaluate(async (id) => {
+		type HorizontalOverlay = {
+			id: string;
+			type: string;
+			paneId: string;
+			anchor: { value: number };
+			styles: unknown;
+			metadata?: unknown;
+		};
+		const state = window as unknown as {
+			__baronM1Runtime: {
+				destroy(): void;
+				exportScene(): { overlays: HorizontalOverlay[] };
+				getOverlay(value: string): HorizontalOverlay | undefined;
+				getScene(): unknown;
+				listOverlays(): readonly HorizontalOverlay[];
+			};
+			__baronM1Events: Array<{ type: string; id?: string }>;
+		};
+		const firstOverlay = state.__baronM1Runtime.getOverlay(id)!;
+		const listedIds = state.__baronM1Runtime
+			.listOverlays()
+			.map((overlay) => overlay.id);
+		const firstExport = state.__baronM1Runtime.exportScene();
+		const serialized = JSON.stringify(firstExport);
+		const createdEventCount = state.__baronM1Events
+			.filter((event) => event.type === 'overlay-created').length;
+		const firstEventCountBeforeDestroy = state.__baronM1Events.length;
+		state.__baronM1Runtime.destroy();
+		let destroyedErrorCode = '';
+		try {
+			state.__baronM1Runtime.getScene();
+		} catch (error) {
+			destroyedErrorCode = (error as { code?: string }).code ?? '';
+		}
+		const firstEventCountAfterDestroy = state.__baronM1Events.length;
+		const firstChildrenAfterDestroy = document.querySelector('#chart')!.childElementCount;
+
+		const { createKLineSceneRuntime } = await import('/src/index.ts');
+		const recreatedEvents: Array<{ type: string; id?: string }> = [];
+		const recreated = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			JSON.parse(serialized),
+			{ onEvent: (event) => recreatedEvents.push(event) },
+		);
+		const secondExport = recreated.exportScene() as { overlays: HorizontalOverlay[] };
+		const secondOverlay = recreated.getOverlay(id) as HorizontalOverlay;
+		Object.assign(window, {
+			__baronM1RecreatedRuntime: recreated,
+			__baronM1RecreatedEvents: recreatedEvents,
+		});
+		return {
+			createdEventCount,
+			destroyedErrorCode,
+			firstChildrenAfterDestroy,
+			firstEventCountAfterDestroy,
+			firstEventCountBeforeDestroy,
+			firstOverlay,
+			listedIds,
+			recreatedChildren: document.querySelector('#chart')!.childElementCount,
+			secondOverlay,
+			secondOverlayIds: secondExport.overlays.map((overlay) => overlay.id),
+			serialized,
+		};
+	}, createdId);
+
+	expect(roundTrip.createdEventCount).toBe(1);
+	expect(roundTrip.listedIds).toEqual([
+		'overlay-m1-horizontal-reference',
+		createdId,
+	]);
+	expect(roundTrip.firstOverlay).toEqual(expect.objectContaining({
+		id: createdId,
+		type: 'horizontalStraightLine',
+		paneId: 'pane-candle',
+		styles: m1Scene.overlays[0]!.styles,
+		metadata: m1Scene.overlays[0]!.metadata,
+	}));
+	expect(Number.isFinite(roundTrip.firstOverlay.anchor.value)).toBe(true);
+	expect(Object.keys(roundTrip.firstOverlay.anchor)).toEqual(['value']);
+	expect(roundTrip.secondOverlay).toEqual(roundTrip.firstOverlay);
+	expect(roundTrip.secondOverlayIds).toEqual(roundTrip.listedIds);
+	expect(JSON.parse(roundTrip.serialized).overlays).toHaveLength(2);
+	expect(roundTrip.destroyedErrorCode).toBe('RUNTIME_INIT_FAILED');
+	expect(roundTrip.firstEventCountAfterDestroy)
+		.toBe(roundTrip.firstEventCountBeforeDestroy);
+	expect(roundTrip.firstChildrenAfterDestroy).toBe(0);
+	expect(roundTrip.recreatedChildren).toBeGreaterThan(0);
+
+	const recreatedCanvas = page.locator('#chart canvas').nth(1);
+	await expect(recreatedCanvas).toBeVisible();
+	await recreatedCanvas.click({ position: drawPosition });
+	await expect.poll(() => page.evaluate(() => (
+		window as unknown as {
+			__baronM1RecreatedRuntime: { getSelectedOverlayId(): string | undefined };
+		}
+	).__baronM1RecreatedRuntime.getSelectedOverlayId())).toBe(createdId);
+
+	const removal = await page.evaluate((id) => {
+		const state = window as unknown as {
+			__baronM1RecreatedRuntime: {
+				destroy(): void;
+				listOverlays(): Array<{ id: string }>;
+				removeOverlay(value: string): boolean;
+			};
+			__baronM1RecreatedEvents: Array<{ type: string; id?: string }>;
+		};
+		const removed = state.__baronM1RecreatedRuntime.removeOverlay(id);
+		const remainingIds = state.__baronM1RecreatedRuntime
+			.listOverlays()
+			.map((overlay) => overlay.id);
+		const removedEvents = state.__baronM1RecreatedEvents
+			.filter((event) => event.type === 'overlay-removed');
+		const eventCountBeforeDestroy = state.__baronM1RecreatedEvents.length;
+		state.__baronM1RecreatedRuntime.destroy();
+		let destroyedErrorCode = '';
+		try {
+			state.__baronM1RecreatedRuntime.removeOverlay(id);
+		} catch (error) {
+			destroyedErrorCode = (error as { code?: string }).code ?? '';
+		}
+		return {
+			childrenAfterDestroy: document.querySelector('#chart')!.childElementCount,
+			destroyedErrorCode,
+			eventCountAfterDestroy: state.__baronM1RecreatedEvents.length,
+			eventCountBeforeDestroy,
+			remainingIds,
+			removed,
+			removedEvents,
+		};
+	}, createdId);
+
+	expect(removal.removed).toBe(true);
+	expect(removal.remainingIds).toEqual(['overlay-m1-horizontal-reference']);
+	expect(removal.removedEvents).toEqual([
+		{ type: 'overlay-removed', id: createdId },
+	]);
+	expect(removal.destroyedErrorCode).toBe('RUNTIME_INIT_FAILED');
+	expect(removal.eventCountAfterDestroy).toBe(removal.eventCountBeforeDestroy);
+	expect(removal.childrenAfterDestroy).toBe(0);
 });

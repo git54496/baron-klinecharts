@@ -285,6 +285,19 @@ function requireOverlayKeys(
 function validateOverlayShape(overlay: SceneOverlay, path: string, issues: SceneIssue[]): void {
 	switch (overlay.type) {
 		case 'horizontalStraightLine':
+			requireOverlayKeys(overlay, path, ['anchor'], issues);
+			if (overlay.anchor === undefined || !('value' in overlay.anchor)) {
+				issues.push(issue('SCENE_SCHEMA_INVALID', `${path}/anchor`, 'A value anchor is required.'));
+			} else if (Object.keys(overlay.anchor).length !== 1) {
+				issues.push(
+					issue(
+						'SCENE_SCHEMA_INVALID',
+						`${path}/anchor`,
+						'horizontalStraightLine anchor must contain only value.',
+					),
+				);
+			}
+			break;
 		case 'priceLine':
 			requireOverlayKeys(overlay, path, ['anchor'], issues);
 			if (overlay.anchor === undefined || !('value' in overlay.anchor)) {

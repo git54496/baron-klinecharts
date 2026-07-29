@@ -1,8 +1,11 @@
+import { readFile } from 'node:fs/promises';
+
 import { expect, test } from '@playwright/test';
 
 import { loadScene } from './load-scene.js';
 
 const minimalScene = loadScene('minimal-valid.json');
+const m1Scene = loadScene('m1-candle-horizontal-line.json');
 
 test('@browser toolbar uses registered tools and DOM APIs with explicit teardown', async ({ page }) => {
 	await page.goto('/test/fixture.html');
@@ -248,4 +251,173 @@ test('@browser toolbar deletes only an unlocked selected Overlay and revokes exp
 
 	expect(result.removed).toEqual(['overlay-selected']);
 	expect(result.urls).toEqual(['created', 'clicked', 'revoked']);
+});
+
+test('@browser M1 toolbar creates, selects, exports, and deletes a horizontal line through real DOM', async ({ page }) => {
+	const createdId = 'overlay-horizontalStraightLine-0';
+	const drawPosition = { x: 500, y: 170 };
+	await page.goto('/test/fixture.html');
+	await page.evaluate(async (scene) => {
+		const {
+			createKLineSceneRuntime,
+			createStandardToolbar,
+		} = await import('/src/index.ts');
+		const runtime = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			scene,
+		);
+		createStandardToolbar(
+			document.querySelector<HTMLElement>('#toolbar')!,
+			runtime,
+			{ downloadFileName: 'm1-scene.json' },
+		);
+		Object.assign(window, { __baronM1ToolbarRuntime: runtime });
+	}, m1Scene);
+
+	await page.keyboard.press('Tab');
+	await page.keyboard.press('Tab');
+	await page.keyboard.press('Tab');
+	await page.keyboard.press('Tab');
+	const horizontalLineButton = page.locator(
+		'[data-overlay-type="horizontalStraightLine"]',
+	);
+	await expect(horizontalLineButton).toBeFocused();
+	await page.keyboard.press('Enter');
+	await expect(horizontalLineButton).toHaveAttribute('aria-pressed', 'true');
+
+	const canvas = page.locator('#chart canvas').nth(1);
+	await expect(canvas).toBeVisible();
+	await canvas.click({ position: drawPosition });
+	await expect.poll(() => page.evaluate(() => (
+		window as unknown as {
+			__baronM1ToolbarRuntime: { listOverlays(): readonly unknown[] };
+		}
+	).__baronM1ToolbarRuntime.listOverlays().length)).toBe(2);
+
+	await canvas.click({ position: drawPosition });
+	await expect.poll(() => page.evaluate(() => (
+		window as unknown as {
+			__baronM1ToolbarRuntime: { getSelectedOverlayId(): string | undefined };
+		}
+	).__baronM1ToolbarRuntime.getSelectedOverlayId())).toBe(createdId);
+
+	const downloadPromise = page.waitForEvent('download');
+	await page.locator('[data-action="export"]').click();
+	const download = await downloadPromise;
+	expect(download.suggestedFilename()).toBe('m1-scene.json');
+	const downloadPath = await download.path();
+	expect(downloadPath).not.toBeNull();
+	const exported = JSON.parse(await readFile(downloadPath!, 'utf8')) as {
+		overlays: Array<{
+			id: string;
+			type: string;
+			anchor?: { value?: number };
+		}>;
+	};
+	expect(exported.overlays.map((overlay) => overlay.id)).toEqual([
+		'overlay-m1-horizontal-reference',
+		createdId,
+	]);
+	expect(exported.overlays[1]).toEqual(expect.objectContaining({
+		id: createdId,
+		type: 'horizontalStraightLine',
+	}));
+	expect(Number.isFinite(exported.overlays[1]!.anchor?.value)).toBe(true);
+
+	await page.locator('[data-action="delete"]').click();
+	await expect.poll(() => page.evaluate(() => (
+		window as unknown as {
+			__baronM1ToolbarRuntime: {
+				listOverlays(): Array<{ id: string }>;
+			};
+		}
+	).__baronM1ToolbarRuntime.listOverlays().map((overlay) => overlay.id)))
+		.toEqual(['overlay-m1-horizontal-reference']);
+
+	const cleanup = await page.evaluate(() => {
+		(
+			window as unknown as {
+				__baronM1ToolbarRuntime: { destroy(): void };
+			}
+		).__baronM1ToolbarRuntime.destroy();
+		return {
+			chartChildren: document.querySelector('#chart')!.childElementCount,
+			toolbarChildren: document.querySelector('#toolbar')!.childElementCount,
+			tooltips: document.querySelectorAll('.baron-kline-toolbar-tooltip').length,
+		};
+	});
+	expect(cleanup).toEqual({
+		chartChildren: 0,
+		toolbarChildren: 0,
+		tooltips: 0,
+	});
+});
+
+test('@browser M1 horizontal line toolbar supports the touch creation path', async ({ browser }) => {
+	const context = await browser.newContext({
+		hasTouch: true,
+		isMobile: true,
+		viewport: { width: 1200, height: 800 },
+	});
+	try {
+		const page = await context.newPage();
+		await page.goto('/test/fixture.html');
+		await page.evaluate(async (scene) => {
+			const {
+				createKLineSceneRuntime,
+				createStandardToolbar,
+			} = await import('/src/index.ts');
+			const value = structuredClone(scene);
+			value.overlays = [];
+			const runtime = await createKLineSceneRuntime(
+				document.querySelector<HTMLElement>('#chart')!,
+				value,
+			);
+			createStandardToolbar(
+				document.querySelector<HTMLElement>('#toolbar')!,
+				runtime,
+			);
+			Object.assign(window, { __baronM1TouchRuntime: runtime });
+		}, m1Scene);
+
+		await page.locator('[data-overlay-type="horizontalStraightLine"]').tap();
+		const canvas = page.locator('#chart canvas').nth(1);
+		const box = await canvas.boundingBox();
+		expect(box).not.toBeNull();
+		await page.touchscreen.tap(box!.x + 500, box!.y + 170);
+		await expect.poll(() => page.evaluate(() => (
+			window as unknown as {
+				__baronM1TouchRuntime: { listOverlays(): readonly unknown[] };
+			}
+		).__baronM1TouchRuntime.listOverlays().length)).toBe(1);
+
+		const result = await page.evaluate(() => {
+			const runtime = (
+				window as unknown as {
+					__baronM1TouchRuntime: {
+						destroy(): void;
+						listOverlays(): Array<{
+							id: string;
+							type: string;
+							anchor: { value: number };
+						}>;
+					};
+				}
+			).__baronM1TouchRuntime;
+			const overlay = runtime.listOverlays()[0]!;
+			runtime.destroy();
+			return {
+				overlay,
+				chartChildren: document.querySelector('#chart')!.childElementCount,
+				toolbarChildren: document.querySelector('#toolbar')!.childElementCount,
+			};
+		});
+		expect(result.overlay.id).toBe('overlay-horizontalStraightLine-0');
+		expect(result.overlay.type).toBe('horizontalStraightLine');
+		expect(Number.isFinite(result.overlay.anchor.value)).toBe(true);
+		expect(result.chartChildren).toBe(0);
+		expect(result.toolbarChildren).toBe(0);
+	} finally {
+		await context.close();
+	}
 });

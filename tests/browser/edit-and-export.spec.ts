@@ -137,3 +137,72 @@ test('mobile touch creates an Overlay and no undo/redo surface or hotkey exists'
 		await context.close();
 	}
 });
+
+test('M1 Scene survives export, serialization, page teardown, and recreation', async ({ page }) => {
+	const scene = await loadScene('m1-candle-horizontal-line.json');
+	await createSourceRuntime(page, scene, false);
+	const first = await page.evaluate(() => {
+		const runtime = (
+			window as unknown as {
+				__baronTestRuntime: {
+					destroy(): void;
+					exportScene(): {
+						overlays: Array<{
+							id: string;
+							type: string;
+							anchor: { value: number };
+							styles: unknown;
+							metadata?: unknown;
+						}>;
+					};
+				};
+			}
+		).__baronTestRuntime;
+		const exported = runtime.exportScene();
+		const serialized = JSON.stringify(exported);
+		runtime.destroy();
+		return {
+			childrenAfterDestroy: document.querySelector('#chart')!.childElementCount,
+			overlay: exported.overlays[0]!,
+			serialized,
+		};
+	});
+	expect(first.childrenAfterDestroy).toBe(0);
+
+	await page.reload();
+	const second = await page.evaluate(async (serialized) => {
+		const { createKLineSceneRuntime } = await import(
+			'/packages/web-runtime/src/index.ts'
+		);
+		const events: Array<{ type: string }> = [];
+		const runtime = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			JSON.parse(serialized),
+			{ onEvent: (event) => events.push(event) },
+		);
+		const exported = runtime.exportScene() as {
+			overlays: Array<{
+				id: string;
+				type: string;
+				anchor: { value: number };
+				styles: unknown;
+				metadata?: unknown;
+			}>;
+		};
+		runtime.destroy();
+		return {
+			childrenAfterDestroy: document.querySelector('#chart')!.childElementCount,
+			eventTypes: events.map((event) => event.type),
+			overlay: exported.overlays[0]!,
+			overlayCount: exported.overlays.length,
+		};
+	}, first.serialized);
+
+	expect(second.overlayCount).toBe(1);
+	expect(second.overlay).toEqual(first.overlay);
+	expect(second.overlay).toEqual(scene.overlays[0]);
+	expect(Object.keys(second.overlay.anchor)).toEqual(['value']);
+	expect(Number.isFinite(second.overlay.anchor.value)).toBe(true);
+	expect(second.eventTypes).toEqual(['scene-ready']);
+	expect(second.childrenAfterDestroy).toBe(0);
+});

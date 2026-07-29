@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 
@@ -8,17 +8,33 @@ import { packPublicPackages, runNpm } from './helpers/pack.mjs';
 
 test('packed npm artifacts install and run without workspace links', async () => {
 	const { directory, packages } = await packPublicPackages();
-	const consumer = join(directory, 'consumer');
-	await mkdir(consumer);
-	await writeFile(join(consumer, 'package.json'), '{"private":true,"type":"module"}\n');
+	const installPrefix = join(directory, 'consumer-prefix');
+	const consumer = join(installPrefix, 'lib');
+	await mkdir(consumer, { recursive: true });
+	const manifest = '{"private":true,"type":"module"}\n';
+	await writeFile(join(consumer, 'package.json'), manifest);
 	runNpm(
 		[
 			'install',
+			'--global',
+			'--prefix',
+			installPrefix,
 			'--ignore-scripts',
 			...packages.map((packed) => packed.tarball),
 		],
 		{ cwd: consumer, stdio: 'inherit' },
 	);
+	assert.equal(await readFile(join(consumer, 'package.json'), 'utf8'), manifest);
+	for (const lockfile of [
+		join(installPrefix, 'package-lock.json'),
+		join(consumer, 'package-lock.json'),
+		join(consumer, 'node_modules', '.package-lock.json'),
+	]) {
+		await assert.rejects(
+			access(lockfile),
+			(error) => error?.code === 'ENOENT',
+		);
+	}
 	await writeFile(
 		join(consumer, 'smoke.mjs'),
 		[
@@ -37,7 +53,7 @@ test('packed npm artifacts install and run without workspace links', async () =>
 		cwd: consumer,
 		stdio: 'inherit',
 	});
-	const cli = join(consumer, 'node_modules', '.bin', 'baron-kline');
+	const cli = join(installPrefix, 'bin', 'baron-kline');
 	const html = join(consumer, 'scene.html');
 	execFileSync(cli, ['validate', fixture], { cwd: consumer, stdio: 'inherit' });
 	execFileSync(

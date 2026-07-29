@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import invalidDuplicateId from '../../../tests/fixtures/scenes/invalid-duplicate-id.json';
 import invalidOhlc from '../../../tests/fixtures/scenes/invalid-ohlc.json';
+import m1CandleHorizontalLine from '../../../tests/fixtures/scenes/m1-candle-horizontal-line.json';
 import type { ChartScene, SceneOverlay } from '../src/index.js';
 import { parseChartScene, SceneError } from '../src/index.js';
 import {
@@ -100,14 +101,23 @@ describe('ChartScene semantic validation', () => {
 	});
 
 	it('rejects a missing Overlay Pane reference', () => {
-		const scene = makeScene();
-		const overlay = makeOverlay('text');
-		overlay.paneId = 'pane-missing';
-		scene.overlays.push(overlay);
+		const scene = structuredClone(m1CandleHorizontalLine);
+		scene.overlays[0]!.paneId = 'pane-missing';
 
 		expect(captureSceneError(scene)).toMatchObject({
 			code: 'INVALID_REFERENCE',
 			path: '/overlays/0/paneId',
+		});
+	});
+
+	it('rejects timestamp from a horizontalStraightLine value anchor', () => {
+		const scene = structuredClone(m1CandleHorizontalLine);
+		const anchor = scene.overlays[0]!.anchor as { timestamp?: number; value: number };
+		anchor.timestamp = scene.data[0]!.timestamp;
+
+		expect(captureSceneError(scene)).toMatchObject({
+			code: 'SCENE_SCHEMA_INVALID',
+			path: '/overlays/0/anchor',
 		});
 	});
 

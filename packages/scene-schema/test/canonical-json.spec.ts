@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
+import m1CandleHorizontalLine from '../../../tests/fixtures/scenes/m1-candle-horizontal-line.json';
 import { hashCanonicalScene, serializeCanonicalScene } from '../src/index.js';
 import { makeScene } from './helpers/scene.js';
 
 describe('RFC 8785 canonical Scene JSON', () => {
+	it('produces stable canonical bytes and SHA-256 for the M1 fixture', async () => {
+		const firstBytes = serializeCanonicalScene(m1CandleHorizontalLine);
+		const reparsed = JSON.parse(new TextDecoder().decode(firstBytes));
+		const secondBytes = serializeCanonicalScene(reparsed);
+
+		expect(firstBytes).toEqual(secondBytes);
+		expect(await hashCanonicalScene(m1CandleHorizontalLine)).toBe(
+			await hashCanonicalScene(reparsed),
+		);
+	});
+
 	it('produces identical UTF-8 bytes for different input key orders', () => {
 		const first = makeScene();
 		first.metadata = { z: 1, a: '中文', nested: { y: true, x: null } };

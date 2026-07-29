@@ -1,9 +1,35 @@
 import { describe, expect, it } from 'vitest';
 
+import m1CandleHorizontalLine from '../../../tests/fixtures/scenes/m1-candle-horizontal-line.json';
 import { canonicalizeScene, parseChartScene } from '../src/index.js';
 import { makeScene } from './helpers/scene.js';
 
 describe('ChartScene canonicalization', () => {
+	it('preserves the M1 horizontal-line identity, value, styles, and metadata', () => {
+		const parsed = parseChartScene(m1CandleHorizontalLine);
+		const canonical = canonicalizeScene(parsed);
+
+		expect(canonical.overlays[0]).toEqual(parsed.overlays[0]);
+		expect(canonical.overlays[0]).toMatchObject({
+			id: 'overlay-m1-horizontal-reference',
+			anchor: { value: 101.25 },
+			styles: {
+				line: {
+					color: 'rgba(41, 98, 255, 1)',
+					size: 1,
+					style: 'solid',
+				},
+			},
+			metadata: {
+				labels: ['m1', 'reference-line'],
+				opaque: {
+					owner: 'fixture-consumer',
+					revision: 1,
+				},
+			},
+		});
+	});
+
 	it('deep-clones the Scene and sorts object keys without reordering arrays', () => {
 		const scene = makeScene();
 		scene.metadata = {
