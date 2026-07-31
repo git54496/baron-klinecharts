@@ -156,7 +156,13 @@ export class KLineChartsSceneAdapter {
 		const existingIndex = this.#scene.overlays.findIndex((overlay) => overlay.id === source.id);
 		const path = existingIndex < 0 ? `/overlays/${this.#scene.overlays.length}` : `/overlays/${existingIndex}`;
 		const currentSource = existingIndex < 0 ? source : this.#scene.overlays[existingIndex]!;
-		const overlay = fromEngineOverlay(engineOverlay, currentSource, this.#idMap, path);
+		const overlay = fromEngineOverlay(
+			engineOverlay,
+			currentSource,
+			this.#idMap,
+			path,
+			this.#scene.symbol.pricePrecision,
+		);
 		const overlays = structuredClone(this.#scene.overlays);
 		if (existingIndex < 0) {
 			overlays.push(overlay);
@@ -235,7 +241,13 @@ export class KLineChartsSceneAdapter {
 					`KLineCharts lost Overlay ${source.id}.`,
 				);
 			}
-			return fromEngineOverlay(engine, source, this.#idMap, `/overlays/${index}`);
+			return fromEngineOverlay(
+				engine,
+				source,
+				this.#idMap,
+				`/overlays/${index}`,
+				this.#scene.symbol.pricePrecision,
+			);
 		});
 		return parseChartScene({
 			...structuredClone(this.#scene),

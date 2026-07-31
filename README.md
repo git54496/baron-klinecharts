@@ -36,7 +36,7 @@ tests                          跨语言、浏览器、视觉与安装门禁
 安装 Web Runtime：
 
 ```bash
-npm install --save-exact @baron1996/klinecharts-runtime@0.1.0
+npm install --save-exact @baron1996/klinecharts-runtime@0.1.1
 ```
 
 安装 CLI：
@@ -80,7 +80,7 @@ npm run example:vanilla
 - 禁止把本仓库路径加入其他工程或 Agent 的可写 workspace。
 
 消费方必须安装明确版本并提交自己的 lockfile，例如
-`@baron1996/klinecharts-runtime@0.1.0` 和 `baron-klinecharts==0.1.0`。升级只能
+`@baron1996/klinecharts-runtime@0.1.1` 和 `baron-klinecharts==0.1.0`。升级只能
 通过本仓库发布新版本后，由消费方主动修改依赖版本完成；不得直接修改本仓库来
 适配某个业务工程。
 
@@ -153,9 +153,11 @@ CI 分别使用 `tests/rendering/baselines/github-macos-15` 和
 
 ## 发布
 
-当前仓库版本为 `0.1.0`。GitHub Release tag、全部 npm workspace 和 Python
-项目必须使用同一版本。发布流水线先执行完整验证，再构建一次不可变产物，并将
-相同 npm tarball、Python wheel 和 sdist 发布到对应注册表及 GitHub Release。
+当前发布协调版本为 `0.1.1`。各包独立演进：Adapter 和 Web Runtime 为
+`0.1.1`，Scene Schema、CLI、Python 和私有 Render Runtime 自身仍为 `0.1.0`；
+Web Runtime 精确依赖 Adapter `0.1.1`。发布流水线先执行完整验证，再只为版本与
+tag 相同的公共包构建一次不可变产物；Python 仅在自身版本与 tag 相同时构建和
+发布。
 
 `0.1.0` 是完整可用的 npm 引导版本；引导完成后，npm 与 PyPI 都只通过绑定
 `release.yml` 和 GitHub `release` Environment 的 OIDC Trusted Publisher 发布。

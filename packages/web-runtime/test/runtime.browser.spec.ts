@@ -6,6 +6,11 @@ const minimalScene = loadScene('minimal-valid.json');
 const allOverlays = loadScene('all-overlays.json');
 const m1Scene = loadScene('m1-candle-horizontal-line.json');
 
+function expectTwoDecimalPrice(value: number): void {
+	expect(value.toString()).toMatch(/^-?\d+(?:\.\d{1,2})?$/u);
+	expect(Object.is(value, -0)).toBe(false);
+}
+
 test('@browser Runtime owns overlay CRUD, clone boundaries, and pure-data events', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	const result = await page.evaluate(async ({ scene, overlay }) => {
@@ -138,7 +143,11 @@ test('@browser completes the M1 horizontal line lifecycle with stable Scene data
 	await page.goto('/test/fixture.html');
 	const setup = await page.evaluate(async ({ scene, id }) => {
 		const { createKLineSceneRuntime } = await import('/src/index.ts');
-		const events: Array<{ type: string; id?: string }> = [];
+		const events: Array<{
+			type: string;
+			id?: string;
+			overlay?: { id: string; anchor: { value: number } };
+		}> = [];
 		const source = scene.overlays[0]!;
 		const runtime = await createKLineSceneRuntime(
 			document.querySelector<HTMLElement>('#chart')!,
@@ -178,6 +187,91 @@ test('@browser completes the M1 horizontal line lifecycle with stable Scene data
 		).__baronM1Events;
 		return events.filter((event) => event.type === 'overlay-created').length;
 	})).toBe(1);
+
+	const createdState = await page.evaluate((id) => {
+		type HorizontalOverlay = { id: string; anchor: { value: number } };
+		const state = window as unknown as {
+			__baronM1Runtime: {
+				exportScene(): { overlays: HorizontalOverlay[] };
+				getOverlay(value: string): HorizontalOverlay | undefined;
+				listOverlays(): readonly HorizontalOverlay[];
+			};
+			__baronM1Events: Array<{
+				type: string;
+				overlay?: HorizontalOverlay;
+			}>;
+		};
+		return {
+			createdEventValue: state.__baronM1Events
+				.find((event) => event.type === 'overlay-created' && event.overlay?.id === id)
+				?.overlay?.anchor.value,
+			exportValue: state.__baronM1Runtime.exportScene().overlays
+				.find((overlay) => overlay.id === id)?.anchor.value,
+			getValue: state.__baronM1Runtime.getOverlay(id)?.anchor.value,
+			listValue: state.__baronM1Runtime.listOverlays()
+				.find((overlay) => overlay.id === id)?.anchor.value,
+		};
+	}, createdId);
+	expect(createdState).toEqual({
+		createdEventValue: 101.67,
+		exportValue: 101.67,
+		getValue: 101.67,
+		listValue: 101.67,
+	});
+
+	const drawingBox = await drawingCanvas.boundingBox();
+	expect(drawingBox).not.toBeNull();
+	const linePosition = {
+		x: drawingBox!.x + drawPosition.x,
+		y: drawingBox!.y + drawPosition.y,
+	};
+	await page.mouse.click(linePosition.x, linePosition.y);
+	await expect.poll(() => page.evaluate(() => (
+		window as unknown as {
+			__baronM1Runtime: { getSelectedOverlayId(): string | undefined };
+		}
+	).__baronM1Runtime.getSelectedOverlayId())).toBe(createdId);
+	const updatesBeforeDrag = await page.evaluate(() => (
+		window as unknown as { __baronM1Events: Array<{ type: string }> }
+	).__baronM1Events.filter((event) => event.type === 'overlay-updated').length);
+	await page.mouse.move(linePosition.x, linePosition.y);
+	await page.mouse.down();
+	await page.mouse.move(linePosition.x, linePosition.y + 37, { steps: 5 });
+	await page.mouse.up();
+	await expect.poll(() => page.evaluate(() => (
+		window as unknown as { __baronM1Events: Array<{ type: string }> }
+	).__baronM1Events.filter((event) => event.type === 'overlay-updated').length))
+		.toBeGreaterThan(updatesBeforeDrag);
+
+	const updatedState = await page.evaluate((id) => {
+		type HorizontalOverlay = { id: string; anchor: { value: number } };
+		const state = window as unknown as {
+			__baronM1Runtime: {
+				exportScene(): { overlays: HorizontalOverlay[] };
+				getOverlay(value: string): HorizontalOverlay | undefined;
+				listOverlays(): readonly HorizontalOverlay[];
+			};
+			__baronM1Events: Array<{
+				type: string;
+				overlay?: HorizontalOverlay;
+			}>;
+		};
+		const updatedEvents = state.__baronM1Events.filter(
+			(event) => event.type === 'overlay-updated' && event.overlay?.id === id,
+		);
+		return {
+			eventValue: updatedEvents.at(-1)?.overlay?.anchor.value,
+			exportValue: state.__baronM1Runtime.exportScene().overlays
+				.find((overlay) => overlay.id === id)?.anchor.value,
+			getValue: state.__baronM1Runtime.getOverlay(id)?.anchor.value,
+			listValue: state.__baronM1Runtime.listOverlays()
+				.find((overlay) => overlay.id === id)?.anchor.value,
+		};
+	}, createdId);
+	for (const value of Object.values(updatedState)) {
+		expect(value).toBeDefined();
+		expectTwoDecimalPrice(value!);
+	}
 
 	const roundTrip = await page.evaluate(async (id) => {
 		type HorizontalOverlay = {
@@ -270,7 +364,9 @@ test('@browser completes the M1 horizontal line lifecycle with stable Scene data
 
 	const recreatedCanvas = page.locator('#chart canvas').nth(1);
 	await expect(recreatedCanvas).toBeVisible();
-	await recreatedCanvas.click({ position: drawPosition });
+	await recreatedCanvas.click({
+		position: { x: drawPosition.x, y: drawPosition.y + 37 },
+	});
 	await expect.poll(() => page.evaluate(() => (
 		window as unknown as {
 			__baronM1RecreatedRuntime: { getSelectedOverlayId(): string | undefined };

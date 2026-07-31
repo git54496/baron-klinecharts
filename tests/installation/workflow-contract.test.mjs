@@ -51,6 +51,10 @@ test('release workflow is a build-once protected registry publication', async ()
 	assert.ok(fullVerification > versionCheck);
 	assert.equal((workflow.match(/release:build-npm/gu) ?? []).length, 1);
 	assert.equal((workflow.match(/python -m build/gu) ?? []).length, 1);
+	assert.match(workflow, /release:check-version -- --tag .+ --json/u);
+	assert.match(workflow, /release:build-npm -- --version/u);
+	assert.match(workflow, /publish_python/u);
+	assert.match(workflow, /if:\s*steps\.release_plan\.outputs\.publish_python == 'true'/u);
 	assert.match(workflow, /actions\/upload-artifact@v4/u);
 	assert.ok((workflow.match(/actions\/download-artifact@v4/gu) ?? []).length >= 3);
 
@@ -63,9 +67,13 @@ test('release workflow is a build-once protected registry publication', async ()
 	assert.match(workflow, /--provenance/u);
 
 	assert.match(workflow, /pypa\/gh-action-pypi-publish@release\/v1/u);
+	assert.match(workflow, /if:\s*needs\.build\.outputs\.publish_python == 'true'/u);
 	assert.doesNotMatch(workflow, /PYPI_TOKEN/u);
 	assert.doesNotMatch(workflow, /^\s*(username|password):/gmu);
 	assert.match(workflow, /gh release upload/u);
 	assert.match(workflow, /--repo\s+"\$\{\{\s*github\.repository\s*\}\}"/u);
+	assert.match(workflow, /publish-pypi\.result == 'skipped'/u);
+	assert.match(workflow, /assets=\(/u);
+	assert.doesNotMatch(workflow, /release-artifacts\/python\/\*/u);
 	assert.match(workflow, /contents:\s*write/u);
 });

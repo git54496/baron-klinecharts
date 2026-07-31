@@ -13,6 +13,7 @@ import type {
 
 import type { EngineIdMap } from './id-map.js';
 import { requireMappedId } from './id-map.js';
+import { normalizePriceValue } from './price.js';
 import { isSupportedOverlay } from '../registry/overlays.js';
 
 type ScenePoint = { timestamp: number; value: number };
@@ -204,6 +205,7 @@ function requirePoint(
 	requireTimestamp: boolean,
 	requireValue: boolean,
 	path: string,
+	pricePrecision: number,
 ): ScenePoint {
 	const point = points[index];
 	if (
@@ -215,7 +217,9 @@ function requirePoint(
 	}
 	return {
 		timestamp: point.timestamp ?? 0,
-		value: point.value ?? 0,
+		value: requireValue
+			? normalizePriceValue(point.value!, pricePrecision, `${path}/value`)
+			: 0,
 	};
 }
 
@@ -263,23 +267,37 @@ export function fromEngineOverlay(
 	source: OverlaySourceSnapshot,
 	idMap: EngineIdMap,
 	path: string,
+	pricePrecision: number,
 ): SceneOverlay {
 	const base = baseFromEngine(engine, source, idMap, path);
 	const points = engine.points;
+	const readPoint = (
+		index: number,
+		requireTimestamp: boolean,
+		requireValue: boolean,
+		pointPath: string,
+	): ScenePoint => requirePoint(
+		points,
+		index,
+		requireTimestamp,
+		requireValue,
+		pointPath,
+		pricePrecision,
+	);
 	switch (base.type) {
 		case 'horizontalStraightLine':
 		case 'priceLine': {
-			const point = requirePoint(points, 0, false, true, `${path}/anchor`);
+			const point = readPoint(0, false, true, `${path}/anchor`);
 			return { ...base, anchor: { value: point.value } };
 		}
 		case 'verticalStraightLine': {
-			const point = requirePoint(points, 0, true, false, `${path}/anchor`);
+			const point = readPoint(0, true, false, `${path}/anchor`);
 			return { ...base, anchor: { timestamp: point.timestamp } };
 		}
 		case 'horizontalRayLine':
 		case 'horizontalSegment': {
-			const start = requirePoint(points, 0, true, true, `${path}/points/0`);
-			const end = requirePoint(points, 1, true, true, `${path}/points/1`);
+			const start = readPoint(0, true, true, `${path}/points/0`);
+			const end = readPoint(1, true, true, `${path}/points/1`);
 			return {
 				...base,
 				value: start.value,
@@ -289,8 +307,8 @@ export function fromEngineOverlay(
 		}
 		case 'verticalRayLine':
 		case 'verticalSegment': {
-			const start = requirePoint(points, 0, true, true, `${path}/points/0`);
-			const end = requirePoint(points, 1, true, true, `${path}/points/1`);
+			const start = readPoint(0, true, true, `${path}/points/0`);
+			const end = readPoint(1, true, true, `${path}/points/1`);
 			return {
 				...base,
 				timestamp: start.timestamp,
@@ -305,8 +323,8 @@ export function fromEngineOverlay(
 			return {
 				...base,
 				points: [
-					requirePoint(points, 0, true, true, `${path}/points/0`),
-					requirePoint(points, 1, true, true, `${path}/points/1`),
+					readPoint(0, true, true, `${path}/points/0`),
+					readPoint(1, true, true, `${path}/points/1`),
 				],
 			};
 		}
@@ -315,15 +333,15 @@ export function fromEngineOverlay(
 			return {
 				...base,
 				points: [
-					requirePoint(points, 0, true, true, `${path}/points/0`),
-					requirePoint(points, 1, true, true, `${path}/points/1`),
-					requirePoint(points, 2, true, true, `${path}/points/2`),
+					readPoint(0, true, true, `${path}/points/0`),
+					readPoint(1, true, true, `${path}/points/1`),
+					readPoint(2, true, true, `${path}/points/2`),
 				],
 			};
 		}
 		case 'brush': {
 			const converted = points.map((_point, index) =>
-				requirePoint(points, index, true, true, `${path}/points/${index}`),
+				readPoint(index, true, true, `${path}/points/${index}`),
 			);
 			const first = converted[0];
 			if (first === undefined) {
@@ -335,7 +353,7 @@ export function fromEngineOverlay(
 			};
 		}
 		case 'simpleTag': {
-			const point = requirePoint(points, 0, false, true, `${path}/anchor`);
+			const point = readPoint(0, false, true, `${path}/anchor`);
 			return {
 				...base,
 				anchor: { value: point.value },
@@ -347,20 +365,20 @@ export function fromEngineOverlay(
 		case 'text':
 			return {
 				...base,
-				point: requirePoint(points, 0, true, true, `${path}/point`),
+				point: readPoint(0, true, true, `${path}/point`),
 				text: requireText(engine, `${path}/text`),
 			};
 		case 'rectangle':
 		case 'arrow':
 			return {
 				...base,
-				start: requirePoint(points, 0, true, true, `${path}/start`),
-				end: requirePoint(points, 1, true, true, `${path}/end`),
+				start: readPoint(0, true, true, `${path}/start`),
+				end: readPoint(1, true, true, `${path}/end`),
 			};
 		case 'crossLine':
 			return {
 				...base,
-				point: requirePoint(points, 0, true, true, `${path}/point`),
+				point: readPoint(0, true, true, `${path}/point`),
 			};
 	}
 }

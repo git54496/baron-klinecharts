@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import {
 	buildNpmArtifacts,
 	publicPackageDirectories,
+	selectPublicPackages,
 	validatePublicManifest,
 } from '../../tools/release/build-npm-artifacts.mjs';
 
@@ -16,6 +17,13 @@ const publicPackageNames = [
 	'@baron1996/klinecharts-runtime',
 	'@baron1996/klinecharts-cli',
 ];
+
+const publicPackageVersions = new Map([
+	['@baron1996/kline-scene-schema', '0.1.0'],
+	['@baron1996/klinecharts-adapter', '0.1.1'],
+	['@baron1996/klinecharts-runtime', '0.1.1'],
+	['@baron1996/klinecharts-cli', '0.1.0'],
+]);
 
 test('builds exactly four ordered public npm tarballs with integrity metadata', async () => {
 	const directory = await mkdtemp(join(tmpdir(), 'baron-release-artifacts-'));
@@ -37,7 +45,7 @@ test('builds exactly four ordered public npm tarballs with integrity metadata', 
 	);
 	assert.equal(result.packages.length, 4);
 	for (const entry of result.packages) {
-		assert.equal(entry.version, '0.1.0');
+		assert.equal(entry.version, publicPackageVersions.get(entry.name));
 		assert.match(entry.filename, /\.tgz$/u);
 		assert.match(entry.sha256, /^[a-f0-9]{64}$/u);
 		assert.match(entry.integrity, /^sha512-[A-Za-z0-9+/]+={0,2}$/u);
@@ -65,6 +73,29 @@ test('refuses to overwrite a non-empty release directory', async () => {
 	await assert.rejects(
 		buildNpmArtifacts({ root: process.cwd(), outputDirectory }),
 		/output directory must be empty/u,
+	);
+});
+
+test('selects only matching public patch packages in dependency order', () => {
+	const packages = publicPackageNames.map((name, index) => ({
+		directory: publicPackageDirectories[index],
+		manifest: {
+			name,
+			version: index === 1 || index === 2 ? '0.1.1' : '0.1.0',
+		},
+	}));
+	assert.deepEqual(
+		selectPublicPackages(packages, '0.1.1').map(
+			({ manifest }) => manifest.name,
+		),
+		[
+			'@baron1996/klinecharts-adapter',
+			'@baron1996/klinecharts-runtime',
+		],
+	);
+	assert.throws(
+		() => selectPublicPackages(packages, '0.1.2'),
+		/no public npm package declares version 0\.1\.2/u,
 	);
 });
 

@@ -1,6 +1,6 @@
 {
   "name": "@baron1996/klinecharts-runtime",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Web runtime for deterministic KLineCharts scenes.",
   "type": "module",
   "license": "Apache-2.0",
@@ -40,6 +40,6 @@
   },
   "dependencies": {
     "@baron1996/kline-scene-schema": "0.1.0",
-    "@baron1996/klinecharts-adapter": "0.1.0"
+    "@baron1996/klinecharts-adapter": "0.1.1"
   }
 }

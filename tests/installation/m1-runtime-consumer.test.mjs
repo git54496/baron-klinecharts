@@ -25,6 +25,13 @@ const publicPackages = [
 	'@baron1996/klinecharts-cli',
 ];
 
+const publicPackageVersions = new Map([
+	['@baron1996/kline-scene-schema', '0.1.0'],
+	['@baron1996/klinecharts-adapter', '0.1.1'],
+	['@baron1996/klinecharts-runtime', '0.1.1'],
+	['@baron1996/klinecharts-cli', '0.1.0'],
+]);
+
 async function loadConsumerPackages() {
 	const artifactDirectory = process.env.BARON_NPM_RELEASE_CANDIDATE_DIR;
 	if (artifactDirectory === undefined) {
@@ -43,7 +50,7 @@ async function loadConsumerPackages() {
 		publicPackages,
 	);
 	const packages = artifactManifest.packages.map((entry) => {
-		assert.equal(entry.version, '0.1.0');
+		assert.equal(entry.version, publicPackageVersions.get(entry.name));
 		assert.equal(basename(entry.filename), entry.filename);
 		return {
 			...entry,
@@ -180,7 +187,16 @@ test('four public tarballs support the M1 Runtime journey through package export
 				'utf8',
 			),
 		);
-		assert.equal(installedManifest.version, '0.1.0');
+		assert.equal(
+			installedManifest.version,
+			publicPackageVersions.get(packageName),
+		);
+		if (packageName === '@baron1996/klinecharts-runtime') {
+			assert.equal(
+				installedManifest.dependencies['@baron1996/klinecharts-adapter'],
+				'0.1.1',
+			);
+		}
 		for (const dependencySpec of Object.values(installedManifest.dependencies ?? {})) {
 			assert.doesNotMatch(
 				dependencySpec,
@@ -207,8 +223,8 @@ test('four public tarballs support the M1 Runtime journey through package export
 			"const adapter = await import('@baron1996/klinecharts-adapter');",
 			"const runtime = await import('@baron1996/klinecharts-runtime');",
 			"if (schema.SCENE_PACKAGE_VERSION !== '0.1.0') throw new Error('Schema root export failed.');",
-			"if (adapter.ADAPTER_PACKAGE_VERSION !== '0.1.0') throw new Error('Adapter root export failed.');",
-			"if (runtime.WEB_RUNTIME_PACKAGE_VERSION !== '0.1.0') throw new Error('Runtime root export failed.');",
+			"if (adapter.ADAPTER_PACKAGE_VERSION !== '0.1.1') throw new Error('Adapter root export failed.');",
+			"if (runtime.WEB_RUNTIME_PACKAGE_VERSION !== '0.1.1') throw new Error('Runtime root export failed.');",
 			'const adapterMethods = Object.getOwnPropertyNames(adapter.KLineChartsSceneAdapter.prototype);',
 			"if (adapterMethods.includes('getChart') || adapterMethods.includes('getEngine')) throw new Error('Adapter exposes its internal Chart.');",
 			'for (const specifier of [',
@@ -302,7 +318,7 @@ test('four public tarballs support the M1 Runtime journey through package export
 		await page.goto(server.url);
 		await page.waitForFunction(() => window.__M1_CONSUMER__?.startedId !== undefined);
 		const readiness = await page.evaluate(() => window.__M1_CONSUMER__);
-		assert.equal(readiness.adapterVersion, '0.1.0');
+		assert.equal(readiness.adapterVersion, '0.1.1');
 		assert.equal(readiness.startedId, 'overlay-m1-consumer-horizontal');
 
 		const drawingCanvas = page.locator('#chart canvas').nth(1);
@@ -327,6 +343,10 @@ test('four public tarballs support the M1 Runtime journey through package export
 		assert.equal(result.firstOverlay.type, 'horizontalStraightLine');
 		assert.deepEqual(Object.keys(result.firstOverlay.anchor), ['value']);
 		assert.ok(Number.isFinite(result.firstOverlay.anchor.value));
+		assert.match(
+			String(result.firstOverlay.anchor.value),
+			/^-?\d+(?:\.\d{1,2})?$/u,
+		);
 		assert.ok(!result.methodNames.includes('getChart'));
 		assert.ok(!result.methodNames.includes('getEngine'));
 	} finally {

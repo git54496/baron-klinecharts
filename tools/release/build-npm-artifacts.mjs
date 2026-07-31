@@ -67,6 +67,21 @@ export function validatePublicManifest(manifest, expectedName) {
 	}
 }
 
+export function selectPublicPackages(packages, releaseVersion) {
+	if (releaseVersion === undefined) {
+		return packages;
+	}
+	const selected = packages.filter(
+		({ manifest }) => manifest.version === releaseVersion,
+	);
+	if (selected.length === 0) {
+		throw new Error(
+			`no public npm package declares version ${releaseVersion}.`,
+		);
+	}
+	return selected;
+}
+
 async function ensureEmptyDirectory(outputDirectory) {
 	try {
 		const entries = await readdir(outputDirectory);
@@ -94,18 +109,28 @@ function digest(algorithm, content, encoding) {
 export async function buildNpmArtifacts({
 	root = process.cwd(),
 	outputDirectory = resolve(root, 'release-artifacts', 'npm'),
+	releaseVersion,
 } = {}) {
 	const absoluteRoot = resolve(root);
 	const absoluteOutput = resolve(outputDirectory);
 	await ensureEmptyDirectory(absoluteOutput);
 
-	const packages = [];
+	const publicPackages = [];
 	for (const [index, packageDirectory] of publicPackageDirectories.entries()) {
 		const absolutePackage = resolve(absoluteRoot, packageDirectory);
 		const manifest = JSON.parse(
 			await readFile(join(absolutePackage, 'package.json'), 'utf8'),
 		);
 		validatePublicManifest(manifest, publicPackageNames[index]);
+		publicPackages.push({ directory: packageDirectory, manifest });
+	}
+
+	const packages = [];
+	for (const { directory: packageDirectory, manifest } of selectPublicPackages(
+		publicPackages,
+		releaseVersion,
+	)) {
+		const absolutePackage = resolve(absoluteRoot, packageDirectory);
 
 		const output = npmCommand(
 			[
@@ -183,7 +208,11 @@ if (invokedPath === import.meta.url) {
 			requestedOutput === undefined
 				? resolve(root, 'release-artifacts', 'npm')
 				: resolve(root, requestedOutput);
-		const result = await buildNpmArtifacts({ root, outputDirectory });
+		const result = await buildNpmArtifacts({
+			root,
+			outputDirectory,
+			releaseVersion: argumentValue('--version'),
+		});
 		process.stdout.write(
 			`Built ${result.packages.length} npm artifacts in ${relative(root, outputDirectory)}.\n`,
 		);

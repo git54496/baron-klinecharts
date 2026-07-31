@@ -15,6 +15,8 @@ jobs:
   build:
     name: Verify and build immutable artifacts
     runs-on: macos-15
+    outputs:
+      publish_python: ${{ steps.release_plan.outputs.publish_python }}
     env:
       BARON_PNG_BASELINE: github-macos-15
     permissions:
@@ -40,13 +42,19 @@ jobs:
         run: python -m pip install -e 'python/baron-klinecharts[dev]'
       - name: Install the pinned Chromium revision
         run: npx playwright install --with-deps chromium
-      - name: Verify the release tag and manifests
-        run: npm run release:check-version -- --tag "${{ github.event.release.tag_name }}"
+      - name: Verify the release tag and select publication targets
+        id: release_plan
+        shell: bash
+        run: |
+          plan="$(npm run --silent release:check-version -- --tag "${{ github.event.release.tag_name }}" --json)"
+          printf 'version=%s\n' "$(jq -r '.version' <<<"$plan")" >> "$GITHUB_OUTPUT"
+          printf 'publish_python=%s\n' "$(jq -r '.publishPython' <<<"$plan")" >> "$GITHUB_OUTPUT"
       - name: Run the complete verification suite
         run: npm run verify
       - name: Build npm release tarballs
-        run: npm run release:build-npm
+        run: npm run release:build-npm -- --version "${{ steps.release_plan.outputs.version }}"
       - name: Build Python wheel and source distribution
+        if: steps.release_plan.outputs.publish_python == 'true'
         run: python -m build --wheel --sdist --outdir release-artifacts/python python/baron-klinecharts
       - name: Generate the release checksum manifest
         shell: bash
@@ -102,6 +110,7 @@ jobs:
   publish-pypi:
     name: Publish Python distributions
     needs: build
+    if: needs.build.outputs.publish_python == 'true'
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -120,6 +129,10 @@ jobs:
   release-assets:
     name: Attach verified distributions to GitHub Release
     needs: [publish-npm, publish-pypi]
+    if: >-
+      always() &&
+      needs.publish-npm.result == 'success' &&
+      (needs.publish-pypi.result == 'success' || needs.publish-pypi.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -131,10 +144,18 @@ jobs:
       - name: Upload distributions and checksums
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
+          assets=(
+            release-artifacts/npm/*.tgz
+            release-artifacts/npm/npm-artifacts.json
+            release-artifacts/SHA256SUMS
+          )
+          if [[ -d release-artifacts/python ]]; then
+            while IFS= read -r -d '' distribution; do
+              assets+=("$distribution")
+            done < <(find release-artifacts/python -type f -print0)
+          fi
           gh release upload "${{ github.event.release.tag_name }}" \
             --repo "${{ github.repository }}" \
-            release-artifacts/npm/*.tgz \
-            release-artifacts/npm/npm-artifacts.json \
-            release-artifacts/python/* \
-            release-artifacts/SHA256SUMS
+            "${assets[@]}"
