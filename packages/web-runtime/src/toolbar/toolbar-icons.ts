@@ -87,6 +87,13 @@ const ICON_SPECS = {
 		{ name: 'path', attributes: { d: 'M4 21h16' } },
 		{ name: 'path', attributes: { d: 'M5 4l14 17' } },
 	],
+	measurement: [
+		{ name: 'path', attributes: { d: 'M4 19l15 -15' } },
+		{ name: 'circle', attributes: { cx: '4', cy: '19', r: '2' } },
+		{ name: 'circle', attributes: { cx: '19', cy: '4', r: '2' } },
+		{ name: 'path', attributes: { d: 'M7 8h9' } },
+		{ name: 'path', attributes: { d: 'M12 5v6' } },
+	],
 	brush: [
 		{ name: 'path', attributes: { d: 'M3 21v-4a4 4 0 1 1 4 4h-4' } },
 		{ name: 'path', attributes: { d: 'M21 3a16 16 0 0 0 -12.8 10.2' } },

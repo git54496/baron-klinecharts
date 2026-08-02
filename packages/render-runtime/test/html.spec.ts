@@ -17,7 +17,7 @@ describe('self-contained standalone HTML', () => {
 	it('contains one Scene placeholder and fixed Runtime identity metadata', () => {
 		expect(STANDALONE_HTML_TEMPLATE.split(SCENE_BASE64_PLACEHOLDER)).toHaveLength(2);
 		expect(STANDALONE_HTML_TEMPLATE).toContain(
-			'<meta name="baron-runtime-version" content="0.1.0">',
+			'<meta name="baron-runtime-version" content="0.2.0">',
 		);
 		expect(STANDALONE_HTML_TEMPLATE).toContain(
 			'<meta name="baron-klinecharts-version" content="10.0.0">',

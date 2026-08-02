@@ -37,9 +37,12 @@ export interface OverlayDrawingSource extends OverlaySourceSnapshot {
 
 export interface EngineOverlayCallbacks {
 	readonly onDrawEnd?: NonNullable<OverlayCreate['onDrawEnd']>;
+	readonly onPressedMoveStart?: NonNullable<OverlayCreate['onPressedMoveStart']>;
+	readonly onPressedMoving?: NonNullable<OverlayCreate['onPressedMoving']>;
 	readonly onPressedMoveEnd?: NonNullable<OverlayCreate['onPressedMoveEnd']>;
 	readonly onRemoved?: NonNullable<OverlayCreate['onRemoved']>;
 	readonly onSelected?: NonNullable<OverlayCreate['onSelected']>;
+	readonly onDeselected?: NonNullable<OverlayCreate['onDeselected']>;
 }
 
 function toLineStyle(style: SceneOverlay['styles']['line']) {
@@ -123,6 +126,7 @@ function toPoints(overlay: SceneOverlay): Array<Partial<Point>> {
 			return [structuredClone(overlay.point ?? {})];
 		case 'rectangle':
 		case 'arrow':
+		case 'priceMeasurement':
 			return [structuredClone(overlay.start ?? {}), structuredClone(overlay.end ?? {})];
 	}
 }
@@ -370,6 +374,7 @@ export function fromEngineOverlay(
 			};
 		case 'rectangle':
 		case 'arrow':
+		case 'priceMeasurement':
 			return {
 				...base,
 				start: readPoint(0, true, true, `${path}/start`),

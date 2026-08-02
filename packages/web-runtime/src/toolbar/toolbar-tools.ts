@@ -8,6 +8,7 @@ export type ToolbarGroupId =
 	| 'analysis'
 	| 'annotation'
 	| 'shape'
+	| 'edit'
 	| 'action';
 
 export interface ToolbarGroup {
@@ -17,7 +18,7 @@ export interface ToolbarGroup {
 
 export interface ToolbarToolPresentation {
 	readonly label: string;
-	readonly group: Exclude<ToolbarGroupId, 'action'>;
+	readonly group: Exclude<ToolbarGroupId, 'action' | 'edit'>;
 	readonly icon: ToolbarIconName;
 }
 
@@ -36,6 +37,7 @@ export const TOOLBAR_GROUPS = [
 	{ id: 'analysis', label: '价格与分析' },
 	{ id: 'annotation', label: '标注' },
 	{ id: 'shape', label: '形状与文本' },
+	{ id: 'edit', label: '坐标与样式' },
 	{ id: 'action', label: '操作' },
 ] as const satisfies readonly ToolbarGroup[];
 
@@ -107,6 +109,11 @@ export const OVERLAY_TOOL_PRESENTATIONS: Readonly<
 		label: '斐波那契线',
 		group: 'analysis',
 		icon: 'fibonacci',
+	},
+	priceMeasurement: {
+		label: '价格量度',
+		group: 'analysis',
+		icon: 'measurement',
 	},
 	brush: {
 		label: '画笔',

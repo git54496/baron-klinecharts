@@ -5,6 +5,7 @@ import { loadScene } from './load-scene.js';
 const minimalScene = loadScene('minimal-valid.json');
 const allOverlays = loadScene('all-overlays.json');
 const m1Scene = loadScene('m1-candle-horizontal-line.json');
+const m2LinearScene = loadScene('m2-measurement-linear.json');
 
 function expectTwoDecimalPrice(value: number): void {
 	expect(value.toString()).toMatch(/^-?\d+(?:\.\d{1,2})?$/u);
@@ -410,9 +411,374 @@ test('@browser completes the M1 horizontal line lifecycle with stable Scene data
 	expect(removal.removed).toBe(true);
 	expect(removal.remainingIds).toEqual(['overlay-m1-horizontal-reference']);
 	expect(removal.removedEvents).toEqual([
-		{ type: 'overlay-removed', id: createdId },
+		expect.objectContaining({ type: 'overlay-removed', id: createdId }),
 	]);
 	expect(removal.destroyedErrorCode).toBe('RUNTIME_INIT_FAILED');
 	expect(removal.eventCountAfterDestroy).toBe(removal.eventCountBeforeDestroy);
 	expect(removal.childrenAfterDestroy).toBe(0);
+});
+
+test('@browser M2 switches linear/logarithmic scale without changing fixed prices and restores after recreate', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const result = await page.evaluate(async (scene) => {
+		const { createKLineSceneRuntime } = await import('/src/index.ts');
+		const container = document.querySelector<HTMLElement>('#chart')!;
+		const runtime = await createKLineSceneRuntime(container, scene);
+		const timestamp = scene.data[10]!.timestamp;
+		const beforeValues = runtime.listOverlays().map((overlay) => ({
+			id: overlay.id,
+			anchor: overlay.anchor,
+			start: overlay.start,
+			end: overlay.end,
+		}));
+		const linearY = runtime.projectPoint({ timestamp, value: 300 }).y;
+		const switched = await runtime.setPriceScale('logarithmic');
+		const logarithmicY = runtime.projectPoint({ timestamp, value: 300 }).y;
+		const serialized = JSON.stringify(runtime.exportScene());
+		runtime.destroy();
+		const recreated = await createKLineSceneRuntime(container, JSON.parse(serialized));
+		const recreatedScene = recreated.exportScene();
+		const afterValues = recreated.listOverlays().map((overlay) => ({
+			id: overlay.id,
+			anchor: overlay.anchor,
+			start: overlay.start,
+			end: overlay.end,
+		}));
+		recreated.destroy();
+		return {
+			beforeValues,
+			afterValues,
+			linearY,
+			logarithmicY,
+			runtimeVersion: switched.runtime.runtimeVersion,
+			scale: switched.panes[0]!.yAxes[0]!.scale,
+			recreatedScale: recreatedScene.panes[0]!.yAxes[0]!.scale,
+		};
+	}, m2LinearScene);
+
+	expect(result.beforeValues).toEqual(result.afterValues);
+	expect(result.runtimeVersion).toBe('0.2.0');
+	expect(result.scale).toBe('logarithmic');
+	expect(result.recreatedScale).toBe('logarithmic');
+	expect(Math.abs(result.linearY - result.logarithmicY)).toBeGreaterThan(0.01);
+});
+
+test('@browser M2 rejects logarithmic scale atomically when market data contains a non-positive price', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const result = await page.evaluate(async (scene) => {
+		const { createKLineSceneRuntime } = await import('/src/index.ts');
+		const candidate = structuredClone(scene);
+		candidate.data[0]!.low = 0;
+		const runtime = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			candidate,
+		);
+		const before = JSON.stringify(runtime.exportScene());
+		let errorCode = '';
+		try {
+			await runtime.setPriceScale('logarithmic');
+		} catch (error) {
+			errorCode = (error as { code?: string }).code ?? '';
+		}
+		const after = JSON.stringify(runtime.exportScene());
+		runtime.destroy();
+		return { after, before, errorCode };
+	}, m2LinearScene);
+
+	expect(result.errorCode).toBe('INVALID_MARKET_DATA');
+	expect(result.after).toBe(result.before);
+});
+
+test('@browser M2 measurement anchor drag changes only the chosen endpoint', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const setup = await page.evaluate(async (scene) => {
+		const { createKLineSceneRuntime } = await import('/src/index.ts');
+		const runtime = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			scene,
+		);
+		const source = scene.overlays.find((overlay: { type: string }) => overlay.type === 'priceMeasurement')!;
+		const overlay = runtime.addOverlay({
+			...structuredClone(source),
+			id: 'm2-anchor-measurement',
+			zLevel: 30,
+			start: { timestamp: scene.data[4]!.timestamp, value: 300 },
+			end: { timestamp: scene.data[12]!.timestamp, value: 320 },
+		});
+		const events: Array<Record<string, unknown>> = [];
+		runtime.subscribe((event) => events.push(event));
+		Object.assign(window, { __baronM2AnchorRuntime: runtime, __baronM2AnchorEvents: events });
+		return {
+			before: overlay,
+			origin: runtime.projectPoint(overlay.start),
+			target: runtime.projectPoint({ timestamp: scene.data[6]!.timestamp, value: 304.321 }),
+		};
+	}, m2LinearScene);
+	const chartBox = await page.locator('#chart').boundingBox();
+	expect(chartBox).not.toBeNull();
+	await page.mouse.move(chartBox!.x + setup.origin.x, chartBox!.y + setup.origin.y);
+	await page.mouse.down();
+	await page.mouse.move(chartBox!.x + setup.target.x, chartBox!.y + setup.target.y, { steps: 4 });
+	await page.mouse.up();
+
+	const result = await page.evaluate(() => {
+		const state = window as unknown as {
+			__baronM2AnchorRuntime: {
+				getOverlay(id: string): unknown;
+				destroy(): void;
+			};
+			__baronM2AnchorEvents: Array<Record<string, unknown>>;
+		};
+		const overlay = state.__baronM2AnchorRuntime.getOverlay('m2-anchor-measurement');
+		state.__baronM2AnchorRuntime.destroy();
+		return { events: state.__baronM2AnchorEvents, overlay };
+	});
+	const overlay = result.overlay as typeof setup.before;
+	expect(overlay.end).toEqual(setup.before.end);
+	expect(overlay.start).not.toEqual(setup.before.start);
+	expect(overlay.start.timestamp).toBe(m2LinearScene.data[6]!.timestamp);
+	expect(overlay.start.value).toBeCloseTo(304.321, 1);
+	expect(String(overlay.start.value)).toMatch(/^\d+(?:\.\d{1,3})?$/u);
+	expect(result.events).toEqual(expect.arrayContaining([
+		expect.objectContaining({
+			type: 'overlay-drag-started',
+			target: 'anchor',
+			anchorIndex: 0,
+		}),
+	]));
+});
+
+test('@browser M2 measurement drag emits frozen event order and preserves the last committed export on cancel', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const setup = await page.evaluate(async (scene) => {
+		const { createKLineSceneRuntime } = await import('/src/index.ts');
+		const runtime = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			scene,
+		);
+		const source = scene.overlays.find((overlay: { type: string }) => overlay.type === 'priceMeasurement')!;
+		const overlay = runtime.addOverlay({
+			...structuredClone(source),
+			id: 'm2-interaction-measurement',
+			zLevel: 20,
+			start: { timestamp: scene.data[4]!.timestamp, value: 300 },
+			end: { timestamp: scene.data[12]!.timestamp, value: 320 },
+		});
+		const events: Array<Record<string, unknown>> = [];
+		const progressExports: unknown[] = [];
+		runtime.subscribe((event) => {
+			events.push(event);
+			if (event.type === 'overlay-dragging') {
+				progressExports.push(runtime.getOverlay(overlay.id));
+			}
+		});
+		const origin = runtime.projectPoint({
+			timestamp: scene.data[8]!.timestamp,
+			value: 310,
+		});
+		const target = runtime.projectPoint({
+			timestamp: scene.data[9]!.timestamp,
+			value: 315,
+		});
+		Object.assign(window, {
+			__baronM2Runtime: runtime,
+			__baronM2Events: events,
+			__baronM2ProgressExports: progressExports,
+		});
+		return { origin, target, before: overlay };
+	}, m2LinearScene);
+	const chartBox = await page.locator('#chart').boundingBox();
+	expect(chartBox).not.toBeNull();
+	await page.mouse.move(chartBox!.x + setup.origin.x, chartBox!.y + setup.origin.y);
+	await page.mouse.down();
+	await page.mouse.move(chartBox!.x + setup.target.x, chartBox!.y + setup.target.y, { steps: 4 });
+	await page.mouse.up();
+
+	const committed = await page.evaluate(() => {
+		const state = window as unknown as {
+			__baronM2Runtime: {
+				getOverlay(id: string): unknown;
+				exportScene(): unknown;
+			};
+			__baronM2Events: Array<Record<string, unknown>>;
+			__baronM2ProgressExports: unknown[];
+		};
+		return {
+			overlay: state.__baronM2Runtime.getOverlay('m2-interaction-measurement'),
+			exported: state.__baronM2Runtime.exportScene(),
+			events: state.__baronM2Events,
+			progressExports: state.__baronM2ProgressExports,
+		};
+	});
+	const dragTypes = committed.events
+		.map((event) => event.type)
+		.filter((type) => typeof type === 'string' && type.startsWith('overlay-drag'));
+	expect(dragTypes[0]).toBe('overlay-drag-started');
+	expect(dragTypes.at(-1)).toBe('overlay-drag-committed');
+	expect(dragTypes).not.toContain('overlay-drag-cancelled');
+	expect(committed.events.at(-1)).toEqual(expect.objectContaining({
+		type: 'overlay-updated',
+		sceneVersion: 1,
+		runtimeVersion: '0.2.0',
+	}));
+	const committedOverlay = committed.overlay as {
+		start: { timestamp: number; value: number };
+		end: { timestamp: number; value: number };
+	};
+	for (const progress of committed.progressExports) {
+		expect(progress).toEqual(setup.before);
+	}
+	expect(committedOverlay.end.value - committedOverlay.start.value).toBe(20);
+	expect(m2LinearScene.data.indexOf(
+		m2LinearScene.data.find((bar) => bar.timestamp === committedOverlay.end.timestamp)!,
+	) - m2LinearScene.data.indexOf(
+		m2LinearScene.data.find((bar) => bar.timestamp === committedOverlay.start.timestamp)!,
+	)).toBe(8);
+
+	const cancelSetup = await page.evaluate(() => {
+		const state = window as unknown as {
+			__baronM2Runtime: {
+				getScene(): { data: Array<{ timestamp: number }> };
+				getOverlay(id: string): {
+					start: { timestamp: number; value: number };
+					end: { timestamp: number; value: number };
+				};
+				projectPoint(point: { timestamp: number; value: number }): { x: number; y: number };
+			};
+			__baronM2Events: Array<Record<string, unknown>>;
+		};
+		const overlay = state.__baronM2Runtime.getOverlay('m2-interaction-measurement');
+		const data = state.__baronM2Runtime.getScene().data;
+		const startIndex = data.findIndex((bar) => bar.timestamp === overlay.start.timestamp);
+		const endIndex = data.findIndex((bar) => bar.timestamp === overlay.end.timestamp);
+		const timestamp = data[Math.round((startIndex + endIndex) / 2)]!.timestamp;
+		const value = (overlay.start.value + overlay.end.value) / 2;
+		return {
+			before: structuredClone(overlay),
+			origin: state.__baronM2Runtime.projectPoint({ timestamp, value }),
+			target: state.__baronM2Runtime.projectPoint({ timestamp, value: value + 4 }),
+			eventCount: state.__baronM2Events.length,
+		};
+	});
+	await page.mouse.move(chartBox!.x + cancelSetup.origin.x, chartBox!.y + cancelSetup.origin.y);
+	await page.mouse.down();
+	await page.mouse.move(chartBox!.x + cancelSetup.target.x, chartBox!.y + cancelSetup.target.y, { steps: 3 });
+	await page.keyboard.press('Escape');
+	const cancelled = await page.evaluate((eventCount) => {
+		const state = window as unknown as {
+			__baronM2Runtime: { getOverlay(id: string): unknown; destroy(): void };
+			__baronM2Events: Array<Record<string, unknown>>;
+		};
+		const overlay = state.__baronM2Runtime.getOverlay('m2-interaction-measurement');
+		const events = state.__baronM2Events.slice(eventCount);
+		state.__baronM2Runtime.destroy();
+		return { overlay, events };
+	}, cancelSetup.eventCount);
+	expect(cancelled.overlay).toEqual(cancelSetup.before);
+	expect(cancelled.events.map((event) => event.type)).toEqual(expect.arrayContaining([
+		'overlay-drag-started',
+		'overlay-dragging',
+		'overlay-drag-cancelled',
+	]));
+	expect(cancelled.events.find((event) => event.type === 'overlay-drag-cancelled'))
+		.toEqual(expect.objectContaining({ reason: 'escape' }));
+});
+
+test('@browser M2 emits every frozen drag cancellation reason without committing progress', async ({ page }) => {
+	for (const reason of [
+		'pointer-cancel',
+		'window-blur',
+		'destroy',
+		'validation-error',
+	] as const) {
+		await page.goto('/test/fixture.html');
+		const setup = await page.evaluate(async ({ scene, reason: cancellationReason }) => {
+			const { createKLineSceneRuntime } = await import('/src/index.ts');
+			const runtime = await createKLineSceneRuntime(
+				document.querySelector<HTMLElement>('#chart')!,
+				scene,
+			);
+			const source = scene.overlays.find((overlay: { type: string }) => overlay.type === 'priceMeasurement')!;
+			const overlay = runtime.addOverlay({
+				...structuredClone(source),
+				id: `m2-cancel-${cancellationReason}`,
+				zLevel: 40,
+				start: { timestamp: scene.data[4]!.timestamp, value: 300 },
+				end: { timestamp: scene.data[12]!.timestamp, value: 320 },
+			});
+			const events: Array<Record<string, unknown>> = [];
+			runtime.subscribe((event) => events.push(event));
+			let pointerId = -1;
+			window.addEventListener('pointerdown', (event) => {
+				pointerId = event.pointerId;
+			}, { capture: true, once: true });
+			Object.assign(window, {
+				__baronM2CancelRuntime: runtime,
+				__baronM2CancelEvents: events,
+				__baronM2CancelPointerId: () => pointerId,
+			});
+			const originTimestamp = scene.data[8]!.timestamp;
+			const target = cancellationReason === 'validation-error'
+				? { timestamp: scene.data.at(-1)!.timestamp, value: 314 }
+				: { timestamp: scene.data[9]!.timestamp, value: 314 };
+			return {
+				before: overlay,
+				origin: runtime.projectPoint({ timestamp: originTimestamp, value: 310 }),
+				target: runtime.projectPoint(target),
+			};
+		}, { scene: m2LinearScene, reason });
+		const chartBox = await page.locator('#chart').boundingBox();
+		expect(chartBox).not.toBeNull();
+		await page.mouse.move(chartBox!.x + setup.origin.x, chartBox!.y + setup.origin.y);
+		await page.mouse.down();
+		await page.mouse.move(chartBox!.x + setup.target.x, chartBox!.y + setup.target.y, { steps: 3 });
+
+		if (reason === 'pointer-cancel') {
+			await page.evaluate(() => {
+				const state = window as unknown as { __baronM2CancelPointerId(): number };
+				document.querySelector('#chart')!.dispatchEvent(new PointerEvent('pointercancel', {
+					bubbles: true,
+					pointerId: state.__baronM2CancelPointerId(),
+				}));
+			});
+		} else if (reason === 'window-blur') {
+			await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+		} else if (reason === 'destroy') {
+			await page.evaluate(() => (
+				window as unknown as { __baronM2CancelRuntime: { destroy(): void } }
+			).__baronM2CancelRuntime.destroy());
+		}
+		await page.mouse.up();
+
+		const result = await page.evaluate(({ expectedId, destroyed }) => {
+			const state = window as unknown as {
+				__baronM2CancelRuntime: {
+					destroy(): void;
+					getOverlay(id: string): unknown;
+				};
+				__baronM2CancelEvents: Array<Record<string, unknown>>;
+			};
+			const overlay = destroyed
+				? undefined
+				: state.__baronM2CancelRuntime.getOverlay(expectedId);
+			const events = structuredClone(state.__baronM2CancelEvents);
+			if (!destroyed) {
+				state.__baronM2CancelRuntime.destroy();
+			}
+			return { events, overlay };
+		}, { expectedId: `m2-cancel-${reason}`, destroyed: reason === 'destroy' });
+		const eventTypes = result.events.map((event) => event.type);
+		expect(eventTypes).toContain('overlay-drag-started');
+		expect(eventTypes).not.toContain('overlay-drag-committed');
+		expect(result.events.find((event) => event.type === 'overlay-drag-cancelled'))
+			.toEqual(expect.objectContaining({ reason }));
+		if (reason === 'validation-error') {
+			expect(eventTypes.at(-1)).toBe('scene-error');
+		} else {
+			expect(eventTypes).not.toContain('scene-error');
+		}
+		if (reason !== 'destroy') {
+			expect(result.overlay).toEqual(setup.before);
+		}
+	}
 });

@@ -19,7 +19,7 @@ function axisOverride(
 	return {
 		id: engineAxisId,
 		paneId: enginePaneId,
-		name: 'normal',
+		name: axis.scale === 'logarithmic' ? 'logarithm' : 'normal',
 		reverse: axis.reverse,
 		inside: axis.inside,
 		position: axis.position,
@@ -30,6 +30,19 @@ function axisOverride(
 		},
 		needWidget: true,
 	};
+}
+
+/** 原子提交 Scene 前，将单条轴映射到引擎的正式 normal/logarithm 名称。 */
+export function overrideSceneYAxis(
+	chart: Chart,
+	idMap: EngineIdMap,
+	axis: SceneYAxis,
+	paneId: string,
+	path: string,
+): void {
+	const enginePaneId = requireMappedId(idMap.paneToEngine, paneId, `${path}/paneId`, 'Pane');
+	const engineAxisId = requireMappedId(idMap.yAxisToEngine, axis.id, `${path}/id`, 'Y-axis');
+	chart.overrideYAxis(axisOverride(axis, enginePaneId, engineAxisId));
 }
 
 /** 按 Scene 顺序创建 Pane、Y 轴和指标，并核对每个映射。 */

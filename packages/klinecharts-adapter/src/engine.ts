@@ -7,6 +7,7 @@ import { createStaticDataLoader } from './static-data-loader.js';
 import {
 	KLINECHARTS_ENGINE_VERSION,
 	KLINECHARTS_RUNTIME_VERSION,
+	SUPPORTED_KLINECHARTS_RUNTIME_VERSIONS,
 } from './version.js';
 
 export type KLineChartsModule = typeof import('klinecharts');
@@ -21,12 +22,14 @@ function assertRuntimeIdentity(scene: ChartScene, actualEngineVersion: string): 
 		scene.runtime.engine !== 'klinecharts' ||
 		scene.runtime.engineVersion !== KLINECHARTS_ENGINE_VERSION ||
 		actualEngineVersion !== KLINECHARTS_ENGINE_VERSION ||
-		scene.runtime.runtimeVersion !== KLINECHARTS_RUNTIME_VERSION
+		!SUPPORTED_KLINECHARTS_RUNTIME_VERSIONS.includes(
+			scene.runtime.runtimeVersion as (typeof SUPPORTED_KLINECHARTS_RUNTIME_VERSIONS)[number],
+		)
 	) {
 		throw new SceneError(
 			'ENGINE_VERSION_MISMATCH',
 			'/runtime',
-			`Expected klinecharts ${KLINECHARTS_ENGINE_VERSION} and Runtime ${KLINECHARTS_RUNTIME_VERSION}; received engine ${actualEngineVersion}.`,
+			`Expected klinecharts ${KLINECHARTS_ENGINE_VERSION} and a supported Runtime through ${KLINECHARTS_RUNTIME_VERSION}; received engine ${actualEngineVersion}.`,
 		);
 	}
 }

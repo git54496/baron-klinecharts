@@ -14,9 +14,24 @@ class ValidationTests(unittest.TestCase):
             "all-indicators.json",
             "all-overlays.json",
             "m1-candle-horizontal-line.json",
+            "m2-measurement-linear.json",
+            "m2-measurement-log.json",
         ):
             with self.subTest(name=name):
                 self.assertEqual(validate_scene(load_fixture(name))["version"], 1)
+
+    def test_rejects_nonpositive_logarithmic_prices_and_invalid_measurement_references(self) -> None:
+        scene = load_fixture("m2-measurement-log.json")
+        scene["overlays"][0]["anchor"]["value"] = 0
+        with self.assertRaises(SceneError) as captured:
+            validate_scene(scene)
+        self.assertEqual(captured.exception.code, "SCENE_SCHEMA_INVALID")
+
+        measurement = load_fixture("m2-measurement-linear.json")
+        measurement["overlays"][2]["start"]["timestamp"] += 1
+        with self.assertRaises(SceneError) as captured_reference:
+            validate_scene(measurement)
+        self.assertEqual(captured_reference.exception.code, "INVALID_REFERENCE")
 
     def test_round_trips_m1_horizontal_line_metadata(self) -> None:
         scene = validate_scene(load_fixture("m1-candle-horizontal-line.json"))

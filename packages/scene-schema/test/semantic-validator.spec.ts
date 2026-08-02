@@ -12,6 +12,29 @@ import {
 	makeScene,
 } from './helpers/scene.js';
 
+function promoteToM2(scene: ChartScene, scale: 'linear' | 'logarithmic' = 'linear'): void {
+	(scene.runtime as { runtimeVersion: string }).runtimeVersion = '0.2.0';
+	for (const pane of scene.panes) {
+		for (const axis of pane.yAxes) {
+			(axis as typeof axis & { scale: string }).scale =
+				pane.kind === 'candle' && axis.role === 'primary' ? scale : 'linear';
+		}
+	}
+}
+
+function addMeasurement(scene: ChartScene, startValue = 12.4, endValue = 12.9): void {
+	const base = makeOverlay('segment') as unknown as Record<string, unknown>;
+	const measurement = {
+		...base,
+		id: 'm2-measurement',
+		type: 'priceMeasurement',
+		start: { timestamp: scene.data[0]!.timestamp, value: startValue },
+		end: { timestamp: scene.data[2]!.timestamp, value: endValue },
+	};
+	delete measurement.points;
+	(scene.overlays as unknown[]).push(measurement);
+}
+
 function captureSceneError(scene: unknown): SceneError {
 	try {
 		parseChartScene(scene);
@@ -184,5 +207,95 @@ describe('ChartScene semantic validation', () => {
 
 		parseChartScene(scene);
 		expect(scene).toEqual(before);
+	});
+
+	it('keeps the canonical M1 scene byte-for-byte free of scale', () => {
+		const parsed = parseChartScene(m1CandleHorizontalLine);
+		expect(JSON.stringify(parsed)).not.toContain('"scale"');
+		expect(parsed.runtime.runtimeVersion).toBe('0.1.0');
+	});
+
+	it('accepts Runtime 0.2.0 only when every Y-axis has an explicit valid scale', () => {
+		const scene = makeScene();
+		promoteToM2(scene, 'logarithmic');
+
+		const parsed = parseChartScene(scene);
+		expect((parsed.panes[0]!.yAxes[0] as { scale?: string }).scale).toBe('logarithmic');
+		expect(parsed.runtime.runtimeVersion).toBe('0.2.0');
+	});
+
+	it('rejects scale in Runtime 0.1.0 and missing scale in Runtime 0.2.0', () => {
+		const oldScene = makeScene();
+		(oldScene.panes[0]!.yAxes[0] as typeof oldScene.panes[0]['yAxes'][0] & { scale: string })
+			.scale = 'linear';
+		expect(captureSceneError(oldScene).code).toBe('SCENE_SCHEMA_INVALID');
+
+		const newScene = makeScene();
+		(newScene.runtime as { runtimeVersion: string }).runtimeVersion = '0.2.0';
+		expect(captureSceneError(newScene).code).toBe('SCENE_SCHEMA_INVALID');
+	});
+
+	it('requires every non-candle-primary Runtime 0.2.0 Y-axis to remain linear', () => {
+		const scene = makeScene();
+		promoteToM2(scene);
+		addIndicatorPane(scene, makeIndicator('MACD', 0));
+		(scene.panes[1]!.yAxes[0] as typeof scene.panes[1]['yAxes'][0] & { scale: string })
+			.scale = 'logarithmic';
+
+		expect(captureSceneError(scene)).toMatchObject({
+			code: 'SCENE_SCHEMA_INVALID',
+			path: '/panes/1/yAxes/0/scale',
+		});
+	});
+
+	it.each([
+		['open', 0],
+		['high', -1],
+		['low', 0],
+		['close', -0.01],
+	] as const)('rejects non-positive logarithmic candle %s=%s', (field, value) => {
+		const scene = makeScene();
+		promoteToM2(scene, 'logarithmic');
+		scene.data[0]![field] = value;
+		if (field === 'high') {
+			scene.data[0]!.open = value;
+			scene.data[0]!.low = value;
+			scene.data[0]!.close = value;
+		}
+
+		expect(captureSceneError(scene).code).toBe('INVALID_MARKET_DATA');
+	});
+
+	it.each([0, -1])('rejects priceMeasurement start value %s in both axis modes', (value) => {
+		const scene = makeScene();
+		promoteToM2(scene);
+		addMeasurement(scene, value, 12.9);
+
+		expect(captureSceneError(scene)).toMatchObject({
+			code: 'SCENE_SCHEMA_INVALID',
+			path: '/overlays/0/start/value',
+		});
+	});
+
+	it('requires priceMeasurement timestamps to reference embedded bars', () => {
+		const scene = makeScene();
+		promoteToM2(scene);
+		addMeasurement(scene);
+		(scene.overlays[0] as unknown as { start: { timestamp: number } }).start.timestamp += 1;
+
+		expect(captureSceneError(scene)).toMatchObject({
+			code: 'INVALID_REFERENCE',
+			path: '/overlays/0/start/timestamp',
+		});
+	});
+
+	it('rejects priceMeasurement in Runtime 0.1.0', () => {
+		const scene = makeScene();
+		addMeasurement(scene);
+
+		expect(captureSceneError(scene)).toMatchObject({
+			code: 'SCENE_SCHEMA_INVALID',
+			path: '/overlays/0/type',
+		});
 	});
 });

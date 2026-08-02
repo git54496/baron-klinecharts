@@ -20,6 +20,7 @@ export const BUILT_IN_OVERLAYS = [
 ] as const satisfies readonly SceneOverlay['type'][];
 
 export const PROJECT_OVERLAYS = [
+	'priceMeasurement',
 	'rectangle',
 	'arrow',
 	'crossLine',

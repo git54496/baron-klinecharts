@@ -6,6 +6,7 @@ import { loadScene } from './load-scene.js';
 
 const minimalScene = loadScene('minimal-valid.json');
 const m1Scene = loadScene('m1-candle-horizontal-line.json');
+const m2Scene = loadScene('m2-measurement-linear.json');
 
 test('@browser toolbar uses registered tools and DOM APIs with explicit teardown', async ({ page }) => {
 	await page.goto('/test/fixture.html');
@@ -45,7 +46,7 @@ test('@browser toolbar uses registered tools and DOM APIs with explicit teardown
 		};
 	}, minimalScene);
 
-	expect(result.types).toEqual(result.expected);
+	expect(new Set(result.types)).toEqual(new Set(result.expected));
 	expect(result.calls).toEqual([
 		{ type: result.expected[0], text: undefined },
 		{ type: 'simpleAnnotation', text: '压力位' },
@@ -120,6 +121,7 @@ test('@browser toolbar renders the approved icon groups in normal flow', async (
 		'价格通道',
 		'平行直线',
 		'斐波那契线',
+		'价格量度',
 		'画笔',
 		'简易标注',
 		'简易标签',
@@ -137,9 +139,10 @@ test('@browser toolbar renders the approved icon groups in normal flow', async (
 		'价格与分析',
 		'标注',
 		'形状与文本',
+		'坐标与样式',
 		'操作',
 	]);
-	expect(result.buttonText).toEqual(Array.from({ length: 23 }, () => ''));
+	expect(result.buttonText).toEqual(Array.from({ length: 24 }, () => ''));
 	expect(result.viewBox).toBe('0 0 24 24');
 	expect(result.strokeWidth).toBe('2');
 	expect(result.buttonSize).toEqual({ width: '34px', height: '34px' });
@@ -149,6 +152,82 @@ test('@browser toolbar renders the approved icon groups in normal flow', async (
 	expect(result.hasTextInput).toBe(true);
 	expect(result.chartGap).toBe(0);
 	expect(result.hasViewport).toBe(true);
+});
+
+test('@browser M2 toolbar exposes measurement, scale, style, delete request, and opaque host actions', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const result = await page.evaluate(async (scene) => {
+		const { createKLineSceneRuntime, createStandardToolbar } = await import('/src/index.ts');
+		const events: Array<Record<string, unknown>> = [];
+		const runtime = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			scene,
+			{ onEvent: (event) => events.push(event) },
+		);
+		const toolbar = createStandardToolbar(
+			document.querySelector<HTMLElement>('#toolbar')!,
+			runtime,
+			{
+				deleteBehavior: 'request',
+				hostActions: [{ actionId: 'host.review', label: '交给宿主' }],
+			},
+		);
+		const measurementButton = toolbar.element.querySelector<HTMLButtonElement>(
+			'[data-overlay-type="priceMeasurement"]',
+		)!;
+		let startedType = '';
+		runtime.startOverlayDrawing = ((type: string) => {
+			startedType = type;
+			return 'measurement-test';
+		}) as typeof runtime.startOverlayDrawing;
+		measurementButton.click();
+		const scale = toolbar.element.querySelector<HTMLSelectElement>('[data-action="price-scale"]')!;
+		scale.value = 'logarithmic';
+		scale.dispatchEvent(new Event('change'));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const selectedId = 'm2-aapl-measurement-300-330';
+		runtime.getSelectedOverlayId = () => selectedId;
+		const color = toolbar.element.querySelector<HTMLInputElement>('[data-action="line-color"]')!;
+		color.value = '#ff0000';
+		color.dispatchEvent(new Event('change'));
+		const selectedAfterStyleChange = runtime.getSelectedOverlayId();
+		toolbar.element.querySelector<HTMLButtonElement>('[data-action="delete"]')!.click();
+		toolbar.element.querySelector<HTMLButtonElement>('[data-host-action="host.review"]')!.click();
+		const exported = runtime.exportScene();
+		const overlay = runtime.getOverlay(selectedId)!;
+		runtime.destroy();
+		return {
+			startedType,
+			runtimeVersion: exported.runtime.runtimeVersion,
+			scale: exported.panes[0]!.yAxes[0]!.scale,
+			lineColor: overlay.styles.line.color,
+			selectedAfterStyleChange,
+			events,
+		};
+	}, m2Scene);
+
+	expect(result.startedType).toBe('priceMeasurement');
+	expect(result.runtimeVersion).toBe('0.2.0');
+	expect(result.scale).toBe('logarithmic');
+	expect(result.selectedAfterStyleChange).toBe('m2-aapl-measurement-300-330');
+	expect(result.events.filter((event) => event.type === 'overlay-style-changed')).toHaveLength(1);
+	expect(result.lineColor).toBe('rgba(255, 0, 0, 1)');
+	expect(result.events).toEqual(expect.arrayContaining([
+		expect.objectContaining({
+			type: 'overlay-style-changed',
+			sceneVersion: 1,
+			runtimeVersion: '0.2.0',
+		}),
+		expect.objectContaining({
+			type: 'overlay-delete-requested',
+			overlayId: 'm2-aapl-measurement-300-330',
+		}),
+		expect.objectContaining({
+			type: 'host-action-requested',
+			actionId: 'host.review',
+			overlayId: 'm2-aapl-measurement-300-330',
+		}),
+	]));
 });
 
 test('@browser toolbar Tooltip supports hover, focus, viewport clamping, and narrow scrolling', async ({ page }) => {

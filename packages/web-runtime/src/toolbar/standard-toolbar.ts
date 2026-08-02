@@ -36,6 +36,18 @@ interface ToolbarTooltip {
 	readonly destroy: () => void;
 }
 
+/** 将 HTML color 控件的 #RRGGBB 边界值归一化为 Scene v1 唯一的 rgba 表示。 */
+function htmlHexColorToSceneRgba(value: string): string {
+	const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(value);
+	if (match === null) {
+		throw new TypeError(`Invalid HTML color value: ${value}`);
+	}
+	const red = Number.parseInt(match[1]!, 16);
+	const green = Number.parseInt(match[2]!, 16);
+	const blue = Number.parseInt(match[3]!, 16);
+	return `rgba(${red}, ${green}, ${blue}, 1)`;
+}
+
 function createIconButton(
 	presentation: ToolbarToolPresentation | ToolbarActionPresentation,
 	action: () => void,
@@ -178,6 +190,45 @@ function setActiveOverlayButton(
 	}
 }
 
+function createSelectControl(
+	labelText: string,
+	action: string,
+	values: readonly { readonly value: string; readonly label: string }[],
+): { readonly label: HTMLLabelElement; readonly select: HTMLSelectElement } {
+	const label = document.createElement('label');
+	label.className = 'baron-kline-toolbar__control';
+	const text = document.createElement('span');
+	text.textContent = labelText;
+	const select = document.createElement('select');
+	select.dataset.action = action;
+	select.setAttribute('aria-label', labelText);
+	for (const value of values) {
+		const option = document.createElement('option');
+		option.value = value.value;
+		option.textContent = value.label;
+		select.append(option);
+	}
+	label.append(text, select);
+	return { label, select };
+}
+
+function createInputControl(
+	labelText: string,
+	action: string,
+	type: 'color' | 'number',
+): { readonly label: HTMLLabelElement; readonly input: HTMLInputElement } {
+	const label = document.createElement('label');
+	label.className = 'baron-kline-toolbar__control';
+	const text = document.createElement('span');
+	text.textContent = labelText;
+	const input = document.createElement('input');
+	input.type = type;
+	input.dataset.action = action;
+	input.setAttribute('aria-label', labelText);
+	label.append(text, input);
+	return { label, input };
+}
+
 /** 创建不含撤销/重做的标准离线编辑工具栏。 */
 export function createStandardToolbar(
 	container: HTMLElement,
@@ -211,6 +262,68 @@ export function createStandardToolbar(
 	textInput.dataset.action = 'overlay-text';
 	textInput.setAttribute('aria-label', '标注文本');
 	textInput.placeholder = '输入标注文本';
+	const scaleControl = createSelectControl('价格轴', 'price-scale', [
+		{ value: 'linear', label: '线性' },
+		{ value: 'logarithmic', label: '对数' },
+	]);
+	const lineStyleControl = createSelectControl('线型', 'line-style', [
+		{ value: 'solid', label: '实线' },
+		{ value: 'dashed', label: '虚线' },
+	]);
+	const lineSizeControl = createInputControl('线宽', 'line-size', 'number');
+	lineSizeControl.input.min = '0.5';
+	lineSizeControl.input.max = '10';
+	lineSizeControl.input.step = '0.5';
+	lineSizeControl.input.value = '1';
+	const lineColorControl = createInputControl('线色', 'line-color', 'color');
+	lineColorControl.input.value = '#2962ff';
+	const primaryAxis = runtime.getScene().panes
+		.find((pane) => pane.kind === 'candle')
+		?.yAxes.find((axis) => axis.role === 'primary');
+	scaleControl.select.value = primaryAxis?.scale ?? 'linear';
+
+	const applySelectedLineStyle = (change: {
+		readonly color?: string;
+		readonly size?: number;
+		readonly style?: 'solid' | 'dashed';
+	}): void => {
+		const id = runtime.getSelectedOverlayId();
+		const overlay = id === undefined ? undefined : runtime.getOverlay(id);
+		if (id === undefined || overlay === undefined) {
+			return;
+		}
+		runtime.updateOverlayStyles(id, {
+			...structuredClone(overlay.styles),
+			line: {
+				...structuredClone(overlay.styles.line),
+				...change,
+			},
+		});
+	};
+	const handleScaleChange = async (): Promise<void> => {
+		await runtime.setPriceScale(scaleControl.select.value as 'linear' | 'logarithmic');
+	};
+	const handleLineStyleChange = (): void => {
+		applySelectedLineStyle({
+			style: lineStyleControl.select.value as 'solid' | 'dashed',
+		});
+	};
+	const handleLineSizeChange = (): void => {
+		applySelectedLineStyle({ size: lineSizeControl.input.valueAsNumber });
+	};
+	const handleLineColorChange = (): void => {
+		applySelectedLineStyle({ color: htmlHexColorToSceneRgba(lineColorControl.input.value) });
+	};
+	scaleControl.select.addEventListener('change', handleScaleChange);
+	lineStyleControl.select.addEventListener('change', handleLineStyleChange);
+	lineSizeControl.input.addEventListener('change', handleLineSizeChange);
+	lineColorControl.input.addEventListener('change', handleLineColorChange);
+	cleanupCallbacks.push(
+		() => scaleControl.select.removeEventListener('change', handleScaleChange),
+		() => lineStyleControl.select.removeEventListener('change', handleLineStyleChange),
+		() => lineSizeControl.input.removeEventListener('change', handleLineSizeChange),
+		() => lineColorControl.input.removeEventListener('change', handleLineColorChange),
+	);
 
 	for (const group of TOOLBAR_GROUPS) {
 		const groupElement = document.createElement('div');
@@ -219,7 +332,14 @@ export function createStandardToolbar(
 		groupElement.setAttribute('role', 'group');
 		groupElement.setAttribute('aria-label', group.label);
 
-		if (group.id === 'action') {
+		if (group.id === 'edit') {
+			groupElement.append(
+				scaleControl.label,
+				lineStyleControl.label,
+				lineSizeControl.label,
+				lineColorControl.label,
+			);
+		} else if (group.id === 'action') {
 			for (const presentation of TOOLBAR_ACTIONS) {
 				const action = presentation.action === 'delete'
 					? (): void => {
@@ -229,7 +349,11 @@ export function createStandardToolbar(
 							}
 							const overlay = runtime.getOverlay(id);
 							if (overlay !== undefined && !overlay.locked) {
-								runtime.removeOverlay(id);
+								if ((options.deleteBehavior ?? 'direct') === 'request') {
+									runtime.requestOverlayDelete(id);
+								} else {
+									runtime.removeOverlay(id);
+								}
 							}
 						}
 					: (): void => {
@@ -249,6 +373,21 @@ export function createStandardToolbar(
 						presentation.action,
 					),
 				);
+			}
+			for (const hostAction of options.hostActions ?? []) {
+				const button = document.createElement('button');
+				button.type = 'button';
+				button.className = 'baron-kline-toolbar__button baron-kline-toolbar__host-action';
+				button.dataset.hostAction = hostAction.actionId;
+				button.textContent = hostAction.label;
+				button.setAttribute('aria-label', hostAction.label);
+				const action = (): void => runtime.requestHostAction(
+					hostAction.actionId,
+					runtime.getSelectedOverlayId() ?? null,
+				);
+				button.addEventListener('click', action);
+				groupElement.append(button);
+				cleanupCallbacks.push(() => button.removeEventListener('click', action));
 			}
 		} else {
 			for (const overlayType of SUPPORTED_OVERLAYS) {

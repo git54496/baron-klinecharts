@@ -4,12 +4,14 @@ import { arrowOverlay } from './arrow.js';
 import { calloutOverlay } from './callout.js';
 import { crossLineOverlay } from './cross-line.js';
 import { rectangleOverlay } from './rectangle.js';
+import { priceMeasurementOverlay } from './price-measurement.js';
 import { textOverlay } from './text.js';
 
 type KLineOverlayTemplate = Parameters<typeof registerOverlay>[0];
 type RegisterOverlay = (template: KLineOverlayTemplate) => void;
 
 const projectExtensions = [
+	priceMeasurementOverlay,
 	rectangleOverlay,
 	arrowOverlay,
 	crossLineOverlay,

@@ -81,4 +81,27 @@ describe('engine Overlay to Scene conversion', () => {
 
 		expect(converted.anchor).toEqual({ timestamp: 1784736000000 });
 	});
+
+	it('normalizes both priceMeasurement endpoints without changing their timestamps', () => {
+		const source = {
+			...sourceOverlay('segment'),
+			type: 'priceMeasurement',
+			start: { timestamp: 1784736000000, value: 300 },
+			end: { timestamp: 1784822400000, value: 330 },
+		} as SceneOverlay;
+		delete source.points;
+		const converted = fromEngineOverlay(
+			engineOverlay(source, [
+				{ timestamp: 1784736000000, value: 300.004 },
+				{ timestamp: 1784822400000, value: 330.006 },
+			]),
+			source,
+			idMap,
+			'/overlays/0',
+			2,
+		);
+
+		expect(converted.start).toEqual({ timestamp: 1784736000000, value: 300 });
+		expect(converted.end).toEqual({ timestamp: 1784822400000, value: 330.01 });
+	});
 });

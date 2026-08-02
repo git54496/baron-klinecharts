@@ -26,10 +26,10 @@ const publicPackages = [
 ];
 
 const publicPackageVersions = new Map([
-	['@baron1996/kline-scene-schema', '0.1.0'],
-	['@baron1996/klinecharts-adapter', '0.1.1'],
-	['@baron1996/klinecharts-runtime', '0.1.1'],
-	['@baron1996/klinecharts-cli', '0.1.0'],
+	['@baron1996/kline-scene-schema', '0.2.0'],
+	['@baron1996/klinecharts-adapter', '0.2.0'],
+	['@baron1996/klinecharts-runtime', '0.2.0'],
+	['@baron1996/klinecharts-cli', '0.2.0'],
 ]);
 
 async function loadConsumerPackages() {
@@ -149,7 +149,7 @@ test('runtime README documents the minimum M1 create, draw, export, and recreate
 	);
 });
 
-test('four public tarballs support the M1 Runtime journey through package exports', async () => {
+test('four public tarballs support the M1 and M2 Runtime journeys through package exports', async () => {
 	const { directory, packages } = await loadConsumerPackages();
 	assert.equal(packages.length, publicPackages.length);
 
@@ -194,7 +194,7 @@ test('four public tarballs support the M1 Runtime journey through package export
 		if (packageName === '@baron1996/klinecharts-runtime') {
 			assert.equal(
 				installedManifest.dependencies['@baron1996/klinecharts-adapter'],
-				'0.1.1',
+				'0.2.0',
 			);
 		}
 		for (const dependencySpec of Object.values(installedManifest.dependencies ?? {})) {
@@ -212,6 +212,10 @@ test('four public tarballs support the M1 Runtime journey through package export
 		resolve('tests', 'fixtures', 'scenes', 'm1-candle-horizontal-line.json'),
 		fixture,
 	);
+	await copyFile(
+		resolve('tests', 'fixtures', 'scenes', 'm2-measurement-linear.json'),
+		join(publicDirectory, 'm2-scene.json'),
+	);
 	const cli = join(installPrefix, 'bin', 'baron-kline');
 	execFileSync(cli, ['validate', fixture], { cwd: consumer, stdio: 'inherit' });
 
@@ -222,9 +226,9 @@ test('four public tarballs support the M1 Runtime journey through package export
 			"const schema = await import('@baron1996/kline-scene-schema');",
 			"const adapter = await import('@baron1996/klinecharts-adapter');",
 			"const runtime = await import('@baron1996/klinecharts-runtime');",
-			"if (schema.SCENE_PACKAGE_VERSION !== '0.1.0') throw new Error('Schema root export failed.');",
-			"if (adapter.ADAPTER_PACKAGE_VERSION !== '0.1.1') throw new Error('Adapter root export failed.');",
-			"if (runtime.WEB_RUNTIME_PACKAGE_VERSION !== '0.1.1') throw new Error('Runtime root export failed.');",
+			"if (schema.SCENE_PACKAGE_VERSION !== '0.2.0') throw new Error('Schema root export failed.');",
+			"if (adapter.ADAPTER_PACKAGE_VERSION !== '0.2.0') throw new Error('Adapter root export failed.');",
+			"if (runtime.WEB_RUNTIME_PACKAGE_VERSION !== '0.2.0') throw new Error('Runtime root export failed.');",
 			'const adapterMethods = Object.getOwnPropertyNames(adapter.KLineChartsSceneAdapter.prototype);',
 			"if (adapterMethods.includes('getChart') || adapterMethods.includes('getEngine')) throw new Error('Adapter exposes its internal Chart.');",
 			'for (const specifier of [',
@@ -284,8 +288,28 @@ test('four public tarballs support the M1 Runtime journey through package export
 		'    secondOverlay,',
 		'    secondOverlayIds: secondScene.overlays.map((overlay) => overlay.id),',
 		'  };',
+		'  recreated.destroy();',
 		'  window.__M1_RESULT__ = result;',
 		'  return result;',
+		'};',
+		'window.__COMPLETE_M2_ROUND_TRIP__ = async () => {',
+		"  const m2Scene = parseChartScene(await (await fetch('/m2-scene.json')).json());",
+		'  const m2Runtime = await createKLineSceneRuntime(container, m2Scene);',
+		"  const source = m2Scene.overlays.find((overlay) => overlay.type === 'priceMeasurement');",
+		"  const created = m2Runtime.addOverlay({ ...source, id: 'm2-consumer-measurement' });",
+		"  const styled = m2Runtime.updateOverlayStyles(created.id, { ...created.styles, line: { ...created.styles.line, color: 'rgba(255, 0, 0, 1)' } });",
+		'  const beforeValues = m2Runtime.listOverlays().map((overlay) => ({ id: overlay.id, anchor: overlay.anchor, start: overlay.start, end: overlay.end }));',
+		"  const logarithmic = await m2Runtime.setPriceScale('logarithmic');",
+		'  const serialized = JSON.stringify(m2Runtime.exportScene());',
+		'  m2Runtime.destroy();',
+		'  const childrenAfterDestroy = container.childElementCount;',
+		'  const recreated = await createKLineSceneRuntime(container, JSON.parse(serialized));',
+		'  const afterValues = recreated.listOverlays().map((overlay) => ({ id: overlay.id, anchor: overlay.anchor, start: overlay.start, end: overlay.end }));',
+		"  const recreatedOverlay = recreated.getOverlay('m2-consumer-measurement');",
+		"  const removed = recreated.removeOverlay('m2-consumer-measurement');",
+		'  const remainingCount = recreated.listOverlays().length;',
+		'  recreated.destroy();',
+		'  return { afterValues, beforeValues, childrenAfterDestroy, logarithmic, recreatedOverlay, remainingCount, removed, styled };',
 		'};',
 	].join('\n');
 	assert.doesNotMatch(
@@ -318,7 +342,7 @@ test('four public tarballs support the M1 Runtime journey through package export
 		await page.goto(server.url);
 		await page.waitForFunction(() => window.__M1_CONSUMER__?.startedId !== undefined);
 		const readiness = await page.evaluate(() => window.__M1_CONSUMER__);
-		assert.equal(readiness.adapterVersion, '0.1.1');
+		assert.equal(readiness.adapterVersion, '0.2.0');
 		assert.equal(readiness.startedId, 'overlay-m1-consumer-horizontal');
 
 		const drawingCanvas = page.locator('#chart canvas').nth(1);
@@ -349,6 +373,16 @@ test('four public tarballs support the M1 Runtime journey through package export
 		);
 		assert.ok(!result.methodNames.includes('getChart'));
 		assert.ok(!result.methodNames.includes('getEngine'));
+
+		const m2Result = await page.evaluate(() => window.__COMPLETE_M2_ROUND_TRIP__());
+		assert.equal(m2Result.logarithmic.runtime.runtimeVersion, '0.2.0');
+		assert.equal(m2Result.logarithmic.panes[0].yAxes[0].scale, 'logarithmic');
+		assert.equal(m2Result.styled.styles.line.color, 'rgba(255, 0, 0, 1)');
+		assert.equal(m2Result.recreatedOverlay.styles.line.color, 'rgba(255, 0, 0, 1)');
+		assert.deepEqual(m2Result.afterValues, m2Result.beforeValues);
+		assert.equal(m2Result.childrenAfterDestroy, 0);
+		assert.equal(m2Result.removed, true);
+		assert.equal(m2Result.remainingCount, 3);
 	} finally {
 		await browser.close();
 		await server.close();

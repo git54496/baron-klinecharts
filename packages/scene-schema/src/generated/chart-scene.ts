@@ -28,7 +28,7 @@ export interface ChartScene {
 export interface RuntimeIdentity {
 	engine: 'klinecharts';
 	engineVersion: '10.0.0';
-	runtimeVersion: '0.1.0';
+	runtimeVersion: '0.1.0' | '0.2.0';
 }
 export interface Symbol {
 	ticker: string;
@@ -103,6 +103,7 @@ export interface ScenePane {
 export interface YAxis {
 	id: string;
 	role: 'primary' | 'additional';
+	scale?: 'linear' | 'logarithmic';
 	position: 'left' | 'right';
 	reverse: boolean;
 	inside: boolean;
@@ -199,7 +200,8 @@ export interface SceneOverlay {
 		| 'arrow'
 		| 'crossLine'
 		| 'callout'
-		| 'text';
+		| 'text'
+		| 'priceMeasurement';
 	paneId: string;
 	groupId?: string;
 	visible: boolean;

@@ -31,6 +31,10 @@ const m1Fixture = join(
 	'scenes',
 	'm1-candle-horizontal-line.json',
 );
+const m2Fixtures = [
+	join(repositoryDirectory, 'tests', 'fixtures', 'scenes', 'm2-measurement-linear.json'),
+	join(repositoryDirectory, 'tests', 'fixtures', 'scenes', 'm2-measurement-log.json'),
+];
 const mockFixture = join(repositoryDirectory, 'examples', 'vanilla', 'mock-year.scene.json');
 
 async function runPython(arguments_) {
@@ -69,6 +73,25 @@ if (m1NodeHash !== m1PythonHash) {
 	throw new Error(
 		`TypeScript and Python M1 Scene hashes differ: ${m1NodeHash} != ${m1PythonHash}`,
 	);
+}
+
+const m2Hashes = [];
+for (const [index, m2Fixture] of m2Fixtures.entries()) {
+	const pythonCanonicalPath = join(temporaryDirectory, `m2-${index}-python-canonical.json`);
+	await runPython(['roundtrip', m2Fixture, pythonCanonicalPath]);
+	const m2Scene = parseChartScene(JSON.parse(await readFile(m2Fixture, 'utf8')));
+	const nodeCanonical = serializeCanonicalScene(m2Scene);
+	if (!Buffer.from(nodeCanonical).equals(await readFile(pythonCanonicalPath))) {
+		throw new Error(`TypeScript and Python canonical M2 Scene ${index} bytes differ.`);
+	}
+	const nodeHash = await hashCanonicalScene(m2Scene);
+	const pythonHash = (await runPython(['hash', m2Fixture])).stdout.trim();
+	if (nodeHash !== pythonHash) {
+		throw new Error(
+			`TypeScript and Python M2 Scene ${index} hashes differ: ${nodeHash} != ${pythonHash}`,
+		);
+	}
+	m2Hashes.push(nodeHash);
 }
 
 const mockCliHtml = join(temporaryDirectory, 'mock-cli.html');
@@ -174,7 +197,7 @@ if (!(await readFile(cliPng)).equals(await readFile(pythonPng))) {
 const html = cliHtmlBytes.toString('utf8');
 for (const metadata of [
 	'name="baron-scene-version" content="1"',
-	'name="baron-runtime-version" content="0.1.0"',
+	'name="baron-runtime-version" content="0.2.0"',
 	'name="baron-klinecharts-version" content="10.0.0"',
 	'name="baron-playwright-version" content="1.61.0"',
 ]) {
@@ -184,5 +207,5 @@ for (const metadata of [
 }
 
 process.stdout.write(
-	`Cross-language round trip passed: mock=${mockNodeHash}; m1=${m1NodeHash}; edited=${nodeHash}; artifacts: ${temporaryDirectory}\n`,
+	`Cross-language round trip passed: mock=${mockNodeHash}; m1=${m1NodeHash}; m2=${m2Hashes.join(',')}; edited=${nodeHash}; artifacts: ${temporaryDirectory}\n`,
 );

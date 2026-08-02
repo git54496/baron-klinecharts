@@ -44,6 +44,17 @@ const overlayTypes: SceneOverlay['type'][] = [
 	'text',
 ];
 
+function makeM2Scene(): ReturnType<typeof makeScene> {
+	const scene = makeScene();
+	(scene.runtime as { runtimeVersion: string }).runtimeVersion = '0.2.0';
+	for (const pane of scene.panes) {
+		for (const axis of pane.yAxes) {
+			(axis as typeof axis & { scale: string }).scale = 'linear';
+		}
+	}
+	return scene;
+}
+
 describe('supported Overlay schema', () => {
 	it('accepts the M1 candle and horizontal-line fixture', () => {
 		const scene = parseChartScene(m1CandleHorizontalLine);
@@ -151,4 +162,50 @@ describe('supported Overlay schema', () => {
 			expect.objectContaining<Partial<SceneError>>({ code: 'SCENE_SCHEMA_INVALID' }),
 		);
 	});
+
+	it('accepts priceMeasurement with only two persisted data anchors', () => {
+		const scene = makeM2Scene();
+		const base = makeOverlay('segment') as unknown as Record<string, unknown>;
+		const measurement = {
+			...base,
+			id: 'm2-measurement',
+			type: 'priceMeasurement',
+			start: { timestamp: scene.data[0]!.timestamp, value: 12.4 },
+			end: { timestamp: scene.data[2]!.timestamp, value: 12.9 },
+		};
+		delete measurement.points;
+		(scene.overlays as unknown[]).push(measurement);
+
+		const parsed = parseChartScene(scene);
+		expect(parsed.overlays[0]).toMatchObject({
+			id: 'm2-measurement',
+			type: 'priceMeasurement',
+			start: { timestamp: scene.data[0]!.timestamp, value: 12.4 },
+			end: { timestamp: scene.data[2]!.timestamp, value: 12.9 },
+		});
+		expect(parsed.overlays[0]).not.toHaveProperty('absoluteChange');
+		expect(parsed.overlays[0]).not.toHaveProperty('percentageChange');
+	});
+
+	it.each(['absoluteChange', 'percentageChange', 'label', 'pixelDistance']) (
+		'rejects persisted priceMeasurement derived field %s',
+		(field) => {
+			const scene = makeM2Scene();
+			const base = makeOverlay('segment') as unknown as Record<string, unknown>;
+			const measurement: Record<string, unknown> = {
+				...base,
+				id: 'm2-measurement',
+				type: 'priceMeasurement',
+				start: { timestamp: scene.data[0]!.timestamp, value: 12.4 },
+				end: { timestamp: scene.data[2]!.timestamp, value: 12.9 },
+				[field]: field === 'label' ? '+0.50 (+4.03%)' : 0.5,
+			};
+			delete measurement.points;
+			(scene.overlays as unknown[]).push(measurement);
+
+			expect(() => parseChartScene(scene)).toThrowError(
+				expect.objectContaining<Partial<SceneError>>({ code: 'SCENE_SCHEMA_INVALID' }),
+			);
+		},
+	);
 });

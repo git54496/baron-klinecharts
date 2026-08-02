@@ -14,13 +14,19 @@ describe('Web Runtime public API', () => {
 	it('contains the complete pure-scene method surface and no engine getter', () => {
 		const methods = Object.getOwnPropertyNames(KLineSceneRuntime.prototype);
 		expect(methods).toEqual(
-			expect.arrayContaining([
+				expect.arrayContaining([
 				'getScene',
 				'exportScene',
+				'setPriceScale',
+				'projectPoint',
+				'hitTestOverlay',
 				'startOverlayDrawing',
 				'addOverlay',
 				'updateOverlay',
+				'updateOverlayStyles',
 				'removeOverlay',
+				'requestOverlayDelete',
+				'requestHostAction',
 				'getOverlay',
 				'listOverlays',
 				'subscribe',

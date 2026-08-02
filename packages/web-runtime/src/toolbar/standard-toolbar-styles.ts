@@ -54,6 +54,40 @@ export const STANDARD_TOOLBAR_STYLES = String.raw`
 	border-left: 1px solid rgba(217, 220, 227, 1);
 }
 
+.baron-kline-toolbar__control {
+	display: grid;
+	flex: 0 0 auto;
+	gap: 2px;
+	color: rgba(76, 82, 96, 1);
+	font-size: 9px;
+	line-height: 1;
+}
+
+.baron-kline-toolbar__control select,
+.baron-kline-toolbar__control input {
+	width: 78px;
+	height: 24px;
+	padding: 0 5px;
+	color: rgba(32, 35, 42, 1);
+	background: rgba(248, 249, 251, 1);
+	border: 1px solid rgba(217, 220, 227, 1);
+	border-radius: 5px;
+	font: inherit;
+}
+
+.baron-kline-toolbar__control input[type="color"] {
+	width: 38px;
+	padding: 2px;
+}
+
+.baron-kline-toolbar__host-action {
+	width: auto;
+	min-width: 34px;
+	padding: 0 9px;
+	font: inherit;
+	font-size: 11px;
+}
+
 .baron-kline-toolbar__button {
 	position: relative;
 	display: grid;

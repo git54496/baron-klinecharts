@@ -19,11 +19,12 @@ test('desktop mouse creates, selects, drags, updates, and deletes an Overlay', a
 
 	const allOverlays = await loadScene('all-overlays.json');
 	const sourceSegment = allOverlays.overlays.find((overlay) => overlay.type === 'segment')!;
-	await page.evaluate((points) => {
+	const projectedSegment = await page.evaluate((points) => {
 		const runtime = (
 			window as unknown as {
 				__baronTestRuntime: {
 					getOverlay(id: string): object;
+					projectPoint(point: { timestamp: number; value: number }): { x: number; y: number };
 					updateOverlay(value: object): void;
 				};
 			}
@@ -32,8 +33,14 @@ test('desktop mouse creates, selects, drags, updates, and deletes an Overlay', a
 			...runtime.getOverlay('overlay-segment-0'),
 			points,
 		});
+		return points.map((point) => runtime.projectPoint(point));
 	}, sourceSegment.points);
-	const start = { x: box!.x + 887, y: box!.y + 404 };
+	const chartBox = await page.locator('#chart').boundingBox();
+	expect(chartBox).not.toBeNull();
+	const start = {
+		x: chartBox!.x + (projectedSegment[0]!.x + projectedSegment[1]!.x) / 2,
+		y: chartBox!.y + (projectedSegment[0]!.y + projectedSegment[1]!.y) / 2,
+	};
 	await page.mouse.click(start.x, start.y);
 	await expect.poll(() => page.evaluate(() => (
 		window as unknown as {
@@ -205,4 +212,70 @@ test('M1 Scene survives export, serialization, page teardown, and recreation', a
 	expect(Number.isFinite(second.overlay.anchor.value)).toBe(true);
 	expect(second.eventTypes).toEqual(['scene-ready']);
 	expect(second.childrenAfterDestroy).toBe(0);
+});
+
+test('M2 scale, resize, zoom, scroll, export, and recreation preserve data coordinates', async ({ page }) => {
+	const scene = await loadScene('m2-measurement-linear.json');
+	await createSourceRuntime(page, scene);
+	const before = await page.evaluate(() => {
+		const runtime = (window as unknown as {
+			__baronTestRuntime: {
+				listOverlays(): readonly unknown[];
+				projectPoint(point: { timestamp: number; value: number }): { x: number; y: number };
+			};
+		}).__baronTestRuntime;
+		return {
+			overlays: runtime.listOverlays(),
+			projected: runtime.projectPoint({ timestamp: 1782878400000, value: 300 }),
+		};
+	});
+	await page.locator('[data-action="price-scale"]').selectOption('logarithmic');
+	await expect.poll(() => page.evaluate(() => (
+		window as unknown as {
+			__baronTestRuntime: { exportScene(): { panes: Array<{ yAxes: Array<{ scale: string }> }> } };
+		}
+	).__baronTestRuntime.exportScene().panes[0]!.yAxes[0]!.scale)).toBe('logarithmic');
+
+	await page.locator('#chart').evaluate((element) => {
+		element.style.width = '820px';
+		window.dispatchEvent(new Event('resize'));
+	});
+	await page.waitForTimeout(100);
+	const chartBox = await page.locator('#chart').boundingBox();
+	expect(chartBox).not.toBeNull();
+	await page.mouse.move(chartBox!.x + 700, chartBox!.y + 500);
+	await page.mouse.wheel(360, -480);
+	await page.waitForTimeout(100);
+
+	const after = await page.evaluate(async () => {
+		const runtime = (window as unknown as {
+			__baronTestRuntime: {
+				destroy(): void;
+				exportScene(): unknown;
+				listOverlays(): readonly unknown[];
+				projectPoint(point: { timestamp: number; value: number }): { x: number; y: number };
+			};
+		}).__baronTestRuntime;
+		const overlays = runtime.listOverlays();
+		const projected = runtime.projectPoint({ timestamp: 1782878400000, value: 300 });
+		const serialized = JSON.stringify(runtime.exportScene());
+		runtime.destroy();
+		const { createKLineSceneRuntime } = await import('/packages/web-runtime/src/index.ts');
+		const recreated = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			JSON.parse(serialized),
+		);
+		const recreatedOverlays = recreated.listOverlays();
+		const recreatedScale = recreated.exportScene().panes[0]!.yAxes[0]!.scale;
+		recreated.destroy();
+		return { overlays, projected, recreatedOverlays, recreatedScale };
+	});
+
+	expect(after.overlays).toEqual(before.overlays);
+	expect(after.recreatedOverlays).toEqual(before.overlays);
+	expect(after.recreatedScale).toBe('logarithmic');
+	expect(Number.isFinite(before.projected.x)).toBe(true);
+	expect(Number.isFinite(before.projected.y)).toBe(true);
+	expect(Number.isFinite(after.projected.x)).toBe(true);
+	expect(Number.isFinite(after.projected.y)).toBe(true);
 });

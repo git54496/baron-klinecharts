@@ -176,7 +176,10 @@ export const RuntimeSchema = {
       "const": "10.0.0"
     },
     "runtimeVersion": {
-      "const": "0.1.0"
+      "enum": [
+        "0.1.0",
+        "0.2.0"
+      ]
     }
   }
 } as const;
@@ -632,6 +635,12 @@ export const PaneSchema = {
             "additional"
           ]
         },
+        "scale": {
+          "enum": [
+            "linear",
+            "logarithmic"
+          ]
+        },
         "position": {
           "enum": [
             "left",
@@ -704,7 +713,8 @@ export const OverlaySchema = {
         "arrow",
         "crossLine",
         "callout",
-        "text"
+        "text",
+        "priceMeasurement"
       ]
     },
     "paneId": {

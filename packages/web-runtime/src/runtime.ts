@@ -9,14 +9,18 @@ import {
 import {
 	KLineChartsSceneAdapter,
 	type AdapterSceneEvent,
+	type OverlayHitResult,
 	type OverlayDrawingRequest,
+	type PixelCoordinate,
 } from '@baron1996/klinecharts-adapter';
 
 import { RuntimeEventBus } from './events.js';
 import { runRuntimeTeardowns } from './lifecycle.js';
 import type {
+	KLineSceneRuntimeEvent,
 	KLineSceneRuntimeListener,
 	KLineSceneRuntimeOptions,
+	PriceScale,
 	StartOverlayDrawingOptions,
 	SupportedOverlayType,
 } from './types.js';
@@ -40,8 +44,12 @@ export const DEFAULT_OVERLAY_STYLES: SceneOverlay['styles'] = {
 	},
 };
 
-function toRuntimeEvent(event: AdapterSceneEvent): AdapterSceneEvent {
-	return structuredClone(event);
+function toRuntimeEvent(event: AdapterSceneEvent): KLineSceneRuntimeEvent {
+	return {
+		...structuredClone(event),
+		sceneVersion: 1,
+		runtimeVersion: '0.2.0',
+	} as KLineSceneRuntimeEvent;
 }
 
 /**
@@ -56,7 +64,7 @@ export class KLineSceneRuntime {
 	/** Adapter 事件解绑函数。 */
 	readonly #unsubscribeAdapter: () => void;
 	/** 当前选中标注的稳定 ID。 */
-	#selectedOverlayId: string | undefined;
+	#selectedOverlayId: string | null = null;
 	/** 确定性标注 ID 递增序号。 */
 	#overlaySequence = 0;
 	/** 防止销毁后的 API 继续访问引擎。 */
@@ -71,14 +79,14 @@ export class KLineSceneRuntime {
 			this.#events.subscribe(options.onEvent);
 		}
 		this.#unsubscribeAdapter = adapter.subscribe((event) => {
-			if (event.type === 'overlay-selected') {
+			if (event.type === 'overlay-selection-changed') {
 				this.#selectedOverlayId = event.id;
 			}
 			if (
 				event.type === 'overlay-removed' &&
 				this.#selectedOverlayId === event.id
 			) {
-				this.#selectedOverlayId = undefined;
+				this.#selectedOverlayId = null;
 			}
 			this.#events.emit(toRuntimeEvent(event));
 		});
@@ -93,13 +101,20 @@ export class KLineSceneRuntime {
 			const scene = parseChartScene(value);
 			const adapter = await KLineChartsSceneAdapter.create(container, scene);
 			const runtime = new KLineSceneRuntime(adapter, options);
-			runtime.#events.emit({ type: 'scene-ready', scene: runtime.getScene() });
+			runtime.#events.emit({
+				type: 'scene-ready',
+				scene: runtime.getScene(),
+				sceneVersion: 1,
+				runtimeVersion: '0.2.0',
+			});
 			return runtime;
 		} catch (error) {
 			if (options.onEvent !== undefined && error instanceof SceneError) {
 				options.onEvent({
 					type: 'scene-error',
 					issues: structuredClone(error.issues),
+					sceneVersion: 1,
+					runtimeVersion: '0.2.0',
 				});
 			}
 			throw error;
@@ -129,6 +144,24 @@ export class KLineSceneRuntime {
 
 	public exportScene(): ChartScene {
 		return this.getScene();
+	}
+
+	public async setPriceScale(scale: PriceScale): Promise<ChartScene> {
+		this.#assertActive();
+		return structuredClone(await this.#adapter.setPriceScale(scale));
+	}
+
+	public projectPoint(
+		point: { readonly timestamp: number; readonly value: number },
+		paneId?: string,
+	): PixelCoordinate {
+		this.#assertActive();
+		return structuredClone(this.#adapter.projectPoint(point, paneId));
+	}
+
+	public hitTestOverlay(point: PixelCoordinate): OverlayHitResult | null {
+		this.#assertActive();
+		return structuredClone(this.#adapter.hitTestOverlay(point));
 	}
 
 	public startOverlayDrawing(
@@ -173,9 +206,54 @@ export class KLineSceneRuntime {
 		return structuredClone(this.#adapter.updateOverlay(structuredClone(overlay)));
 	}
 
+	public updateOverlayStyles(
+		id: string,
+		styles: SceneOverlay['styles'],
+	): SceneOverlay {
+		this.#assertActive();
+		return structuredClone(this.#adapter.updateOverlayStyles(id, structuredClone(styles)));
+	}
+
 	public removeOverlay(id: string): boolean {
 		this.#assertActive();
 		return this.#adapter.removeOverlay(id);
+	}
+
+	public requestOverlayDelete(id: string): void {
+		this.#assertActive();
+		if (this.#adapter.getOverlay(id) === undefined) {
+			throw new SceneError('INVALID_REFERENCE', '/overlays', `Overlay ${id} does not exist.`);
+		}
+		this.#events.emit({
+			type: 'overlay-delete-requested',
+			overlayId: id,
+			sceneVersion: 1,
+			runtimeVersion: '0.2.0',
+		});
+	}
+
+	public requestHostAction(
+		actionId: string,
+		overlayId: string | null = this.#selectedOverlayId,
+	): void {
+		this.#assertActive();
+		if (actionId.length === 0) {
+			throw new SceneError('SCENE_SCHEMA_INVALID', '/actionId', 'Host actionId must be non-empty.');
+		}
+		if (overlayId !== null && this.#adapter.getOverlay(overlayId) === undefined) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/overlayId',
+				`Overlay ${overlayId} does not exist.`,
+			);
+		}
+		this.#events.emit({
+			type: 'host-action-requested',
+			actionId,
+			overlayId,
+			sceneVersion: 1,
+			runtimeVersion: '0.2.0',
+		});
 	}
 
 	public getOverlay(id: string): SceneOverlay | undefined {
@@ -191,7 +269,7 @@ export class KLineSceneRuntime {
 
 	public getSelectedOverlayId(): string | undefined {
 		this.#assertActive();
-		return this.#selectedOverlayId;
+		return this.#selectedOverlayId ?? undefined;
 	}
 
 	public subscribe(listener: KLineSceneRuntimeListener): () => void {
@@ -205,9 +283,9 @@ export class KLineSceneRuntime {
 		}
 		this.#destroyed = true;
 		runRuntimeTeardowns(this);
+		this.#adapter.dispose();
 		this.#unsubscribeAdapter();
 		this.#events.clear();
-		this.#adapter.dispose();
 	}
 }
 
