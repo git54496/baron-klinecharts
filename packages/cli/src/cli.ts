@@ -18,9 +18,9 @@ import { CliError, serializeCliError } from './errors.js';
 import { formatJson } from './json.js';
 
 /** CLI 包版本，必须与公共 npm 与 Python 包版本一致。 */
-export const CLI_PACKAGE_VERSION = '0.2.2' as const;
+export const CLI_PACKAGE_VERSION = '0.2.3' as const;
 /** 场景协议包版本，与首版 Runtime 版本保持一致。 */
-export const SCENE_PACKAGE_VERSION = '0.2.2' as const;
+export const SCENE_PACKAGE_VERSION = '0.2.3' as const;
 
 function writeJson(value: unknown): void {
 	process.stdout.write(formatJson(value));
