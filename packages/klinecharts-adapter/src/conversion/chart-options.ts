@@ -1,4 +1,7 @@
-import type { ChartConfig } from '@baron1996/kline-scene-schema';
+import type {
+	ChartConfig,
+	TimeSeriesChartConfig,
+} from '@baron1996/kline-scene-schema';
 import type {
 	DeepPartial,
 	FormatDateParams,
@@ -103,6 +106,44 @@ function chartStyles(chart: ChartConfig): DeepPartial<Styles> {
 	};
 }
 
+function timeSeriesChartStyles(
+	chart: TimeSeriesChartConfig,
+): DeepPartial<Styles> {
+	const text = {
+		color: chart.layout.textColor,
+		size: chart.layout.fontSize,
+		family: chart.layout.fontFamily,
+	};
+	return {
+		grid: {
+			horizontal: { show: true, color: chart.grid.horizontalColor },
+			vertical: { show: true, color: chart.grid.verticalColor },
+		},
+		candle: {
+			type: 'area',
+			area: {
+				lineSize: 0,
+				lineColor: 'rgba(0, 0, 0, 0)',
+				backgroundColor: 'rgba(0, 0, 0, 0)',
+				point: { show: false, animation: false },
+			},
+			priceMark: {
+				show: false,
+				high: { show: false },
+				low: { show: false },
+				last: { show: false },
+			},
+			tooltip: { showRule: 'none' },
+		},
+		indicator: {
+			lastValueMark: { show: false },
+			tooltip: { showRule: 'none' },
+		},
+		xAxis: { tickText: text },
+		yAxis: { tickText: text },
+	};
+}
+
 /** 将纯数据 ChartConfig 转换为受控的 KLineCharts 初始化选项。 */
 export function toKLineChartsOptions(chart: ChartConfig): Options {
 	return {
@@ -136,5 +177,41 @@ export function toKLineChartsOptions(chart: ChartConfig): Options {
 			enabled: false,
 			exclude: [],
 		},
+	};
+}
+
+/** 将 TimeSeriesChartConfig 转换为隐藏 Candle 的受控初始化选项。 */
+export function toKLineChartsTimeSeriesOptions(
+	chart: TimeSeriesChartConfig,
+): Options {
+	return {
+		locale: chart.locale,
+		timezone: chart.timezone,
+		styles: timeSeriesChartStyles(chart),
+		formatter: {
+			formatDate: (params) => formatDate(params, chart.dateFormat),
+			formatBigNumber: (value) =>
+				formatLargeNumber(value, chart.largeNumberFormat),
+		},
+		thousandsSeparator: { sign: chart.thousandsSeparator },
+		decimalFold: {
+			threshold: chart.decimalFold.threshold,
+			format: chart.decimalFold.enabled
+				? (value) => {
+						const source = String(value);
+						const expression = new RegExp(
+							`\\.0{${chart.decimalFold.threshold},}[1-9][0-9]*$`,
+						);
+						if (!expression.test(source)) {
+							return source;
+						}
+						const [integer, decimal = ''] = source.split('.');
+						const zeroCount = decimal.match(/^0*/)?.[0].length ?? 0;
+						return `${integer}.0{${zeroCount}}${decimal.slice(zeroCount)}`;
+					}
+				: (value) => String(value),
+		},
+		zoomAnchor: chart.zoomAnchor === 'right' ? 'last_bar' : 'cursor',
+		hotkey: { enabled: false, exclude: [] },
 	};
 }

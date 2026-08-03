@@ -26,10 +26,10 @@ const publicPackages = [
 ];
 
 const publicPackageVersions = new Map([
-	['@baron1996/kline-scene-schema', '0.2.2'],
-	['@baron1996/klinecharts-adapter', '0.2.2'],
-	['@baron1996/klinecharts-runtime', '0.2.2'],
-	['@baron1996/klinecharts-cli', '0.2.2'],
+	['@baron1996/kline-scene-schema', '0.3.0'],
+	['@baron1996/klinecharts-adapter', '0.3.0'],
+	['@baron1996/klinecharts-runtime', '0.3.0'],
+	['@baron1996/klinecharts-cli', '0.3.0'],
 ]);
 
 async function loadConsumerPackages() {
@@ -194,7 +194,7 @@ test('four public tarballs support the M1 and M2 Runtime journeys through packag
 		if (packageName === '@baron1996/klinecharts-runtime') {
 			assert.equal(
 				installedManifest.dependencies['@baron1996/klinecharts-adapter'],
-				'0.2.2',
+				'0.3.0',
 			);
 		}
 		for (const dependencySpec of Object.values(installedManifest.dependencies ?? {})) {
@@ -216,6 +216,10 @@ test('four public tarballs support the M1 and M2 Runtime journeys through packag
 		resolve('tests', 'fixtures', 'scenes', 'm2-measurement-linear.json'),
 		join(publicDirectory, 'm2-scene.json'),
 	);
+	await copyFile(
+		resolve('tests', 'fixtures', 'time-series', 'minimal-valid.json'),
+		join(publicDirectory, 'time-series-scene.json'),
+	);
 	const cli = join(installPrefix, 'bin', 'baron-kline');
 	execFileSync(cli, ['validate', fixture], { cwd: consumer, stdio: 'inherit' });
 
@@ -226,11 +230,14 @@ test('four public tarballs support the M1 and M2 Runtime journeys through packag
 			"const schema = await import('@baron1996/kline-scene-schema');",
 			"const adapter = await import('@baron1996/klinecharts-adapter');",
 			"const runtime = await import('@baron1996/klinecharts-runtime');",
-			"if (schema.SCENE_PACKAGE_VERSION !== '0.2.2') throw new Error('Schema root export failed.');",
-			"if (adapter.ADAPTER_PACKAGE_VERSION !== '0.2.2') throw new Error('Adapter root export failed.');",
-			"if (runtime.WEB_RUNTIME_PACKAGE_VERSION !== '0.2.2') throw new Error('Runtime root export failed.');",
+			"if (schema.SCENE_PACKAGE_VERSION !== '0.3.0') throw new Error('Schema root export failed.');",
+			"if (adapter.ADAPTER_PACKAGE_VERSION !== '0.3.0') throw new Error('Adapter root export failed.');",
+			"if (runtime.WEB_RUNTIME_PACKAGE_VERSION !== '0.3.0') throw new Error('Runtime root export failed.');",
 			'const adapterMethods = Object.getOwnPropertyNames(adapter.KLineChartsSceneAdapter.prototype);',
 			"if (adapterMethods.includes('getChart') || adapterMethods.includes('getEngine')) throw new Error('Adapter exposes its internal Chart.');",
+			'const timeSeriesAdapterMethods = Object.getOwnPropertyNames(adapter.TimeSeriesChartsAdapter.prototype);',
+			"if (timeSeriesAdapterMethods.includes('inspect')) throw new Error('Time Series Adapter exposes its inspection state.');",
+			"if ('TIME_SERIES_INDICATOR_NAME' in adapter || 'timeSeriesIndicatorTemplate' in adapter) throw new Error('Time Series indicator internals are public.');",
 			'for (const specifier of [',
 			"  '@baron1996/klinecharts-adapter/src/adapter.js',",
 			"  '@baron1996/klinecharts-runtime/src/runtime.js',",
@@ -253,9 +260,9 @@ test('four public tarballs support the M1 and M2 Runtime journeys through packag
 	const sourceDirectory = join(consumer, 'src');
 	await mkdir(sourceDirectory);
 	const consumerSource = [
-		"import { parseChartScene } from '@baron1996/kline-scene-schema';",
+		"import { parseChartScene, parseTimeSeriesScene } from '@baron1996/kline-scene-schema';",
 		"import { ADAPTER_PACKAGE_VERSION } from '@baron1996/klinecharts-adapter';",
-		"import { createKLineSceneRuntime } from '@baron1996/klinecharts-runtime';",
+		"import { createKLineSceneRuntime, createTimeSeriesRuntime } from '@baron1996/klinecharts-runtime';",
 		'',
 		"const scene = parseChartScene(await (await fetch('/m1-scene.json')).json());",
 		'const sourceOverlay = scene.overlays[0];',
@@ -311,6 +318,23 @@ test('four public tarballs support the M1 and M2 Runtime journeys through packag
 		'  recreated.destroy();',
 		'  return { afterValues, beforeValues, childrenAfterDestroy, logarithmic, recreatedOverlay, remainingCount, removed, styled };',
 		'};',
+		'window.__COMPLETE_TIME_SERIES_ROUND_TRIP__ = async () => {',
+		"  const source = parseTimeSeriesScene(await (await fetch('/time-series-scene.json')).json());",
+		'  const timeSeriesRuntime = await createTimeSeriesRuntime(container, source);',
+		"  const visibility = timeSeriesRuntime.setSeriesVisible('series-b', false);",
+		'  const replacement = await timeSeriesRuntime.replaceData([',
+		"    { timestamp: 1767484800000, values: { 'series-a': 30, 'series-b': 40, 'series-total': 70 } },",
+		"    { timestamp: 1767571200000, values: { 'series-a': 31, 'series-b': null, 'series-total': 31 } },",
+		'  ]);',
+		'  const exported = timeSeriesRuntime.exportScene();',
+		'  const serialized = JSON.stringify(exported);',
+		'  timeSeriesRuntime.destroy();',
+		'  const childrenAfterDestroy = container.childElementCount;',
+		'  const recreated = await createTimeSeriesRuntime(container, JSON.parse(serialized));',
+		'  const recreatedScene = recreated.exportScene();',
+		'  recreated.destroy();',
+		'  return { childrenAfterDestroy, exported, recreatedScene, replacement, visibility };',
+		'};',
 	].join('\n');
 	assert.doesNotMatch(
 		consumerSource,
@@ -342,7 +366,7 @@ test('four public tarballs support the M1 and M2 Runtime journeys through packag
 		await page.goto(server.url);
 		await page.waitForFunction(() => window.__M1_CONSUMER__?.startedId !== undefined);
 		const readiness = await page.evaluate(() => window.__M1_CONSUMER__);
-		assert.equal(readiness.adapterVersion, '0.2.2');
+		assert.equal(readiness.adapterVersion, '0.3.0');
 		assert.equal(readiness.startedId, 'overlay-m1-consumer-horizontal');
 
 		const drawingCanvas = page.locator('#chart canvas').nth(1);
@@ -383,6 +407,15 @@ test('four public tarballs support the M1 and M2 Runtime journeys through packag
 		assert.equal(m2Result.childrenAfterDestroy, 0);
 		assert.equal(m2Result.removed, true);
 		assert.equal(m2Result.remainingCount, 3);
+
+		const timeSeriesResult = await page.evaluate(
+			() => window.__COMPLETE_TIME_SERIES_ROUND_TRIP__(),
+		);
+		assert.equal(timeSeriesResult.visibility.series[1].visible, false);
+		assert.equal(timeSeriesResult.replacement.data.length, 2);
+		assert.equal(timeSeriesResult.exported.viewport.anchorTimestamp, 1767571200000);
+		assert.deepEqual(timeSeriesResult.recreatedScene, timeSeriesResult.exported);
+		assert.equal(timeSeriesResult.childrenAfterDestroy, 0);
 	} finally {
 		await browser.close();
 		await server.close();

@@ -2,7 +2,9 @@ import '@fontsource-variable/noto-sans-sc';
 import {
 	createKLineSceneRuntime,
 	createStandardToolbar,
+	createTimeSeriesRuntime,
 	type KLineSceneRuntime,
+	type TimeSeriesRuntime,
 } from '@baron1996/klinecharts-runtime';
 
 import { canonicalizePng } from '../src/png-codec.js';
@@ -48,7 +50,7 @@ function waitForInitialResizeObservation(target: Element): Promise<void> {
 	});
 }
 
-let runtime: KLineSceneRuntime | undefined;
+let runtime: KLineSceneRuntime | TimeSeriesRuntime | undefined;
 let destroyToolbar: (() => void) | undefined;
 
 const ready = (async () => {
@@ -59,6 +61,7 @@ const ready = (async () => {
 		throw new Error('Standalone HTML render roots are missing.');
 	}
 	const parsed = scene as {
+		schema?: unknown;
 		chart: { layout: { backgroundColor: string } };
 		render: { width: number; height: number; background: string };
 	};
@@ -66,9 +69,15 @@ const ready = (async () => {
 	renderRoot.style.height = `${parsed.render.height}px`;
 	renderRoot.style.backgroundColor = parsed.render.background;
 	document.body.style.backgroundColor = parsed.chart.layout.backgroundColor;
-	runtime = await createKLineSceneRuntime(renderRoot, scene);
-	const toolbar = createStandardToolbar(toolbarRoot, runtime);
-	destroyToolbar = () => toolbar.destroy();
+	if (parsed.schema === '@baron1996/kline-scene') {
+		runtime = await createKLineSceneRuntime(renderRoot, scene);
+		const toolbar = createStandardToolbar(toolbarRoot, runtime);
+		destroyToolbar = () => toolbar.destroy();
+	} else if (parsed.schema === '@baron1996/time-series-scene') {
+		runtime = await createTimeSeriesRuntime(renderRoot, scene);
+	} else {
+		throw new Error('Standalone HTML contains an unsupported Scene schema.');
+	}
 	await document.fonts.ready;
 	// KLineCharts 10 会先在 body 上探测 device-pixel-content-box，再为每个 Canvas
 	// 创建 ResizeObserver。只有这两轮初始通知都完成后，画布尺寸和绘制任务才稳定。

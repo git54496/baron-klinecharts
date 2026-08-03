@@ -1,6 +1,6 @@
 {
   "name": "@baron1996/klinecharts-scene-workspace",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "license": "Apache-2.0",
@@ -32,7 +32,7 @@
     "test:browser": "playwright test tests/browser --config playwright.config.ts",
     "test:browser:packages": "npm run test:browser --workspace @baron1996/klinecharts-adapter && npm run test:browser --workspace @baron1996/klinecharts-runtime && npm run test:browser --workspace @baron1996/klinecharts-render-runtime",
     "pretest:cross-language": "npm run build --workspaces",
-    "test:cross-language": "node tests/cross-language/chart-scene-roundtrip.mjs",
+    "test:cross-language": "node tests/cross-language/chart-scene-roundtrip.mjs && node tests/cross-language/time-series-scene-roundtrip.mjs",
     "test:installation": "node --test tests/installation/*.mjs && python3 tests/installation/python-package.py",
     "test:mock": "npm run build --workspace @baron1996/kline-scene-schema && node --test tests/mock/mock-scene.test.mjs",
     "test:python": "PYTHONPATH=python/baron-klinecharts/src python3 -m unittest discover -s python/baron-klinecharts/tests -p 'test_*.py'",

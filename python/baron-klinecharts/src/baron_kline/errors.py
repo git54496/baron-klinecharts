@@ -35,3 +35,38 @@ class SceneError(ValueError):
             "message": self.message,
             "issues": [item.to_dict() for item in self.issues],
         }
+
+
+@dataclass(frozen=True)
+class TimeSeriesSceneIssue:
+    code: str
+    path: str
+    message: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {"code": self.code, "path": self.path, "message": self.message}
+
+
+class TimeSeriesSceneError(ValueError):
+    def __init__(
+        self,
+        code: str,
+        path: str,
+        message: str,
+        issues: list[TimeSeriesSceneIssue] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.path = path
+        self.message = message
+        self.issues = tuple(
+            issues or [TimeSeriesSceneIssue(code, path, message)]
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "path": self.path,
+            "message": self.message,
+            "issues": [item.to_dict() for item in self.issues],
+        }

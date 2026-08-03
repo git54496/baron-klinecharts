@@ -4,10 +4,17 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { expect, test } from '@playwright/test';
-import { parseChartScene } from '@baron1996/kline-scene-schema';
+import {
+	parseChartScene,
+	parseTimeSeriesScene,
+} from '@baron1996/kline-scene-schema';
 
-import { buildStandaloneHtml } from '../src/html.js';
+import {
+	buildStandaloneHtml,
+	buildTimeSeriesStandaloneHtml,
+} from '../src/html.js';
 import { loadScene } from './load-scene.js';
+import { timeSeriesScene } from './time-series-scene.js';
 
 const minimalScene = loadScene('minimal-valid.json');
 
@@ -160,6 +167,48 @@ test('@browser standalone file is offline, editable, and exports a valid Scene',
 		void exported;
 		const scene = await page.evaluate(() => window.__BARON_KLINE_SCENE__.exportScene());
 		expect(parseChartScene(scene).overlays).toHaveLength(1);
+		await page.evaluate(() => window.__BARON_KLINE_SCENE__.destroy());
+	} finally {
+		await context.close();
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
+test('@browser Time Series standalone file is offline and exports a valid Scene', async ({
+	browser,
+}) => {
+	const directory = await mkdtemp(join(tmpdir(), 'baron-time-series-html-'));
+	const htmlPath = join(directory, 'time-series.html');
+	await writeFile(htmlPath, buildTimeSeriesStandaloneHtml(timeSeriesScene), 'utf8');
+	const externalRequests: string[] = [];
+	const context = await browser.newContext({
+		offline: true,
+		serviceWorkers: 'block',
+		viewport: {
+			width: timeSeriesScene.render.width,
+			height: timeSeriesScene.render.height,
+		},
+		locale: timeSeriesScene.chart.locale,
+		timezoneId: timeSeriesScene.chart.timezone,
+	});
+	try {
+		const page = await context.newPage();
+		page.on('request', (request) => {
+			if (!request.url().startsWith('file:') && !request.url().startsWith('data:')) {
+				externalRequests.push(request.url());
+			}
+		});
+		await page.goto(pathToFileURL(htmlPath).href, { waitUntil: 'load' });
+		await page.evaluate(() => window.__BARON_KLINE_SCENE__.ready);
+		expect(externalRequests).toEqual([]);
+		expect(await page.locator('[data-time-series-id="series-a"]').count()).toBe(1);
+		expect(await page.locator('[data-baron-toolbar-root]').textContent()).toBe('');
+		const exported = await page.evaluate(
+			() => window.__BARON_KLINE_SCENE__.exportScene(),
+		);
+		expect(parseTimeSeriesScene(exported)).toEqual(
+			parseTimeSeriesScene(timeSeriesScene),
+		);
 		await page.evaluate(() => window.__BARON_KLINE_SCENE__.destroy());
 	} finally {
 		await context.close();

@@ -4,13 +4,22 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { SceneError } from '@baron1996/kline-scene-schema';
+import {
+	SceneError,
+	TimeSeriesSceneError,
+} from '@baron1996/kline-scene-schema';
 
 import {
 	launchPinnedChromium,
 	renderScenePng,
+	renderTimeSeriesScenePng,
 } from '../src/png.js';
+import {
+	launchPinnedTimeSeriesChromium,
+	waitForTimeSeriesBridgeReady,
+} from '../src/time-series-render-internals.js';
 import { loadScene } from './load-scene.js';
+import { timeSeriesScene } from './time-series-scene.js';
 
 function pngDimensions(bytes: Uint8Array): {
 	readonly width: number;
@@ -85,6 +94,71 @@ describe('deterministic PNG renderer', () => {
 			expect(pngDimensions(await readFile(output))).toEqual({
 				width: 1280,
 				height: 720,
+			});
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
+	it('maps Time Series browser and timeout failures to independent errors', async () => {
+		await expect(
+			launchPinnedTimeSeriesChromium(async () => {
+				throw new Error("Executable doesn't exist. Run playwright install chromium.");
+			}),
+		).rejects.toEqual(
+			expect.objectContaining<Partial<TimeSeriesSceneError>>({
+				code: 'TIME_SERIES_BROWSER_NOT_INSTALLED',
+				path: '/render',
+			}),
+		);
+		await expect(
+			launchPinnedTimeSeriesChromium(async () => {
+				throw new Error('Chromium process terminated during startup.');
+			}),
+		).rejects.toEqual(
+			expect.objectContaining<Partial<TimeSeriesSceneError>>({
+				code: 'TIME_SERIES_RENDER_FAILED',
+				path: '/render',
+			}),
+		);
+		await expect(
+			waitForTimeSeriesBridgeReady(
+				{
+					waitForFunction: () => new Promise(() => undefined),
+					evaluate: () => Promise.resolve(),
+				},
+				1,
+			),
+		).rejects.toEqual(
+			expect.objectContaining<Partial<TimeSeriesSceneError>>({
+				code: 'TIME_SERIES_RENDER_TIMEOUT',
+				path: '/render',
+			}),
+		);
+		await expect(
+			waitForTimeSeriesBridgeReady(
+				{
+					waitForFunction: () => Promise.resolve(),
+					evaluate: () => Promise.reject(new Error('runtime initialization failed')),
+				},
+				100,
+			),
+		).rejects.toEqual(
+			expect.objectContaining<Partial<TimeSeriesSceneError>>({
+				code: 'TIME_SERIES_RENDER_FAILED',
+				path: '/render',
+			}),
+		);
+	});
+
+	it('renders a Time Series PNG through the independent entry', async () => {
+		const directory = await mkdtemp(join(tmpdir(), 'baron-time-series-png-'));
+		const output = join(directory, 'time-series.png');
+		try {
+			await renderTimeSeriesScenePng(timeSeriesScene, output);
+			expect(pngDimensions(await readFile(output))).toEqual({
+				width: 640,
+				height: 360,
 			});
 		} finally {
 			await rm(directory, { recursive: true, force: true });

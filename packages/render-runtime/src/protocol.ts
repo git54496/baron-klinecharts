@@ -1,9 +1,12 @@
-import type { ChartScene } from '@baron1996/kline-scene-schema';
+import type {
+	ChartScene,
+	TimeSeriesScene,
+} from '@baron1996/kline-scene-schema';
 
 export interface BaronSceneBridge {
 	readonly ready: Promise<void>;
 	canonicalizePng(encoded: string): string;
-	exportScene(): ChartScene;
+	exportScene(): ChartScene | TimeSeriesScene;
 	destroy(): void;
 }
 

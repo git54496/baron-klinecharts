@@ -1,15 +1,22 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
-import { serializeCanonicalScene } from '@baron1996/kline-scene-schema';
+import {
+	serializeCanonicalScene,
+	serializeCanonicalTimeSeriesScene,
+} from '@baron1996/kline-scene-schema';
 
 import {
 	SCENE_BASE64_PLACEHOLDER,
 	STANDALONE_HTML_SHA256,
 	STANDALONE_HTML_TEMPLATE,
 } from '../src/assets.generated.js';
-import { buildStandaloneHtml } from '../src/html.js';
+import {
+	buildStandaloneHtml,
+	buildTimeSeriesStandaloneHtml,
+} from '../src/html.js';
 import { loadScene } from './load-scene.js';
+import { timeSeriesScene } from './time-series-scene.js';
 
 const minimalScene = loadScene('minimal-valid.json');
 
@@ -60,5 +67,16 @@ describe('self-contained standalone HTML', () => {
 		expect(createHash('sha256').update(STANDALONE_HTML_TEMPLATE).digest('hex')).toBe(
 			STANDALONE_HTML_SHA256,
 		);
+	});
+
+	it('embeds exact canonical TimeSeriesScene bytes through a separate entry', () => {
+		const html = buildTimeSeriesStandaloneHtml(timeSeriesScene);
+		const [prefix, suffix] = STANDALONE_HTML_TEMPLATE.split(SCENE_BASE64_PLACEHOLDER);
+		const encoded = html.slice(prefix!.length, html.length - suffix!.length);
+
+		expect(Buffer.from(encoded, 'base64')).toEqual(
+			Buffer.from(serializeCanonicalTimeSeriesScene(timeSeriesScene)),
+		);
+		expect(html).not.toContain(SCENE_BASE64_PLACEHOLDER);
 	});
 });

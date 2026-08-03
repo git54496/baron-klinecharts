@@ -6,4 +6,5 @@ export * from './interaction/hit-testing.js';
 export * from './registry/indicators.js';
 export * from './registry/overlays.js';
 export * from './static-data-loader.js';
+export * from './time-series/adapter.js';
 export * from './version.js';

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .validation import validate_scene
+from .validation import validate_scene, validate_time_series_scene
 
 _MISSING = object()
 
@@ -154,6 +154,97 @@ class ChartScene:
 
     def _replace_document(self, candidate: dict[str, Any]) -> None:
         self._set_document(validate_scene(candidate))
+
+    def to_dict(self) -> dict[str, Any]:
+        return copy.deepcopy(self._document)
+
+
+@dataclass(frozen=True)
+class TimeSeriesDefinition:
+    # 序列稳定标识，对应每个时间点 values 中的同名键。
+    id: str
+    # 面向图例和 Tooltip 的展示名称。
+    name: str
+    type: str
+    # 同一 Scene 内所有序列共享的业务单位。
+    unit: str
+    # 同一 Scene 内所有序列共享的显示精度。
+    precision: int
+    visible: bool
+    style: dict[str, Any]
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> TimeSeriesDefinition:
+        return cls(
+            id=value["id"],
+            name=value["name"],
+            type=value["type"],
+            unit=value["unit"],
+            precision=value["precision"],
+            visible=value["visible"],
+            style=copy.deepcopy(value["style"]),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "type": self.type,
+            "unit": self.unit,
+            "precision": self.precision,
+            "visible": self.visible,
+            "style": copy.deepcopy(self.style),
+        }
+
+
+@dataclass(frozen=True)
+class TimeSeriesPoint:
+    # 正的安全整数毫秒时间戳，Scene 内必须严格递增。
+    timestamp: int
+    # 完整业务值映射；null 必须保持为 None，不能用其他字段补值。
+    values: dict[str, float | None]
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> TimeSeriesPoint:
+        return cls(
+            timestamp=value["timestamp"],
+            values=copy.deepcopy(value["values"]),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "timestamp": self.timestamp,
+            "values": copy.deepcopy(self.values),
+        }
+
+
+class TimeSeriesScene:
+    def __init__(self, document: dict[str, Any]) -> None:
+        self._set_document(validate_time_series_scene(document))
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> TimeSeriesScene:
+        return cls(copy.deepcopy(dict(value)))
+
+    def _set_document(self, document: dict[str, Any]) -> None:
+        # 规范化文档是模型序列化和渲染的唯一可信状态。
+        self._document = copy.deepcopy(document)
+        self.schema = document["schema"]
+        self.version = document["version"]
+        self.runtime = RuntimeIdentity.from_dict(document["runtime"])
+        self.period = copy.deepcopy(document["period"])
+        self.series = tuple(
+            TimeSeriesDefinition.from_dict(item)
+            for item in document["series"]
+        )
+        self.data = tuple(
+            TimeSeriesPoint.from_dict(item)
+            for item in document["data"]
+        )
+        self.chart = copy.deepcopy(document["chart"])
+        self.viewport = copy.deepcopy(document["viewport"])
+        self.render = copy.deepcopy(document["render"])
+        self.metadata = copy.deepcopy(document["metadata"])
 
     def to_dict(self) -> dict[str, Any]:
         return copy.deepcopy(self._document)

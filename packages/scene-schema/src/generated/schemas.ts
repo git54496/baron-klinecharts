@@ -1059,3 +1059,407 @@ export const ChartSceneSchema = {
     }
   }
 } as const;
+
+export const TimeSeriesRuntimeSchema = {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://baron.dev/kline-scene/time-series-runtime.schema.json",
+  "title": "TimeSeriesRuntimeIdentity",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "engine",
+    "engineVersion",
+    "runtimeVersion"
+  ],
+  "properties": {
+    "engine": {
+      "const": "klinecharts"
+    },
+    "engineVersion": {
+      "const": "10.0.0"
+    },
+    "runtimeVersion": {
+      "const": "0.1.0"
+    }
+  }
+} as const;
+
+export const TimeSeriesChartConfigSchema = {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://baron.dev/kline-scene/time-series-chart-config.schema.json",
+  "title": "TimeSeriesChartConfig",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "locale",
+    "timezone",
+    "layout",
+    "grid",
+    "thousandsSeparator",
+    "decimalFold",
+    "zoomAnchor",
+    "dateFormat",
+    "largeNumberFormat"
+  ],
+  "properties": {
+    "locale": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$"
+    },
+    "timezone": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z_+-]+(?:/[A-Za-z0-9_+-]+)*$"
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backgroundColor",
+        "textColor",
+        "fontFamily",
+        "fontSize"
+      ],
+      "properties": {
+        "backgroundColor": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        },
+        "textColor": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        },
+        "fontFamily": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "fontSize": {
+          "type": "number",
+          "minimum": 8,
+          "maximum": 32
+        }
+      }
+    },
+    "grid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "horizontalColor",
+        "verticalColor"
+      ],
+      "properties": {
+        "horizontalColor": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        },
+        "verticalColor": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        }
+      }
+    },
+    "thousandsSeparator": {
+      "enum": [
+        "",
+        ",",
+        " ",
+        "_"
+      ]
+    },
+    "decimalFold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "threshold"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "threshold": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        }
+      }
+    },
+    "zoomAnchor": {
+      "enum": [
+        "cursor",
+        "right"
+      ]
+    },
+    "dateFormat": {
+      "enum": [
+        "yyyy-MM-dd",
+        "yyyy-MM-dd HH:mm",
+        "yyyy-MM-dd HH:mm:ss"
+      ]
+    },
+    "largeNumberFormat": {
+      "enum": [
+        "western",
+        "chinese",
+        "plain"
+      ]
+    }
+  }
+} as const;
+
+export const TimeSeriesSceneSchema = {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://baron.dev/kline-scene/time-series-scene.schema.json",
+  "title": "TimeSeriesScene",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "runtime",
+    "period",
+    "series",
+    "data",
+    "chart",
+    "viewport",
+    "render",
+    "metadata"
+  ],
+  "properties": {
+    "schema": {
+      "const": "@baron1996/time-series-scene"
+    },
+    "version": {
+      "const": 1
+    },
+    "runtime": {
+      "$ref": "https://baron.dev/kline-scene/time-series-runtime.schema.json"
+    },
+    "period": {
+      "$ref": "#/$defs/timeSeriesPeriod"
+    },
+    "series": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/timeSeriesDefinition"
+      }
+    },
+    "data": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000000,
+      "items": {
+        "$ref": "#/$defs/timeSeriesPoint"
+      }
+    },
+    "chart": {
+      "$ref": "https://baron.dev/kline-scene/time-series-chart-config.schema.json"
+    },
+    "viewport": {
+      "$ref": "#/$defs/timeSeriesViewport"
+    },
+    "render": {
+      "$ref": "#/$defs/timeSeriesRender"
+    },
+    "metadata": {
+      "$ref": "#/$defs/metadata"
+    }
+  },
+  "$defs": {
+    "timeSeriesPeriod": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "span",
+        "type"
+      ],
+      "properties": {
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "type": {
+          "enum": [
+            "second",
+            "minute",
+            "hour",
+            "day",
+            "week",
+            "month",
+            "year"
+          ]
+        }
+      }
+    },
+    "timeSeriesDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "type",
+        "unit",
+        "precision",
+        "visible",
+        "style"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "type": {
+          "const": "line"
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "precision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "style": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/lineStyle"
+        }
+      }
+    },
+    "timeSeriesPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timestamp",
+        "values"
+      ],
+      "properties": {
+        "timestamp": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "values": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 64,
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/finiteNumber"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "timeSeriesViewport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "barSpace",
+        "rightOffsetDistance",
+        "anchorTimestamp"
+      ],
+      "properties": {
+        "barSpace": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "rightOffsetDistance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "anchorTimestamp": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "timeSeriesRender": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "width",
+        "height",
+        "deviceScaleFactor",
+        "background",
+        "fontFamily",
+        "timeoutMs"
+      ],
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 320,
+          "maximum": 8192
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 240,
+          "maximum": 8192
+        },
+        "deviceScaleFactor": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 4
+        },
+        "background": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        },
+        "fontFamily": {
+          "const": "Baron Sans"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 120000
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "maxProperties": 64,
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/finiteNumber"
+          },
+          {
+            "type": "string"
+          }
+        ]
+      }
+    }
+  }
+} as const;

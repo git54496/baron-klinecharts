@@ -33,6 +33,13 @@ test('public npm tarballs contain runtime artifacts, declarations, schemas, and 
 		assert.ok(!paths.has('package-lock.json'));
 		if (packed.directory.endsWith('scene-schema')) {
 			assert.ok(paths.has('schema/chart-scene.schema.json'));
+			assert.ok(paths.has('schema/time-series-scene.schema.json'));
+			assert.ok(paths.has('dist/generated/time-series-scene.d.ts'));
+			assert.ok(paths.has('dist/time-series-validator.d.ts'));
+		}
+		if (packed.directory.endsWith('web-runtime')) {
+			assert.ok(paths.has('dist/time-series-runtime.d.ts'));
+			assert.ok(paths.has('dist/time-series-types.d.ts'));
 		}
 	}
 });

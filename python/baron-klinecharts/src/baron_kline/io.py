@@ -5,8 +5,8 @@ import os
 import secrets
 from pathlib import Path
 
-from .models import ChartScene
-from .validation import canonical_scene_bytes
+from .models import ChartScene, TimeSeriesScene
+from .validation import canonical_scene_bytes, canonical_time_series_scene_bytes
 
 
 def load_scene(path: str | Path) -> ChartScene:
@@ -48,5 +48,23 @@ def save_scene(
     write_bytes_atomic(
         path,
         canonical_scene_bytes(scene.to_dict()),
+        force=force,
+    )
+
+
+def load_time_series_scene(path: str | Path) -> TimeSeriesScene:
+    with Path(path).open("r", encoding="utf-8") as source:
+        return TimeSeriesScene.from_dict(json.load(source))
+
+
+def save_time_series_scene(
+    scene: TimeSeriesScene,
+    path: str | Path,
+    *,
+    force: bool = False,
+) -> None:
+    write_bytes_atomic(
+        path,
+        canonical_time_series_scene_bytes(scene),
         force=force,
     )

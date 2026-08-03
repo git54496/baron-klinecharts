@@ -1,6 +1,8 @@
 import {
 	parseChartScene,
+	parseTimeSeriesScene,
 	SceneError,
+	TimeSeriesSceneError,
 } from '@baron1996/kline-scene-schema';
 import { writeFile } from 'node:fs/promises';
 import {
@@ -9,8 +11,15 @@ import {
 	type LaunchOptions,
 } from 'playwright';
 
-import { buildStandaloneHtml } from './html.js';
+import {
+	buildStandaloneHtml,
+	buildTimeSeriesStandaloneHtml,
+} from './html.js';
 import { canonicalizePng } from './png-codec.js';
+import {
+	launchPinnedTimeSeriesChromium,
+	waitForTimeSeriesBridgeReady,
+} from './time-series-render-internals.js';
 
 type ChromiumLauncher = (options: LaunchOptions) => Promise<Browser>;
 
@@ -107,4 +116,58 @@ export async function renderScenePng(
 	} finally {
 		await browser.close();
 	}
+}
+
+/** 使用独立 Time Series Runtime 渲染确定性 PNG。 */
+export async function renderTimeSeriesScenePng(
+	scene: unknown,
+	outputPath: string,
+): Promise<void> {
+	const parsed = parseTimeSeriesScene(scene);
+	let screenshot: Buffer;
+	try {
+		const browser = await launchPinnedTimeSeriesChromium();
+		try {
+			const context = await browser.newContext({
+				viewport: {
+					width: parsed.render.width,
+					height: parsed.render.height,
+				},
+				deviceScaleFactor: parsed.render.deviceScaleFactor,
+				locale: parsed.chart.locale,
+				timezoneId: parsed.chart.timezone,
+				offline: true,
+				serviceWorkers: 'block',
+				reducedMotion: 'reduce',
+			});
+			try {
+				const page = await context.newPage();
+				await page.setContent(buildTimeSeriesStandaloneHtml(parsed), {
+					waitUntil: 'load',
+				});
+				await waitForTimeSeriesBridgeReady(page, parsed.render.timeoutMs);
+				screenshot = await page.locator('[data-baron-render-root]').screenshot({
+					type: 'png',
+					animations: 'disabled',
+					caret: 'hide',
+					scale: 'device',
+				});
+				await page.evaluate(() => window.__BARON_KLINE_SCENE__.destroy());
+			} finally {
+				await context.close();
+			}
+		} finally {
+			await browser.close();
+		}
+	} catch (error) {
+		if (error instanceof TimeSeriesSceneError) {
+			throw error;
+		}
+		throw new TimeSeriesSceneError(
+			'TIME_SERIES_RENDER_FAILED',
+			'/render',
+			'Time Series browser rendering failed.',
+		);
+	}
+	await writeFile(outputPath, canonicalizePng(screenshot));
 }

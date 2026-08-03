@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://baron.dev/kline-scene/time-series-runtime.schema.json",
+  "title": "TimeSeriesRuntimeIdentity",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["engine", "engineVersion", "runtimeVersion"],
+  "properties": {
+    "engine": { "const": "klinecharts" },
+    "engineVersion": { "const": "10.0.0" },
+    "runtimeVersion": { "const": "0.1.0" }
+  }
+}

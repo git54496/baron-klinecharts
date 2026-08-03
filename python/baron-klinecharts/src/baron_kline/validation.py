@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import math
+import re
 from importlib.resources import files
 from typing import Any
 
@@ -11,7 +12,12 @@ import rfc8785
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
-from .errors import SceneError, SceneIssue
+from .errors import (
+    SceneError,
+    SceneIssue,
+    TimeSeriesSceneError,
+    TimeSeriesSceneIssue,
+)
 
 SAFE_INTEGER_MAX = 9_007_199_254_740_991
 
@@ -29,7 +35,7 @@ OVERLAY_BASE_KEYS = {
 }
 
 
-def _load_schemas() -> tuple[dict[str, Any], Registry[Any]]:
+def _load_schemas() -> tuple[dict[str, Any], dict[str, Any], Registry[Any]]:
     schemas: list[dict[str, Any]] = []
     schema_directory = files("baron_kline").joinpath("schemas")
     for resource in sorted(schema_directory.iterdir(), key=lambda item: item.name):
@@ -38,15 +44,23 @@ def _load_schemas() -> tuple[dict[str, Any], Registry[Any]]:
     registry: Registry[Any] = Registry()
     for schema in schemas:
         registry = registry.with_resource(schema["$id"], Resource.from_contents(schema))
-    root = next(
+    chart_root = next(
         schema for schema in schemas
         if schema["$id"].endswith("/chart-scene.schema.json")
     )
-    return root, registry
+    time_series_root = next(
+        schema for schema in schemas
+        if schema["$id"].endswith("/time-series-scene.schema.json")
+    )
+    return chart_root, time_series_root, registry
 
 
-_ROOT_SCHEMA, _REGISTRY = _load_schemas()
+_ROOT_SCHEMA, _TIME_SERIES_ROOT_SCHEMA, _REGISTRY = _load_schemas()
 _VALIDATOR = Draft202012Validator(_ROOT_SCHEMA, registry=_REGISTRY)
+_TIME_SERIES_VALIDATOR = Draft202012Validator(
+    _TIME_SERIES_ROOT_SCHEMA,
+    registry=_REGISTRY,
+)
 
 
 def _pointer(parts: Any) -> str:
@@ -506,3 +520,223 @@ def canonical_scene_json(value: Any) -> str:
 
 def hash_canonical_scene(value: Any) -> str:
     return hashlib.sha256(canonical_scene_bytes(value)).hexdigest()
+
+
+def _time_series_issue(
+    code: str,
+    path: str,
+    message: str,
+) -> TimeSeriesSceneIssue:
+    return TimeSeriesSceneIssue(code=code, path=path, message=message)
+
+
+def _assert_time_series_number_domain(value: Any, path: str = "/") -> None:
+    if isinstance(value, bool) or value is None:
+        return
+    if isinstance(value, int):
+        try:
+            numeric = float(value)
+        except OverflowError as error:
+            raise TimeSeriesSceneError(
+                "TIME_SERIES_SCENE_SCHEMA_INVALID",
+                path,
+                "Numeric values must be finite binary64 values.",
+            ) from error
+        if not math.isfinite(numeric):
+            raise TimeSeriesSceneError(
+                "TIME_SERIES_SCENE_SCHEMA_INVALID",
+                path,
+                "Numeric values must be finite binary64 values.",
+            )
+        return
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise TimeSeriesSceneError(
+                "TIME_SERIES_SCENE_SCHEMA_INVALID",
+                path,
+                "Numeric values must be finite binary64 values.",
+            )
+        return
+    if isinstance(value, list):
+        for index, child in enumerate(value):
+            _assert_time_series_number_domain(child, f"{path.rstrip('/')}/{index}")
+        return
+    if isinstance(value, dict):
+        for key, child in value.items():
+            encoded = str(key).replace("~", "~0").replace("/", "~1")
+            _assert_time_series_number_domain(
+                child,
+                f"{path.rstrip('/')}/{encoded}",
+            )
+
+
+def _normalize_time_series_numbers(value: Any) -> Any:
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, int) and abs(value) > SAFE_INTEGER_MAX:
+        return float(value)
+    if isinstance(value, list):
+        return [_normalize_time_series_numbers(child) for child in value]
+    if isinstance(value, dict):
+        return {
+            key: _normalize_time_series_numbers(child)
+            for key, child in value.items()
+        }
+    return value
+
+
+def _time_series_structural_paths(error: Any) -> list[str]:
+    parts = list(error.absolute_path)
+    if error.validator == "required" and isinstance(error.instance, dict):
+        match = re.fullmatch(
+            r"'(?P<property>[^']+)' is a required property",
+            error.message,
+        )
+        missing = match.group("property") if match is not None else None
+        if missing is not None:
+            return [_pointer([*parts, missing])]
+    elif (
+        error.validator == "additionalProperties"
+        and error.validator_value is False
+        and isinstance(error.instance, dict)
+    ):
+        known = set(error.schema.get("properties", {}))
+        extra = [key for key in error.instance if key not in known]
+        if extra:
+            return [_pointer([*parts, key]) for key in extra]
+    return [_pointer(parts)]
+
+
+def _time_series_structural_message(error: Any) -> str:
+    if error.validator == "required":
+        match = re.fullmatch(
+            r"'(?P<property>[^']+)' is a required property",
+            error.message,
+        )
+        if match is not None:
+            return f"must have required property '{match.group('property')}'"
+    if error.validator == "additionalProperties":
+        return "must NOT have additional properties"
+    return error.message
+
+
+def _time_series_structural_code(path: str, validator: str) -> str:
+    if path == "/version" and validator == "const":
+        return "TIME_SERIES_SCENE_VERSION_UNSUPPORTED"
+    if path in {"/runtime/engine", "/runtime/engineVersion"} and validator == "const":
+        return "TIME_SERIES_ENGINE_VERSION_MISMATCH"
+    return "TIME_SERIES_SCENE_SCHEMA_INVALID"
+
+
+def _validate_time_series_semantics(
+    scene: dict[str, Any],
+) -> list[TimeSeriesSceneIssue]:
+    issues: list[TimeSeriesSceneIssue] = []
+    series_ids: set[str] = set()
+    first_series = scene["series"][0]
+    for index, series in enumerate(scene["series"]):
+        if series["id"] in series_ids:
+            issues.append(_time_series_issue(
+                "TIME_SERIES_SCENE_SCHEMA_INVALID",
+                f"/series/{index}/id",
+                f"Duplicate time series id: {series['id']}.",
+            ))
+        series_ids.add(series["id"])
+        if series["unit"] != first_series["unit"]:
+            issues.append(_time_series_issue(
+                "TIME_SERIES_SCENE_SCHEMA_INVALID",
+                f"/series/{index}/unit",
+                "All time series must use the same unit.",
+            ))
+        if series["precision"] != first_series["precision"]:
+            issues.append(_time_series_issue(
+                "TIME_SERIES_SCENE_SCHEMA_INVALID",
+                f"/series/{index}/precision",
+                "All time series must use the same precision.",
+            ))
+
+    previous_timestamp: int | None = None
+    timestamps: set[int] = set()
+    for index, point in enumerate(scene["data"]):
+        timestamp = point["timestamp"]
+        if previous_timestamp is not None and timestamp <= previous_timestamp:
+            issues.append(_time_series_issue(
+                "TIME_SERIES_SCENE_SCHEMA_INVALID",
+                f"/data/{index}/timestamp",
+                "Time series timestamps must be strictly increasing.",
+            ))
+        previous_timestamp = timestamp
+        timestamps.add(timestamp)
+        value_ids = set(point["values"])
+        missing = series_ids - value_ids
+        unknown = value_ids - series_ids
+        for series_id in sorted(missing):
+            encoded = series_id.replace("~", "~0").replace("/", "~1")
+            issues.append(_time_series_issue(
+                "TIME_SERIES_SCENE_SCHEMA_INVALID",
+                f"/data/{index}/values/{encoded}",
+                f"Missing value for time series: {series_id}.",
+            ))
+        for series_id in sorted(unknown):
+            encoded = series_id.replace("~", "~0").replace("/", "~1")
+            issues.append(_time_series_issue(
+                "TIME_SERIES_SCENE_SCHEMA_INVALID",
+                f"/data/{index}/values/{encoded}",
+                f"Unknown time series value key: {series_id}.",
+            ))
+
+    if scene["viewport"]["anchorTimestamp"] not in timestamps:
+        issues.append(_time_series_issue(
+            "TIME_SERIES_SCENE_SCHEMA_INVALID",
+            "/viewport/anchorTimestamp",
+            "Viewport anchorTimestamp must reference a data point.",
+        ))
+    return issues
+
+
+def validate_time_series_scene(value: Any) -> dict[str, Any]:
+    _assert_time_series_number_domain(value)
+    normalized = _normalize_time_series_numbers(value)
+    errors = list(_TIME_SERIES_VALIDATOR.iter_errors(normalized))
+    if errors:
+        issues: list[TimeSeriesSceneIssue] = []
+        for error in errors:
+            for path in _time_series_structural_paths(error):
+                code = _time_series_structural_code(path, error.validator)
+                issues.append(_time_series_issue(
+                    code,
+                    path,
+                    _time_series_structural_message(error),
+                ))
+        first = issues[0]
+        raise TimeSeriesSceneError(
+            first.code,
+            first.path,
+            first.message,
+            issues,
+        )
+    scene = copy.deepcopy(normalized)
+    semantic_issues = _validate_time_series_semantics(scene)
+    if semantic_issues:
+        first = semantic_issues[0]
+        raise TimeSeriesSceneError(
+            first.code,
+            first.path,
+            first.message,
+            semantic_issues,
+        )
+    return _sort_json(scene)
+
+
+def canonical_time_series_scene_bytes(value: Any) -> bytes:
+    if hasattr(value, "to_dict"):
+        value = value.to_dict()
+    return rfc8785.dumps(validate_time_series_scene(value))
+
+
+def canonical_time_series_scene_json(value: Any) -> str:
+    return canonical_time_series_scene_bytes(value).decode("utf-8")
+
+
+def hash_canonical_time_series_scene(value: Any) -> str:
+    return hashlib.sha256(canonical_time_series_scene_bytes(value)).hexdigest()

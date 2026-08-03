@@ -7,14 +7,19 @@ import { describe, expect, it } from 'vitest';
 import {
 	ChartSceneSchema,
 	parseChartScene,
+	parseTimeSeriesScene,
+	TimeSeriesSceneSchema,
 } from '../src/index.js';
 import { makeScene } from './helpers/scene.js';
+import { makeTimeSeriesScene } from './helpers/time-series-scene.js';
 
 const packageDirectory = process.cwd();
 const generatedFiles = [
 	'src/generated/chart-scene.ts',
 	'src/generated/schemas.ts',
+	'src/generated/time-series-scene.ts',
 	'src/generated/validate-chart-scene.ts',
+	'src/generated/validate-time-series-scene.ts',
 ] as const;
 const generatedFixtures = [
 	'all-indicators.json',
@@ -53,36 +58,51 @@ describe('schema code generation', () => {
 		expect(after).toEqual(before);
 	});
 
-	it('embeds the exact top-level source schema', async () => {
-		const source = JSON.parse(
+	it('embeds the exact top-level source schemas', async () => {
+		const chartSource = JSON.parse(
 			await readFile(join(packageDirectory, 'schema/chart-scene.schema.json'), 'utf8'),
 		) as unknown;
+		const timeSeriesSource = JSON.parse(
+			await readFile(
+				join(packageDirectory, 'schema/time-series-scene.schema.json'),
+				'utf8',
+			),
+		) as unknown;
 
-		expect(ChartSceneSchema).toEqual(source);
+		expect(ChartSceneSchema).toEqual(chartSource);
+		expect(TimeSeriesSceneSchema).toEqual(timeSeriesSource);
 	});
 
-	it('generates a validator with no Ajv runtime dependency', async () => {
-		const source = await readFile(
-			join(packageDirectory, 'src/generated/validate-chart-scene.ts'),
-			'utf8',
-		);
-
-		expect(source).not.toMatch(/(?:from|require\()[\"']ajv(?:\/|[\"'])/);
+	it('generates validators with no Ajv runtime dependency', async () => {
+		for (const file of [
+			'src/generated/validate-chart-scene.ts',
+			'src/generated/validate-time-series-scene.ts',
+		]) {
+			const source = await readFile(join(packageDirectory, file), 'utf8');
+			expect(source).not.toMatch(/(?:from|require\()["']ajv(?:\/|["'])/);
+		}
 	});
 
 	it('generates public types without any', async () => {
-		const source = await readFile(
-			join(packageDirectory, 'src/generated/chart-scene.ts'),
-			'utf8',
-		);
-
-		expect(source).not.toMatch(/\bany\b/);
+		for (const file of [
+			'src/generated/chart-scene.ts',
+			'src/generated/time-series-scene.ts',
+		]) {
+			const source = await readFile(join(packageDirectory, file), 'utf8');
+			expect(source).not.toMatch(/\bany\b/);
+		}
 	});
 
-	it('exports both the schema and parser from the package entry point', () => {
+	it('exports both schemas and parsers from the package entry point', () => {
 		expect(ChartSceneSchema.$id).toBe(
 			'https://baron.dev/kline-scene/chart-scene.schema.json',
 		);
 		expect(parseChartScene(makeScene()).schema).toBe('@baron1996/kline-scene');
+		expect(TimeSeriesSceneSchema.$id).toBe(
+			'https://baron.dev/kline-scene/time-series-scene.schema.json',
+		);
+		expect(parseTimeSeriesScene(makeTimeSeriesScene()).schema).toBe(
+			'@baron1996/time-series-scene',
+		);
 	});
 });
