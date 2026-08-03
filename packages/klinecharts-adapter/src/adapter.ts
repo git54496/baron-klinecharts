@@ -617,7 +617,7 @@ export class KLineChartsSceneAdapter {
 					measurement.start = point;
 					return;
 				}
-				event.preventDefault();
+				// 保留该次点击的兼容 mousedown/mouseup，让引擎自然闭合并复位点击仲裁状态。
 				event.stopImmediatePropagation();
 				this.#completeInteractivePriceMeasurement(measurement, point);
 				return;

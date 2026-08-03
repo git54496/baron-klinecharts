@@ -255,6 +255,101 @@ test('@browser interactive price measurement commits after exactly two chart cli
 	expect(result.serialized).not.toMatch(/absoluteChange|percentageChange|label/u);
 });
 
+test('@browser chains two-click price measurement into one-click horizontal line in the same Runtime', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	await page.evaluate(async (scene) => {
+		const { createKLineSceneRuntime } = await import('/src/index.ts');
+		const events: unknown[] = [];
+		const container = document.querySelector<HTMLElement>('#chart')!;
+		const runtime = await createKLineSceneRuntime(
+			container,
+			scene,
+			{ onEvent: (event) => events.push(event) },
+		);
+		Object.assign(window, {
+			__baronChainedRuntime: runtime,
+			__baronChainedEvents: events,
+		});
+	}, minimalScene);
+
+	const chartBox = await page.locator('#chart').boundingBox();
+	expect(chartBox).not.toBeNull();
+	const measurement = await page.evaluate(() => {
+		const runtime = (window as unknown as {
+			__baronChainedRuntime: {
+				startOverlayDrawing(type: string): string;
+				projectPoint(point: { timestamp: number; value: number }): { x: number; y: number };
+			};
+		}).__baronChainedRuntime;
+		return {
+			id: runtime.startOverlayDrawing('priceMeasurement'),
+			start: runtime.projectPoint({ timestamp: 1784736000000, value: 12.4 }),
+			end: runtime.projectPoint({ timestamp: 1784908800000, value: 12.8 }),
+		};
+	});
+	await page.mouse.click(chartBox!.x + measurement.start.x, chartBox!.y + measurement.start.y);
+	await page.mouse.click(chartBox!.x + measurement.end.x, chartBox!.y + measurement.end.y);
+
+	const horizontal = await page.evaluate(() => {
+		const runtime = (window as unknown as {
+			__baronChainedRuntime: {
+				startOverlayDrawing(type: string): string;
+				projectPoint(point: { timestamp: number; value: number }): { x: number; y: number };
+			};
+		}).__baronChainedRuntime;
+		return {
+			id: runtime.startOverlayDrawing('horizontalStraightLine'),
+			point: runtime.projectPoint({ timestamp: 1784822400000, value: 12.25 }),
+		};
+	});
+	await page.mouse.click(chartBox!.x + horizontal.point.x, chartBox!.y + horizontal.point.y);
+
+	const result = await page.evaluate(({ measurementId, horizontalId }) => {
+		type Overlay = {
+			id: string;
+			type: string;
+			start?: { timestamp: number; value: number };
+			end?: { timestamp: number; value: number };
+			anchor?: { value: number };
+		};
+		const state = window as unknown as {
+			__baronChainedRuntime: {
+				exportScene(): { overlays: Overlay[] };
+				destroy(): void;
+			};
+			__baronChainedEvents: Array<{ type: string; overlay?: Overlay }>;
+		};
+		const scene = state.__baronChainedRuntime.exportScene();
+		const created = state.__baronChainedEvents
+			.filter((event) => event.type === 'overlay-created');
+		const errors = state.__baronChainedEvents
+			.filter((event) => event.type === 'scene-error');
+		state.__baronChainedRuntime.destroy();
+		return {
+			createdIds: created.map((event) => event.overlay?.id),
+			errors,
+			horizontal: scene.overlays.find((overlay) => overlay.id === horizontalId),
+			measurement: scene.overlays.find((overlay) => overlay.id === measurementId),
+			overlayCount: scene.overlays.length,
+		};
+	}, { measurementId: measurement.id, horizontalId: horizontal.id });
+
+	expect(result.errors).toEqual([]);
+	expect(result.createdIds).toEqual([measurement.id, horizontal.id]);
+	expect(result.overlayCount).toBe(2);
+	expect(result.measurement).toMatchObject({
+		id: measurement.id,
+		type: 'priceMeasurement',
+		start: { timestamp: 1784736000000, value: 12.4 },
+		end: { timestamp: 1784908800000, value: 12.8 },
+	});
+	expect(result.horizontal).toMatchObject({
+		id: horizontal.id,
+		type: 'horizontalStraightLine',
+	});
+	expect(Number.isFinite(result.horizontal?.anchor?.value)).toBe(true);
+});
+
 test('@browser completes the M1 horizontal line lifecycle with stable Scene data', async ({ page }) => {
 	const createdId = 'overlay-m1-runtime-horizontal';
 	const drawPosition = { x: 500, y: 170 };
