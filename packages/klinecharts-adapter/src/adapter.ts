@@ -35,6 +35,7 @@ import {
 	type OverlayPixelGeometry,
 	type PixelCoordinate,
 } from './interaction/hit-testing.js';
+import { shouldIgnoreStaleOverlayDeselection } from './interaction/selection-arbitration.js';
 
 export type PriceScale = 'linear' | 'logarithmic';
 export type AdapterDragTarget = 'body' | 'anchor';
@@ -283,8 +284,23 @@ export class KLineChartsSceneAdapter {
 			onSelected: ({ overlay }) => {
 				this.#selectOverlay(overlay.id);
 			},
-			onDeselected: ({ overlay }) => {
-				if (this.#selectedOverlayId === overlay.id) {
+			onDeselected: (event) => {
+				const eventX = event.x;
+				const eventY = event.y;
+				const coordinate =
+					typeof eventX === 'number' && Number.isFinite(eventX) &&
+					typeof eventY === 'number' && Number.isFinite(eventY)
+					? { x: eventX, y: eventY }
+					: undefined;
+				if (
+					this.#selectedOverlayId === event.overlay.id &&
+					!shouldIgnoreStaleOverlayDeselection(
+						this.#selectedOverlayId,
+						event.overlay.id,
+						coordinate,
+						this.#overlayGeometries(),
+					)
+				) {
 					this.#selectOverlay(null);
 				}
 			},

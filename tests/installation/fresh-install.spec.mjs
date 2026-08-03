@@ -44,8 +44,8 @@ test('packed npm artifacts install and run without workspace links', async () =>
 			"import { ADAPTER_PACKAGE_VERSION } from '@baron1996/klinecharts-adapter';",
 			"const scene = JSON.parse(await readFile(process.argv[2], 'utf8'));",
 			"if (parseChartScene(scene).version !== 1) throw new Error('Scene import failed.');",
-			"if (WEB_RUNTIME_PACKAGE_VERSION !== '0.2.0') throw new Error('Web Runtime import failed.');",
-			"if (ADAPTER_PACKAGE_VERSION !== '0.2.0') throw new Error('Adapter import failed.');",
+			"if (WEB_RUNTIME_PACKAGE_VERSION !== '0.2.1') throw new Error('Web Runtime import failed.');",
+			"if (ADAPTER_PACKAGE_VERSION !== '0.2.1') throw new Error('Adapter import failed.');",
 		].join('\n'),
 	);
 	const fixture = resolve('tests', 'fixtures', 'scenes', 'minimal-valid.json');
