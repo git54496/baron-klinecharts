@@ -24,6 +24,7 @@ import {
 	toEngineOverlay,
 	toEngineOverlayDrawing,
 } from './conversion/overlays.js';
+import { normalizePriceValue } from './conversion/price.js';
 import { applyViewport } from './conversion/viewport.js';
 import {
 	createDragCandidate,
@@ -100,6 +101,11 @@ interface PointerInteraction {
 	candidate?: SceneOverlay;
 }
 
+interface InteractivePriceMeasurement {
+	readonly source: OverlayDrawingSource & { readonly type: 'priceMeasurement' };
+	start?: NonNullable<SceneOverlay['start']>;
+}
+
 function promoteSceneToM2(
 	scene: ChartScene,
 	scale?: PriceScale,
@@ -146,6 +152,8 @@ export class KLineChartsSceneAdapter {
 	#selectedOverlayId: string | null = null;
 	/** 当前受控拖动事务；progress 永不写入 #scene。 */
 	#pointerInteraction: PointerInteraction | undefined;
+	/** 当前交互式量度的首锚点；只用于补偿引擎丢弃快速第二击，不进入 Scene。 */
+	#interactivePriceMeasurement: InteractivePriceMeasurement | undefined;
 	/** 确定性 opaque 交互 ID 序号。 */
 	#interactionSequence = 0;
 
@@ -271,6 +279,12 @@ export class KLineChartsSceneAdapter {
 	): EngineOverlayCallbacks {
 		return {
 			onDrawEnd: ({ overlay }) => {
+				if (
+					drawing &&
+					this.#interactivePriceMeasurement?.source.id === source.id
+				) {
+					this.#interactivePriceMeasurement = undefined;
+				}
 				this.#safelyCommitEngineOverlay(overlay, source, drawing ? 'created' : 'updated');
 			},
 			onPressedMoveStart: ({ overlay }) => {
@@ -305,6 +319,9 @@ export class KLineChartsSceneAdapter {
 				}
 			},
 			onRemoved: ({ overlay }) => {
+				if (this.#interactivePriceMeasurement?.source.id === overlay.id) {
+					this.#interactivePriceMeasurement = undefined;
+				}
 				if (this.#scene.overlays.some((candidate) => candidate.id === overlay.id)) {
 					this.#scene = parseChartScene({
 						...structuredClone(this.#scene),
@@ -387,6 +404,82 @@ export class KLineChartsSceneAdapter {
 			throw new SceneError('INVALID_REFERENCE', '/overlays', 'Pointer does not map to finite chart data.');
 		}
 		return { dataIndex: value!.dataIndex!, value: value!.value! };
+	}
+
+	#measurementAnchor(
+		point: PixelCoordinate,
+		paneId: string,
+		path: string,
+	): NonNullable<SceneOverlay['start']> {
+		const converted = this.#chart.convertFromPixel(
+			[point],
+			this.#primaryAxisFilter(paneId),
+		) as Array<Partial<Point>>;
+		const value = converted[0];
+		if (
+			!Number.isSafeInteger(value?.timestamp) ||
+			!Number.isFinite(value?.value) ||
+			!this.#scene.data.some((bar) => bar.timestamp === value?.timestamp)
+		) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				path,
+				'Pointer does not map to a finite price and an embedded market-data timestamp.',
+			);
+		}
+		return {
+			timestamp: value!.timestamp!,
+			value: normalizePriceValue(
+				value!.value!,
+				this.#scene.symbol.pricePrecision,
+				`${path}/value`,
+			),
+		};
+	}
+
+	#completeInteractivePriceMeasurement(
+		drawing: InteractivePriceMeasurement,
+		end: NonNullable<SceneOverlay['end']>,
+	): void {
+		const { text: _text, ...source } = drawing.source;
+		const candidate = parseChartScene({
+			...structuredClone(this.#scene),
+			overlays: [
+				...structuredClone(this.#scene.overlays),
+				{
+					...structuredClone(source),
+					start: structuredClone(drawing.start),
+					end: structuredClone(end),
+				},
+			],
+		});
+		const index = candidate.overlays.length - 1;
+		const overlay = candidate.overlays[index]!;
+		this.#interactivePriceMeasurement = undefined;
+		if (!this.#chart.removeOverlay({ id: overlay.id })) {
+			throw new SceneError(
+				'RUNTIME_INIT_FAILED',
+				`/overlays/${index}`,
+				`KLineCharts failed to replace in-progress Overlay ${overlay.id}.`,
+			);
+		}
+		const result = this.#chart.createOverlay(
+			toEngineOverlay(
+				overlay,
+				this.#idMap,
+				`/overlays/${index}`,
+				this.#overlayCallbacks(overlay),
+			),
+		);
+		if (result !== overlay.id) {
+			throw new SceneError(
+				'RUNTIME_INIT_FAILED',
+				`/overlays/${index}`,
+				`KLineCharts failed to commit interactive Overlay ${overlay.id}.`,
+			);
+		}
+		this.#scene = candidate;
+		this.#emit({ type: 'overlay-created', overlay });
 	}
 
 	#overlayGeometries(): readonly OverlayPixelGeometry[] {
@@ -512,6 +605,32 @@ export class KLineChartsSceneAdapter {
 			return;
 		}
 		const coordinate = this.#pointerCoordinate(event);
+		const measurement = this.#interactivePriceMeasurement;
+		if (measurement !== undefined) {
+			try {
+				const point = this.#measurementAnchor(
+					coordinate,
+					measurement.source.paneId,
+					measurement.start === undefined ? '/overlays/start' : '/overlays/end',
+				);
+				if (measurement.start === undefined) {
+					measurement.start = point;
+					return;
+				}
+				event.preventDefault();
+				event.stopImmediatePropagation();
+				this.#completeInteractivePriceMeasurement(measurement, point);
+				return;
+			} catch (error) {
+				if (error instanceof SceneError) {
+					event.preventDefault();
+					event.stopImmediatePropagation();
+					this.#emit({ type: 'scene-error', issues: structuredClone(error.issues) });
+					return;
+				}
+				throw error;
+			}
+		}
 		const hit = hitTestOverlayGeometries(coordinate, this.#overlayGeometries());
 		if (hit === null) {
 			const selected = this.#scene.overlays.find(
@@ -869,6 +988,14 @@ export class KLineChartsSceneAdapter {
 			);
 		}
 		this.#scene = candidate;
+		if (request.type === 'priceMeasurement') {
+			this.#interactivePriceMeasurement = {
+				source: {
+					...structuredClone(request),
+					type: 'priceMeasurement',
+				},
+			};
+		}
 		return request.id;
 	}
 
@@ -919,6 +1046,7 @@ export class KLineChartsSceneAdapter {
 			return;
 		}
 		this.#cancelInteraction('destroy');
+		this.#interactivePriceMeasurement = undefined;
 		this.#disposed = true;
 		this.#removeInteractionListeners();
 		this.#listeners.clear();

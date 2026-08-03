@@ -138,6 +138,123 @@ test('@browser commits completed drawing geometry and emits overlay-created', as
 	);
 });
 
+test('@browser interactive price measurement commits after exactly two chart clicks', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	await page.evaluate(async (scene) => {
+		const { createKLineSceneRuntime } = await import('/src/index.ts');
+		const events: unknown[] = [];
+		const runtime = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			scene,
+			{ onEvent: (event) => events.push(event) },
+		);
+		Object.assign(window, {
+			__baronInteractiveRuntime: runtime,
+			__baronInteractiveEvents: events,
+		});
+	}, minimalScene);
+
+	const drawingCanvas = page.locator('#chart canvas').nth(1);
+	await expect(drawingCanvas).toBeVisible();
+
+	const measurementId = await page.evaluate(() => (
+		window as unknown as {
+			__baronInteractiveRuntime: {
+				startOverlayDrawing(type: string): string;
+			};
+		}
+	).__baronInteractiveRuntime.startOverlayDrawing('priceMeasurement'));
+	const anchors = await page.evaluate(() => {
+		const runtime = (window as unknown as {
+			__baronInteractiveRuntime: {
+				exportScene(): { data: Array<{ timestamp: number }> };
+				projectPoint(point: { timestamp: number; value: number }): { x: number; y: number };
+			};
+		}).__baronInteractiveRuntime;
+		const scene = runtime.exportScene();
+		return {
+			start: runtime.projectPoint({ timestamp: scene.data[0]!.timestamp, value: 12.4 }),
+			end: runtime.projectPoint({ timestamp: scene.data[2]!.timestamp, value: 12.8 }),
+		};
+	});
+	const chartBox = await page.locator('#chart').boundingBox();
+	expect(chartBox).not.toBeNull();
+	await page.mouse.click(chartBox!.x + anchors.start.x, chartBox!.y + anchors.start.y);
+	const afterStart = await page.evaluate(() => {
+		const state = window as unknown as {
+			__baronInteractiveRuntime: { listOverlays(): readonly unknown[] };
+			__baronInteractiveEvents: Array<{ type: string }>;
+		};
+		return {
+			createdCount: state.__baronInteractiveEvents
+				.filter((event) => event.type === 'overlay-created').length,
+			overlayCount: state.__baronInteractiveRuntime.listOverlays().length,
+		};
+	});
+	expect(afterStart).toEqual({ createdCount: 0, overlayCount: 0 });
+
+	await page.mouse.click(chartBox!.x + anchors.end.x, chartBox!.y + anchors.end.y);
+	const afterEnd = await page.evaluate(() => {
+		const state = window as unknown as {
+			__baronInteractiveRuntime: { listOverlays(): readonly unknown[] };
+			__baronInteractiveEvents: Array<{ type: string }>;
+		};
+		return {
+			events: state.__baronInteractiveEvents,
+			overlays: state.__baronInteractiveRuntime.listOverlays(),
+		};
+	});
+	expect(afterEnd.events.filter((event) => event.type === 'overlay-created')).toEqual([
+		expect.objectContaining({ type: 'overlay-created' }),
+	]);
+	expect(afterEnd.events.filter((event) => event.type === 'scene-error')).toEqual([]);
+	expect(afterEnd.overlays).toEqual([
+		expect.objectContaining({ type: 'priceMeasurement' }),
+	]);
+
+	const result = await page.evaluate((measurementId) => {
+		type Measurement = {
+			id: string;
+			type: string;
+			start?: { timestamp: number; value: number };
+			end?: { timestamp: number; value: number };
+		};
+		const state = window as unknown as {
+			__baronInteractiveRuntime: {
+				exportScene(): { overlays: Measurement[] };
+				listOverlays(): readonly Measurement[];
+				destroy(): void;
+			};
+			__baronInteractiveEvents: Array<{ type: string; overlay?: Measurement }>;
+		};
+		const scene = state.__baronInteractiveRuntime.exportScene();
+		const listed = state.__baronInteractiveRuntime.listOverlays();
+		const created = state.__baronInteractiveEvents
+			.filter((event) => event.type === 'overlay-created');
+		state.__baronInteractiveRuntime.destroy();
+		return {
+			created,
+			measurement: scene.overlays.find((overlay) => overlay.id === measurementId),
+			listedMeasurement: listed.find((overlay) => overlay.id === measurementId),
+			measurementCount: scene.overlays
+				.filter((overlay) => overlay.type === 'priceMeasurement').length,
+			serialized: JSON.stringify(scene),
+		};
+	}, measurementId);
+
+	expect(result.created).toHaveLength(1);
+	expect(result.measurementCount).toBe(1);
+	expect(result.measurement).toMatchObject({
+		id: measurementId,
+		type: 'priceMeasurement',
+		start: { timestamp: minimalScene.data[0]!.timestamp, value: 12.4 },
+		end: { timestamp: minimalScene.data[2]!.timestamp, value: 12.8 },
+	});
+	expect(result.created[0]?.overlay).toEqual(result.measurement);
+	expect(result.listedMeasurement).toEqual(result.measurement);
+	expect(result.serialized).not.toMatch(/absoluteChange|percentageChange|label/u);
+});
+
 test('@browser completes the M1 horizontal line lifecycle with stable Scene data', async ({ page }) => {
 	const createdId = 'overlay-m1-runtime-horizontal';
 	const drawPosition = { x: 500, y: 170 };
