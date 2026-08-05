@@ -15,6 +15,36 @@ export type KLineChartsModule = typeof import('klinecharts');
 export interface EngineHandle {
 	readonly chart: Chart;
 	readonly module: KLineChartsModule;
+	/** 显式复位引擎点击仲裁状态；每次绘制开始前调用，避免快速连续绘制的首击被吞。 */
+	readonly resetClickArbitration: () => void;
+}
+
+/**
+ * klinecharts 10.0.0 的点击仲裁状态（_clickCount/_clickTimeoutId/_clickCoordinate）
+ * 保存在 ChartImp._chartEvent._event（EventHandlerImp）私有链上，引擎未提供任何
+ * 公开复位 API；这里只读取其内部 _resetClickTimeout，并由 KLINECHARTS_ENGINE_VERSION
+ * 运行时断言保护。若引擎私有结构变化，初始化将显式失败而非静默降级。
+ */
+interface EngineClickArbitrationInternals {
+	readonly _chartEvent?: {
+		readonly _event?: {
+			readonly _resetClickTimeout?: () => void;
+		};
+	};
+}
+
+function resolveClickArbitrationReset(chart: Chart): () => void {
+	const eventHandler = (chart as unknown as EngineClickArbitrationInternals)
+		._chartEvent?._event;
+	const reset = eventHandler?._resetClickTimeout;
+	if (eventHandler === undefined || typeof reset !== 'function') {
+		throw new SceneError(
+			'RUNTIME_INIT_FAILED',
+			'/runtime',
+			`KLineCharts ${KLINECHARTS_ENGINE_VERSION} 内部点击仲裁复位钩子不可用；引擎私有结构可能已变化。`,
+		);
+	}
+	return reset.bind(eventHandler);
 }
 
 function assertRuntimeIdentity(scene: ChartScene, actualEngineVersion: string): void {
@@ -68,5 +98,9 @@ export async function createEngine(
 	});
 	chart.setPeriod(structuredClone(scene.period));
 	chart.setDataLoader(createStaticDataLoader(scene.data));
-	return { chart, module: engine };
+	return {
+		chart,
+		module: engine,
+		resetClickArbitration: resolveClickArbitrationReset(chart),
+	};
 }

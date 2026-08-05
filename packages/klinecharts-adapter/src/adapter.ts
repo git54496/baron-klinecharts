@@ -163,6 +163,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 	readonly #chart: Chart;
 	/** 引擎模块句柄，用于版本读取和精确销毁。 */
 	readonly #engine: EngineHandle['module'];
+	/** 引擎点击仲裁显式复位；每次绘制开始前调用，保证新绘制首击独立成单击。 */
+	readonly #resetClickArbitration: () => void;
 	/** 场景 ID 与引擎内部 ID 的双向映射。 */
 	readonly #idMap: EngineIdMap;
 	/** 当前最后一次成功提交、可导出的规范化场景。 */
@@ -212,6 +214,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 		this.#scene = scene;
 		this.#chart = handle.chart;
 		this.#engine = handle.module;
+		this.#resetClickArbitration = handle.resetClickArbitration;
 		this.#idMap = idMap;
 		this.#originalBackground = originalBackground;
 		this.#installInteractionListeners();
@@ -1697,6 +1700,10 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 		) {
 			throw new SceneError('DUPLICATE_ID', '/overlays/id', `Overlay ${request.id} already exists.`);
 		}
+		// 下一次绘制开始前显式复位引擎点击仲裁：klinecharts 10.0.0 会在 500ms 窗口内
+		// 相距 ≥5px 的第二次 mouseup 上既不派发 click 也不派发 double-click，直接丢弃该次点击，
+		// 导致“上一绘制提交后紧接着的新绘制首击”被吞。复位后新绘制首击总是独立的单击。
+		this.#resetClickArbitration();
 		const candidate = request.type === 'priceMeasurement'
 			? parseChartScene(promoteSceneToM2(this.#scene))
 			: this.#scene;

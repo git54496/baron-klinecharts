@@ -350,6 +350,124 @@ test('@browser chains two-click price measurement into one-click horizontal line
 	expect(Number.isFinite(result.horizontal?.anchor?.value)).toBe(true);
 });
 
+test('@browser commits two consecutive one-click horizontal lines in the same Runtime inside the click arbitration window', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	await page.evaluate(async (scene) => {
+		const { createKLineSceneRuntime } = await import('/src/index.ts');
+		const events: unknown[] = [];
+		const container = document.querySelector<HTMLElement>('#chart')!;
+		const runtime = await createKLineSceneRuntime(
+			container,
+			scene,
+			{ onEvent: (event) => events.push(event) },
+		);
+		type ClickStamp = { type: 'down' | 'up'; time: number; x: number; y: number };
+		const clickStamps: ClickStamp[] = [];
+		const recordClick = (type: 'down' | 'up') => (event: Event) => {
+			const mouseEvent = event as MouseEvent;
+			clickStamps.push({
+				type,
+				time: performance.now(),
+				x: mouseEvent.clientX,
+				y: mouseEvent.clientY,
+			});
+		};
+		container.addEventListener('mousedown', recordClick('down'), true);
+		container.addEventListener('mouseup', recordClick('up'), true);
+		Object.assign(window, {
+			__baronRapidRuntime: runtime,
+			__baronRapidEvents: events,
+			__baronRapidClickStamps: clickStamps,
+		});
+	}, minimalScene);
+
+	const chartBox = await page.locator('#chart').boundingBox();
+	expect(chartBox).not.toBeNull();
+	const first = await page.evaluate(() => {
+		const runtime = (window as unknown as {
+			__baronRapidRuntime: {
+				startOverlayDrawing(type: string): string;
+				projectPoint(point: { timestamp: number; value: number }): { x: number; y: number };
+			};
+		}).__baronRapidRuntime;
+		return {
+			id: runtime.startOverlayDrawing('horizontalStraightLine'),
+			point: runtime.projectPoint({ timestamp: 1784822400000, value: 12.25 }),
+		};
+	});
+	await page.mouse.click(chartBox!.x + first.point.x, chartBox!.y + first.point.y);
+
+	const second = await page.evaluate(() => {
+		const runtime = (window as unknown as {
+			__baronRapidRuntime: {
+				startOverlayDrawing(type: string): string;
+				projectPoint(point: { timestamp: number; value: number }): { x: number; y: number };
+			};
+		}).__baronRapidRuntime;
+		return {
+			id: runtime.startOverlayDrawing('horizontalStraightLine'),
+			point: runtime.projectPoint({ timestamp: 1784908800000, value: 12.8 }),
+		};
+	});
+	await page.mouse.click(chartBox!.x + second.point.x, chartBox!.y + second.point.y);
+
+	const result = await page.evaluate(({ firstId, secondId }) => {
+		type Overlay = {
+			id: string;
+			type: string;
+			anchor?: { value: number };
+		};
+		type ClickStamp = { type: 'down' | 'up'; time: number; x: number; y: number };
+		const state = window as unknown as {
+			__baronRapidRuntime: {
+				exportScene(): { overlays: Overlay[] };
+				destroy(): void;
+			};
+			__baronRapidEvents: Array<{ type: string; overlay?: Overlay }>;
+			__baronRapidClickStamps: ClickStamp[];
+		};
+		const scene = state.__baronRapidRuntime.exportScene();
+		const created = state.__baronRapidEvents
+			.filter((event) => event.type === 'overlay-created');
+		const errors = state.__baronRapidEvents
+			.filter((event) => event.type === 'scene-error');
+		state.__baronRapidRuntime.destroy();
+		return {
+			createdIds: created.map((event) => event.overlay?.id),
+			errors,
+			first: scene.overlays.find((overlay) => overlay.id === firstId),
+			second: scene.overlays.find((overlay) => overlay.id === secondId),
+			overlayCount: scene.overlays.length,
+			clickStamps: structuredClone(state.__baronRapidClickStamps),
+		};
+	}, { firstId: first.id, secondId: second.id });
+
+	// 证明测试真实落在引擎 500ms 点击仲裁窗口内（mousedown 起计时、mouseup 判定）且两点相距 ≥ 50px，
+	// 防止通过放慢点击节奏绕过回归。
+	expect(result.clickStamps).toHaveLength(4);
+	const [down1, up1, down2, up2] = result.clickStamps;
+	expect(down1?.type).toBe('down');
+	expect(up1?.type).toBe('up');
+	expect(down2?.type).toBe('down');
+	expect(up2?.type).toBe('up');
+	expect(up2!.time - down1!.time).toBeLessThan(500);
+	expect(Math.hypot(down2!.x - down1!.x, down2!.y - down1!.y)).toBeGreaterThanOrEqual(50);
+
+	expect(result.errors).toEqual([]);
+	expect(result.createdIds).toEqual([first.id, second.id]);
+	expect(result.overlayCount).toBe(2);
+	expect(result.first).toMatchObject({
+		id: first.id,
+		type: 'horizontalStraightLine',
+	});
+	expect(result.second).toMatchObject({
+		id: second.id,
+		type: 'horizontalStraightLine',
+	});
+	expect(Number.isFinite(result.first?.anchor?.value)).toBe(true);
+	expect(Number.isFinite(result.second?.anchor?.value)).toBe(true);
+});
+
 test('@browser completes the M1 horizontal line lifecycle with stable Scene data', async ({ page }) => {
 	const createdId = 'overlay-m1-runtime-horizontal';
 	const drawPosition = { x: 500, y: 170 };
