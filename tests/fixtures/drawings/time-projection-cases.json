@@ -1,0 +1,293 @@
+{
+  "timezone": "America/New_York",
+  "scenePeriod": {
+    "type": "day",
+    "span": 1
+  },
+  "dataTimestamps": [
+    1772773200000,
+    1772859600000,
+    1772946000000,
+    1773028800000,
+    1773115200000
+  ],
+  "calendarCases": [
+    {
+      "name": "spring-day-23h",
+      "timestamp": 1772946000000,
+      "period": {
+        "type": "day",
+        "span": 1
+      },
+      "expected": 1773028800000
+    },
+    {
+      "name": "fall-day-25h",
+      "timestamp": 1793509200000,
+      "period": {
+        "type": "day",
+        "span": 1
+      },
+      "expected": 1793599200000
+    },
+    {
+      "name": "month-feb-2026",
+      "timestamp": 1769922000000,
+      "period": {
+        "type": "month",
+        "span": 1
+      },
+      "expected": 1772341200000
+    },
+    {
+      "name": "year-2025",
+      "timestamp": 1735707600000,
+      "period": {
+        "type": "year",
+        "span": 1
+      },
+      "expected": 1767243600000
+    },
+    {
+      "name": "week-from-thursday-epoch",
+      "timestamp": 1772686800000,
+      "period": {
+        "type": "week",
+        "span": 1
+      },
+      "expected": 1773288000000
+    }
+  ],
+  "bucketCases": [
+    {
+      "name": "exact-day",
+      "anchor": {
+        "timestamp": 1772773200000,
+        "granularity": {
+          "type": "day",
+          "span": 1
+        }
+      },
+      "expected": {
+        "kind": "exact",
+        "startTimestamp": 1772773200000,
+        "endTimestamp": 1772859600000,
+        "dataIndex": 0
+      }
+    },
+    {
+      "name": "first-child-hour",
+      "anchor": {
+        "timestamp": 1772776800000,
+        "granularity": {
+          "type": "hour",
+          "span": 1
+        }
+      },
+      "expected": {
+        "kind": "first-child",
+        "startTimestamp": 1772776800000,
+        "endTimestamp": 1772780400000,
+        "dataIndex": 0
+      }
+    },
+    {
+      "name": "containing-week",
+      "anchor": {
+        "timestamp": 1772773200000,
+        "granularity": {
+          "type": "week",
+          "span": 1
+        }
+      },
+      "expected": {
+        "kind": "containing-interval",
+        "startTimestamp": 1772686800000,
+        "endTimestamp": 1773288000000,
+        "dataIndex": 0
+      }
+    },
+    {
+      "name": "outside-before",
+      "anchor": {
+        "timestamp": 1772773199999,
+        "granularity": {
+          "type": "day",
+          "span": 1
+        }
+      },
+      "expected": {
+        "kind": "outside-data-range",
+        "startTimestamp": 1772686800000,
+        "endTimestamp": 1772773200000,
+        "dataIndex": null
+      }
+    },
+    {
+      "name": "outside-after",
+      "anchor": {
+        "timestamp": 1773201600000,
+        "granularity": {
+          "type": "day",
+          "span": 1
+        }
+      },
+      "expected": {
+        "kind": "outside-data-range",
+        "startTimestamp": 1773201600000,
+        "endTimestamp": 1773288000000,
+        "dataIndex": null
+      }
+    },
+    {
+      "name": "dst-spring-hour",
+      "anchor": {
+        "timestamp": 1772955000000,
+        "granularity": {
+          "type": "hour",
+          "span": 1
+        }
+      },
+      "expected": {
+        "kind": "first-child",
+        "startTimestamp": 1772953200000,
+        "endTimestamp": 1772956800000,
+        "dataIndex": 2
+      }
+    }
+  ],
+  "reverseCases": [
+    {
+      "name": "day-to-hour-finer",
+      "original": {
+        "timestamp": 1772773200000,
+        "granularity": {
+          "type": "day",
+          "span": 1
+        }
+      },
+      "editingPeriod": {
+        "type": "hour",
+        "span": 1
+      },
+      "target": 1772780400000,
+      "expected": {
+        "timestamp": 1772773200000,
+        "granularity": {
+          "type": "hour",
+          "span": 1
+        }
+      }
+    },
+    {
+      "name": "hour-to-day-coarse-keeps-granularity",
+      "original": {
+        "timestamp": 1772780400000,
+        "granularity": {
+          "type": "hour",
+          "span": 1
+        }
+      },
+      "editingPeriod": {
+        "type": "day",
+        "span": 1
+      },
+      "target": 1772863200000,
+      "expected": {
+        "timestamp": 1772863200000,
+        "granularity": {
+          "type": "hour",
+          "span": 1
+        }
+      }
+    },
+    {
+      "name": "day-to-week-coarse",
+      "original": {
+        "timestamp": 1772773200000,
+        "granularity": {
+          "type": "day",
+          "span": 1
+        }
+      },
+      "editingPeriod": {
+        "type": "week",
+        "span": 1
+      },
+      "target": 1773162000000,
+      "expected": {
+        "timestamp": 1773115200000,
+        "granularity": {
+          "type": "day",
+          "span": 1
+        }
+      }
+    },
+    {
+      "name": "week-to-day-finer",
+      "original": {
+        "timestamp": 1772686800000,
+        "granularity": {
+          "type": "week",
+          "span": 1
+        }
+      },
+      "editingPeriod": {
+        "type": "day",
+        "span": 1
+      },
+      "target": 1772956800000,
+      "expected": {
+        "timestamp": 1772946000000,
+        "granularity": {
+          "type": "day",
+          "span": 1
+        }
+      }
+    },
+    {
+      "name": "same-day-target-in-later-bar",
+      "original": {
+        "timestamp": 1772773200000,
+        "granularity": {
+          "type": "day",
+          "span": 1
+        }
+      },
+      "editingPeriod": {
+        "type": "day",
+        "span": 1
+      },
+      "target": 1772949600000,
+      "expected": {
+        "timestamp": 1772946000000,
+        "granularity": {
+          "type": "day",
+          "span": 1
+        }
+      }
+    },
+    {
+      "name": "month-coarse-relative-position",
+      "original": {
+        "timestamp": 1768453200000,
+        "granularity": {
+          "type": "month",
+          "span": 1
+        }
+      },
+      "editingPeriod": {
+        "type": "month",
+        "span": 2
+      },
+      "target": 1773162000000,
+      "expected": {
+        "timestamp": 1773547200000,
+        "granularity": {
+          "type": "month",
+          "span": 1
+        }
+      }
+    }
+  ]
+}

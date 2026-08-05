@@ -13,7 +13,9 @@ import {
 	buildStandaloneHtml,
 	buildTimeSeriesStandaloneHtml,
 } from '../src/html.js';
+import { buildDrawableWorkspaceStandaloneHtml } from '../src/drawable-workspace-html.js';
 import { loadScene } from './load-scene.js';
+import { loadWorkspaceFixture } from './load-workspace.js';
 import { timeSeriesScene } from './time-series-scene.js';
 
 const minimalScene = loadScene('minimal-valid.json');
@@ -105,6 +107,156 @@ test('@browser ready waits for delayed initial ResizeObserver deliveries', async
 					).__BARON_PENDING_FIRST_RESIZES__,
 			),
 		).toBe(0);
+	} finally {
+		await context.close();
+	}
+});
+
+test('@browser Workspace HTML exposes only the Workspace bridge with full toolbar', async ({
+	browser,
+}) => {
+	const workspace = await loadWorkspaceFixture('chart');
+	const context = await browser.newContext({
+		viewport: {
+			width: workspace.scene.document.render.width,
+			height: workspace.scene.document.render.height,
+		},
+		locale: workspace.scene.document.chart.locale,
+		timezoneId: workspace.scene.document.chart.timezone,
+	});
+	try {
+		const page = await context.newPage();
+		await page.setContent(buildDrawableWorkspaceStandaloneHtml(workspace), {
+			waitUntil: 'load',
+		});
+		await page.evaluate(() => window.__BARON_DRAWABLE_WORKSPACE__.ready);
+		const noLegacyBridge = await page.evaluate(
+			() => typeof window.__BARON_KLINE_SCENE__,
+		);
+		expect(noLegacyBridge).toBe('undefined');
+		const buttons = await page.locator('[data-overlay-type]').count();
+		expect(buttons).toBe(22);
+		const mainSeries = await page.locator('[data-action="main-series"]').count();
+		expect(mainSeries).toBe(1);
+		const exported = await page.evaluate(
+			() => window.__BARON_DRAWABLE_WORKSPACE__.exportWorkspace(),
+		);
+		expect(exported.schema).toBe('@baron1996/drawable-workspace');
+		await page.evaluate(() => window.__BARON_DRAWABLE_WORKSPACE__.destroy());
+	} finally {
+		await context.close();
+	}
+});
+
+test('@browser time-series Workspace HTML keeps 22 tools without main series control', async ({
+	browser,
+}) => {
+	const workspace = await loadWorkspaceFixture('time-series');
+	const context = await browser.newContext({
+		viewport: {
+			width: workspace.scene.document.render.width,
+			height: workspace.scene.document.render.height,
+		},
+		locale: workspace.scene.document.chart.locale,
+		timezoneId: workspace.scene.document.chart.timezone,
+	});
+	try {
+		const page = await context.newPage();
+		await page.setContent(buildDrawableWorkspaceStandaloneHtml(workspace), {
+			waitUntil: 'load',
+		});
+		await page.evaluate(() => window.__BARON_DRAWABLE_WORKSPACE__.ready);
+		expect(await page.locator('[data-overlay-type]').count()).toBe(22);
+		expect(await page.locator('[data-action="main-series"]').count()).toBe(0);
+		const scaleHidden = await page
+			.locator('[data-action="price-scale"]')
+			.evaluate((element) => (element as HTMLSelectElement).hidden);
+		expect(scaleHidden).toBe(true);
+		const exported = await page.evaluate(
+			() => window.__BARON_DRAWABLE_WORKSPACE__.exportWorkspace(),
+		);
+		expect(exported.scene.kind).toBe('time-series');
+		await page.evaluate(() => window.__BARON_DRAWABLE_WORKSPACE__.destroy());
+	} finally {
+		await context.close();
+	}
+});
+
+test('@browser chart Workspace switches candle to area mid-creation', async ({
+	browser,
+}) => {
+	const workspace = await loadWorkspaceFixture('chart');
+	const context = await browser.newContext({
+		viewport: {
+			width: workspace.scene.document.render.width,
+			height: workspace.scene.document.render.height,
+		},
+		locale: workspace.scene.document.chart.locale,
+		timezoneId: workspace.scene.document.chart.timezone,
+	});
+	const directory = await mkdtemp(join(tmpdir(), 'baron-workspace-switch-'));
+	const htmlPath = join(directory, 'workspace.html');
+	await writeFile(
+		htmlPath,
+		buildDrawableWorkspaceStandaloneHtml(workspace),
+		'utf8',
+	);
+	try {
+		const page = await context.newPage();
+		await page.goto(pathToFileURL(htmlPath).href, {
+			waitUntil: 'load',
+		});
+		await page.evaluate(() => window.__BARON_DRAWABLE_WORKSPACE__.ready);
+		await page.locator('[data-overlay-type="segment"]').click();
+		const overlayCanvas = page.locator('[data-baron-render-root] canvas').nth(1);
+		await overlayCanvas.click({ position: { x: 400, y: 200 } });
+		await page.waitForTimeout(600);
+		// 创建尚未完成时切换主序列展示，Drawing 会话与当前交互必须保持。
+		await page.selectOption('[data-action="main-series"]', 'area');
+		await page.waitForTimeout(600);
+		await overlayCanvas.click({ position: { x: 600, y: 300 } });
+		await expect
+			.poll(() =>
+				page.evaluate(
+					() =>
+						window.__BARON_DRAWABLE_WORKSPACE__.exportWorkspace()
+							.drawings.drawings.length,
+				),
+			)
+			.toBe(23);
+		const exported = await page.evaluate(
+			() => window.__BARON_DRAWABLE_WORKSPACE__.exportWorkspace(),
+		);
+		expect(exported.scene.document.chart.candle.type).toBe('area');
+		const segment = exported.drawings.drawings.find(
+			(drawing: { readonly type: string }) => drawing.type === 'segment',
+		);
+		expect(segment?.geometry.points).toHaveLength(2);
+		await page.evaluate(() => window.__BARON_DRAWABLE_WORKSPACE__.destroy());
+	} finally {
+		await context.close();
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
+test('@browser raw Scene HTML keeps only the legacy bridge', async ({ browser }) => {
+	const scene = loadScene('minimal-valid.json');
+	const context = await browser.newContext({
+		viewport: {
+			width: scene.render.width,
+			height: scene.render.height,
+		},
+		locale: scene.chart.locale,
+		timezoneId: scene.chart.timezone,
+	});
+	try {
+		const page = await context.newPage();
+		await page.setContent(buildStandaloneHtml(scene), { waitUntil: 'load' });
+		await page.evaluate(() => window.__BARON_KLINE_SCENE__.ready);
+		const workspaceBridge = await page.evaluate(
+			() => typeof window.__BARON_DRAWABLE_WORKSPACE__,
+		);
+		expect(workspaceBridge).toBe('undefined');
 	} finally {
 		await context.close();
 	}

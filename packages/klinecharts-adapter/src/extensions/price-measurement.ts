@@ -10,7 +10,7 @@ function signedFixed(value: number, precision: number): string {
 
 export interface PriceMeasurementDisplay {
 	readonly absoluteChange: number;
-	readonly percentageChange: number;
+	readonly percentageChange: number | null;
 	readonly label: string;
 }
 
@@ -23,7 +23,6 @@ export function derivePriceMeasurementDisplay(
 	if (
 		!Number.isFinite(startValue) ||
 		!Number.isFinite(endValue) ||
-		startValue <= 0 ||
 		!Number.isInteger(pricePrecision) ||
 		pricePrecision < 0 ||
 		pricePrecision > 16
@@ -31,10 +30,17 @@ export function derivePriceMeasurementDisplay(
 		throw new SceneError(
 			'SCENE_SCHEMA_INVALID',
 			'/overlays/priceMeasurement',
-			'Price measurement display inputs must be positive finite prices and a 0..16 precision.',
+			'Price measurement display inputs must be finite numbers and a 0..16 precision.',
 		);
 	}
 	const absoluteChange = endValue - startValue;
+	if (startValue === 0) {
+		return {
+			absoluteChange,
+			percentageChange: null,
+			label: `${signedFixed(absoluteChange, pricePrecision)} (—%)`,
+		};
+	}
 	const percentageChange = absoluteChange / startValue * 100;
 	return {
 		absoluteChange,

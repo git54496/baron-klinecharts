@@ -96,7 +96,13 @@ function chartStyles(chart: ChartConfig): DeepPartial<Styles> {
 				noChangeWickColor: chart.candle.noChangeWickColor,
 			},
 			area: {
+				value: 'close',
+				lineColor: 'rgba(41, 98, 255, 1)',
+				lineSize: 2,
+				backgroundColor: 'rgba(0, 0, 0, 0)',
+				smooth: false,
 				point: {
+					show: false,
 					animation: false,
 				},
 			},

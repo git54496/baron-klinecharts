@@ -8,7 +8,7 @@ import {
 	STANDALONE_HTML_TEMPLATE,
 } from './assets.generated.js';
 
-function injectSceneBytes(bytes: Uint8Array): string {
+export function injectSceneBytes(bytes: Uint8Array): string {
 	const encoded = Buffer.from(bytes).toString('base64');
 	const first = STANDALONE_HTML_TEMPLATE.indexOf(SCENE_BASE64_PLACEHOLDER);
 	const last = STANDALONE_HTML_TEMPLATE.lastIndexOf(SCENE_BASE64_PLACEHOLDER);

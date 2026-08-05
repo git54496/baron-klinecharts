@@ -4,6 +4,12 @@ import { expect, test } from '@playwright/test';
 
 import { loadScene } from './load-scene.js';
 
+const chartWorkspaceFixture = JSON.parse(
+	await readFile(new URL('../../../tests/fixtures/workspaces/chart-minimal.json', import.meta.url)),
+);
+const timeSeriesWorkspaceFixture = JSON.parse(
+	await readFile(new URL('../../../tests/fixtures/workspaces/time-series-minimal.json', import.meta.url)),
+);
 const minimalScene = loadScene('minimal-valid.json');
 const m1Scene = loadScene('m1-candle-horizontal-line.json');
 const m2Scene = loadScene('m2-measurement-linear.json');
@@ -330,6 +336,305 @@ test('@browser toolbar deletes only an unlocked selected Overlay and revokes exp
 
 	expect(result.removed).toEqual(['overlay-selected']);
 	expect(result.urls).toEqual(['created', 'clicked', 'revoked']);
+});
+
+test('@browser toolbar hides main series control by default and shows it only when enabled', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const result = await page.evaluate(async (scene) => {
+		const { createKLineSceneRuntime, createStandardToolbar } = await import('/src/index.ts');
+		const runtime = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			scene,
+		);
+		const toolbar = createStandardToolbar(
+			document.querySelector<HTMLElement>('#toolbar')!,
+			runtime,
+		);
+		const hiddenByDefault = toolbar.element.querySelector('[data-action="main-series"]') === null;
+		toolbar.destroy();
+		const enabledToolbar = createStandardToolbar(
+			document.querySelector<HTMLElement>('#toolbar')!,
+			runtime,
+			{ mainSeriesPresentationControl: 'enabled' },
+		);
+		const control = enabledToolbar.element.querySelector<HTMLSelectElement>(
+			'[data-action="main-series"]',
+		);
+		const options = control === null
+			? []
+			: [...control.options].map((option) => option.value);
+		runtime.destroy();
+		return { hiddenByDefault, hasControl: control !== null, options };
+	}, minimalScene);
+	expect(result.hiddenByDefault).toBe(true);
+	expect(result.hasControl).toBe(true);
+	expect(result.options).toEqual([
+		'candle_solid',
+		'candle_stroke',
+		'candle_up_stroke',
+		'candle_down_stroke',
+		'ohlc',
+		'area',
+	]);
+});
+
+test('@browser Legacy toolbar switches candle→area→candle when enabled', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const result = await page.evaluate(async (scene) => {
+		const { createKLineSceneRuntime, createStandardToolbar } = await import('/src/index.ts');
+		const runtime = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			scene,
+		);
+		const toolbar = createStandardToolbar(
+			document.querySelector<HTMLElement>('#toolbar')!,
+			runtime,
+			{ mainSeriesPresentationControl: 'enabled' },
+		);
+		const control = toolbar.element.querySelector<HTMLSelectElement>(
+			'[data-action="main-series"]',
+		)!;
+		control.value = 'area';
+		control.dispatchEvent(new Event('change'));
+		const afterArea = runtime.exportScene().chart.candle.type;
+		control.value = 'candle_solid';
+		control.dispatchEvent(new Event('change'));
+		const afterCandle = runtime.exportScene().chart.candle.type;
+		runtime.destroy();
+		return { afterArea, afterCandle };
+	}, minimalScene);
+	expect(result.afterArea).toBe('area');
+	expect(result.afterCandle).toBe('candle_solid');
+});
+
+test('@browser chart Workspace toolbar has 22 tools and working main series control', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const result = await page.evaluate(async (workspace) => {
+		const {
+			createDrawableWorkspaceRuntime,
+			createStandardToolbar,
+			SUPPORTED_OVERLAYS,
+		} = await import('/src/index.ts');
+		const runtime = await createDrawableWorkspaceRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			workspace,
+			{ commitMode: 'immediate' },
+		);
+		const toolbar = createStandardToolbar(
+			document.querySelector<HTMLElement>('#toolbar')!,
+			runtime,
+			{ mainSeriesPresentationControl: 'enabled' },
+		);
+		const buttons = [
+			...toolbar.element.querySelectorAll<HTMLButtonElement>('[data-overlay-type]'),
+		];
+		const control = toolbar.element.querySelector<HTMLSelectElement>(
+			'[data-action="main-series"]',
+		)!;
+		control.value = 'area';
+		control.dispatchEvent(new Event('change'));
+		const exported = runtime.exportWorkspace();
+		const candleType = (exported.scene as { document: { chart: { candle: { type: string } } } })
+			.document.chart.candle.type;
+		runtime.destroy();
+		return { buttons: buttons.length, expected: SUPPORTED_OVERLAYS.length, candleType };
+	}, chartWorkspaceFixture);
+	expect(result.buttons).toBe(22);
+	expect(result.buttons).toBe(result.expected);
+	expect(result.candleType).toBe('area');
+});
+
+test('@browser time-series Workspace toolbar keeps 22 tools without main series or log controls', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const result = await page.evaluate(async (workspace) => {
+		const {
+			createDrawableWorkspaceRuntime,
+			createStandardToolbar,
+		} = await import('/src/index.ts');
+		const runtime = await createDrawableWorkspaceRuntime(
+			(() => {
+				const container = document.createElement('div');
+				container.style.width = '1000px';
+				container.style.height = '600px';
+				document.body.append(container);
+				return container;
+			})(),
+			workspace,
+			{ commitMode: 'immediate' },
+		);
+		const toolbar = createStandardToolbar(
+			document.querySelector<HTMLElement>('#toolbar')!,
+			runtime,
+			{ mainSeriesPresentationControl: 'enabled' },
+		);
+		const buttons = [
+			...toolbar.element.querySelectorAll<HTMLButtonElement>('[data-overlay-type]'),
+		];
+		const mainSeries = toolbar.element.querySelector('[data-action="main-series"]');
+		const scale = toolbar.element.querySelector<HTMLSelectElement>(
+			'[data-action="price-scale"]',
+		);
+		runtime.destroy();
+		return {
+			buttons: buttons.length,
+			mainSeriesHidden: mainSeries === null,
+			scaleHidden: scale === null || scale.hidden,
+		};
+	}, timeSeriesWorkspaceFixture);
+	expect(result.buttons).toBe(22);
+	expect(result.mainSeriesHidden).toBe(true);
+	expect(result.scaleHidden).toBe(true);
+});
+
+test('@browser context-menu placement moves edit controls into chart right-click menu', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	await page.evaluate(async (workspace) => {
+		const {
+			createDrawableWorkspaceRuntime,
+			createStandardToolbar,
+		} = await import('/src/index.ts');
+		const container = document.querySelector<HTMLElement>('#chart')!;
+		const runtime = await createDrawableWorkspaceRuntime(
+			container,
+			workspace,
+			{ commitMode: 'immediate' },
+		);
+		createStandardToolbar(
+			document.querySelector<HTMLElement>('#toolbar')!,
+			runtime,
+			{
+				mainSeriesPresentationControl: 'enabled',
+				editControlsPlacement: 'context-menu',
+				contextMenuTarget: container,
+			},
+		);
+		(window as unknown as { __runtime: typeof runtime }).__runtime = runtime;
+	}, chartWorkspaceFixture);
+	// 清空已有 Drawing，避免右键命中干扰。
+	await page.evaluate(() => {
+		const runtime = (window as unknown as {
+			__runtime: { listDrawings(): readonly { readonly id: string }[]; removeDrawing(id: string): boolean };
+		}).__runtime;
+		for (const drawing of runtime.listDrawings()) {
+			runtime.removeDrawing(drawing.id);
+		}
+	});
+	await expect.poll(() => page.evaluate(
+		() => (window as unknown as {
+			__runtime: { listDrawings(): readonly unknown[] };
+		}).__runtime.listDrawings().length,
+	)).toBe(0);
+
+	// 常驻工具栏保留 22 工具与删除/导出，但不再有编辑控件。
+	expect(await page.locator('#toolbar [data-overlay-type]').count()).toBe(22);
+	expect(await page.locator('#toolbar [data-action="delete"]').count()).toBe(1);
+	expect(await page.locator('#toolbar [data-action="export"]').count()).toBe(1);
+	for (const action of [
+		'price-scale', 'line-style', 'line-size', 'line-color', 'main-series',
+	]) {
+		expect(await page.locator(`#toolbar [data-action="${action}"]`).count()).toBe(0);
+	}
+
+	// 创建一条水平线；线会吸附到最近 bar 值，实际像素 y 可能与点击位置不同。
+	await page.locator('[data-overlay-type="horizontalStraightLine"]').click();
+	const canvas = page.locator('#chart canvas').nth(1);
+	await canvas.click({ position: { x: 400, y: 120 } });
+	await expect.poll(() => page.evaluate(
+		() => (window as unknown as {
+			__runtime: { listDrawings(): readonly unknown[] };
+		}).__runtime.listDrawings().length,
+	)).toBe(1);
+
+	// 图表空白处右键 -> 菜单显示并包含 5 个编辑控件。
+	await canvas.click({ position: { x: 900, y: 400 }, button: 'right' });
+	await expect(page.locator('.baron-kline-context-menu--visible')).toBeVisible();
+	for (const action of [
+		'price-scale', 'line-style', 'line-size', 'line-color', 'main-series',
+	]) {
+		expect(
+			await page
+				.locator(`.baron-kline-context-menu [data-action="${action}"]`)
+				.count(),
+		).toBe(1);
+	}
+
+	// 右键命中 Drawing 本身 -> 菜单不弹出。
+	await page.mouse.click(0, 0);
+	await expect(page.locator('.baron-kline-context-menu--visible')).toBeHidden();
+	const hitPoint = await page.evaluate(() => {
+		const runtime = (window as unknown as {
+			__runtime: {
+				hitTestDrawing(point: { x: number; y: number }): string | null;
+			};
+		}).__runtime;
+		for (let y = 80; y <= 300; y += 2) {
+			for (let x = 300; x <= 600; x += 10) {
+				if (runtime.hitTestDrawing({ x, y }) !== null) {
+					return { x, y };
+				}
+			}
+		}
+		return null;
+	});
+	expect(hitPoint).not.toBeNull();
+	await canvas.click({ position: hitPoint as { x: number; y: number }, button: 'right' });
+	await expect(page.locator('.baron-kline-context-menu--visible')).toBeHidden();
+
+	// 再次在空白处右键，通过菜单切换主序列到收盘价折线。
+	await canvas.click({ position: { x: 900, y: 400 }, button: 'right' });
+	await expect(page.locator('.baron-kline-context-menu--visible')).toBeVisible();
+	await page
+		.locator('.baron-kline-context-menu [data-action="main-series"]')
+		.selectOption('area');
+	await expect.poll(() => page.evaluate(
+		() => (window as unknown as {
+			__runtime: {
+				exportWorkspace(): { scene: { document: { chart: { candle: { type: string } } } } };
+			};
+		}).__runtime.exportWorkspace().scene.document.chart.candle.type,
+	)).toBe('area');
+});
+
+test('@browser clear-all removes every unlocked Drawing and keeps locked ones', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const workspace = structuredClone(chartWorkspaceFixture);
+	const lockedDrawing = workspace.drawings.drawings[0];
+	lockedDrawing.locked = true;
+	await page.evaluate(async (workspace) => {
+		const {
+			createDrawableWorkspaceRuntime,
+			createStandardToolbar,
+		} = await import('/src/index.ts');
+		const runtime = await createDrawableWorkspaceRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			workspace,
+			{ commitMode: 'immediate' },
+		);
+		createStandardToolbar(
+			document.querySelector<HTMLElement>('#toolbar')!,
+			runtime,
+		);
+		(window as unknown as { __runtime: typeof runtime }).__runtime = runtime;
+	}, workspace);
+	await expect.poll(() => page.evaluate(
+		() => (window as unknown as {
+			__runtime: { listDrawings(): readonly unknown[] };
+		}).__runtime.listDrawings().length,
+	)).toBe(22);
+	expect(await page.locator('[data-action="clear-all"]').count()).toBe(1);
+	await page.locator('[data-action="clear-all"]').click();
+	await expect.poll(() => page.evaluate(
+		() => {
+			const drawings = (window as unknown as {
+				__runtime: { listDrawings(): readonly { readonly id: string; readonly locked: boolean }[] };
+			}).__runtime.listDrawings();
+			return {
+				length: drawings.length,
+				id: drawings[0]?.id,
+				locked: drawings[0]?.locked,
+			};
+		},
+	)).toEqual({ length: 1, id: lockedDrawing.id, locked: true });
 });
 
 test('@browser M1 toolbar creates, selects, exports, and deletes a horizontal line through real DOM', async ({ page }) => {

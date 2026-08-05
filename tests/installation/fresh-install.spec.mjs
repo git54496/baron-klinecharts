@@ -17,6 +17,16 @@ test('packed npm artifacts install and run without workspace links', async () =>
 	const installPrefix = join(directory, 'consumer-prefix');
 	const consumer = join(installPrefix, 'lib');
 	await mkdir(consumer, { recursive: true });
+	const workspaceFixture = resolve(
+		'tests',
+		'fixtures',
+		'workspaces',
+		'chart-minimal.json',
+	);
+	await writeFile(
+		join(consumer, 'workspace.json'),
+		await readFile(workspaceFixture, 'utf8'),
+	);
 	const manifest = '{"private":true,"type":"module"}\n';
 	await writeFile(join(consumer, 'package.json'), manifest);
 	runNpm(
@@ -45,32 +55,40 @@ test('packed npm artifacts install and run without workspace links', async () =>
 		join(consumer, 'smoke.mjs'),
 		[
 			"import { readFile } from 'node:fs/promises';",
-			"import { parseChartScene } from '@baron1996/kline-scene-schema';",
-			"import { WEB_RUNTIME_PACKAGE_VERSION } from '@baron1996/klinecharts-runtime';",
+			"import { parseChartScene, parseDrawableWorkspaceDocument, hashCanonicalDrawableWorkspace } from '@baron1996/kline-scene-schema';",
+			"import { WEB_RUNTIME_PACKAGE_VERSION, createDrawableWorkspaceRuntime } from '@baron1996/klinecharts-runtime';",
 			"import { ADAPTER_PACKAGE_VERSION } from '@baron1996/klinecharts-adapter';",
 			"const scene = JSON.parse(await readFile(process.argv[2], 'utf8'));",
 			"if (parseChartScene(scene).version !== 1) throw new Error('Scene import failed.');",
-			"if (WEB_RUNTIME_PACKAGE_VERSION !== '0.3.0') throw new Error('Web Runtime import failed.');",
-			"if (ADAPTER_PACKAGE_VERSION !== '0.3.0') throw new Error('Adapter import failed.');",
+			"if (WEB_RUNTIME_PACKAGE_VERSION !== '0.4.0') throw new Error('Web Runtime import failed.');",
+			"if (ADAPTER_PACKAGE_VERSION !== '0.4.0') throw new Error('Adapter import failed.');",
+			"if (typeof createDrawableWorkspaceRuntime !== 'function') throw new Error('Workspace runtime factory is missing.');",
+			"const workspace = parseDrawableWorkspaceDocument(JSON.parse(await readFile(process.argv[3], 'utf8')));",
+			"if (workspace.version !== 1) throw new Error('Workspace import failed.');",
+			"if ((await hashCanonicalDrawableWorkspace(workspace)).length !== 64) throw new Error('Workspace hash failed.');",
 		].join('\n'),
 	);
 	const fixture = resolve('tests', 'fixtures', 'scenes', 'minimal-valid.json');
-	execFileSync(process.execPath, [join(consumer, 'smoke.mjs'), fixture], {
+	execFileSync(process.execPath, [join(consumer, 'smoke.mjs'), fixture, join(consumer, 'workspace.json')], {
 		cwd: consumer,
 		stdio: 'inherit',
 	});
 	await writeFile(
 		join(consumer, 'consumer.ts'),
 		[
-			"import { parseTimeSeriesScene, type TimeSeriesScene } from '@baron1996/kline-scene-schema';",
+			"import { parseTimeSeriesScene, parseDrawableWorkspaceDocument, type TimeSeriesScene, type DrawableWorkspaceDocument, type DrawingDocument } from '@baron1996/kline-scene-schema';",
 			"import { createTimeSeriesRuntime, WEB_RUNTIME_PACKAGE_VERSION } from '@baron1996/klinecharts-runtime';",
 			`const rawScene: unknown = ${JSON.stringify(timeSeriesScene)};`,
 			'const scene: TimeSeriesScene = parseTimeSeriesScene(rawScene);',
 			"if (scene.series.length !== 3) throw new Error('Time Series schema import failed.');",
 			"if (scene.series.map(({ id }) => id).join(',') !== 'series-a,series-b,series-total') throw new Error('Time Series order changed.');",
-			"if (WEB_RUNTIME_PACKAGE_VERSION !== '0.3.0') throw new Error('Time Series Runtime import failed.');",
+			"if (WEB_RUNTIME_PACKAGE_VERSION !== '0.4.0') throw new Error('Time Series Runtime import failed.');",
 			'const runtimeFactory: typeof createTimeSeriesRuntime = createTimeSeriesRuntime;',
 			'if (typeof runtimeFactory !== "function") throw new Error("Time Series Runtime factory is missing.");',
+			'const workspaceParser: typeof parseDrawableWorkspaceDocument = parseDrawableWorkspaceDocument;',
+			'const workspaceType: DrawableWorkspaceDocument | undefined = undefined;',
+			'const documentType: DrawingDocument | undefined = undefined;',
+			'void workspaceParser; void workspaceType; void documentType;',
 		].join('\n'),
 	);
 	await writeFile(
@@ -105,4 +123,21 @@ test('packed npm artifacts install and run without workspace links', async () =>
 		{ cwd: consumer, stdio: 'inherit' },
 	);
 	assert.match(await readFile(html, 'utf8'), /__BARON_KLINE_SCENE__/);
+	const workspaceHtml = join(consumer, 'workspace.html');
+	execFileSync(
+		cli,
+		[
+			'workspace', 'render', workspaceFixture,
+			'--format', 'html', '--output', workspaceHtml,
+		],
+		{ cwd: consumer, stdio: 'inherit' },
+	);
+	assert.match(
+		await readFile(workspaceHtml, 'utf8'),
+		/__BARON_DRAWABLE_WORKSPACE__/,
+	);
+	execFileSync(cli, ['workspace', 'validate', workspaceFixture], {
+		cwd: consumer,
+		stdio: 'inherit',
+	});
 });

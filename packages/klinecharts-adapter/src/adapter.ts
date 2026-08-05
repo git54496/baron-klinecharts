@@ -1,9 +1,12 @@
 import type {
 	ChartScene,
+	DrawableWorkspaceDocument,
+	Drawing,
 	SceneIndicator,
 	SceneOverlay,
 } from '@baron1996/kline-scene-schema';
 import {
+	parseDrawableWorkspaceDocument,
 	parseChartScene,
 	SceneError,
 } from '@baron1996/kline-scene-schema';
@@ -26,6 +29,30 @@ import {
 } from './conversion/overlays.js';
 import { normalizePriceValue } from './conversion/price.js';
 import { applyViewport } from './conversion/viewport.js';
+import { createStaticDataLoader } from './static-data-loader.js';
+import { toOverlayStyles } from './conversion/overlays.js';
+import {
+	drawingToSceneOverlay,
+	sceneOverlayToDrawing,
+} from './drawing/overlay-conversion.js';
+import type {
+	DrawingEnginePort,
+	EngineDrawingEvent,
+	EngineDrawingSnapshot,
+	EngineDrawingStartRequest,
+	EnginePixelCoordinate,
+	EnginePointProjection,
+} from './drawing/engine-port.js';
+import type { InteractionDimensions } from './drawing/interaction-normalization.js';
+import {
+	MainSeriesPresentationError,
+	type ActiveMainSeriesType,
+	presentationToSceneCandle,
+	STANDARD_CLOSE_LINE_PRESENTATION,
+	type MainSeriesPresentation,
+	type MainSeriesPresentationPort,
+	type MainSeriesPresentationResult,
+} from './main-series-presentation.js';
 import {
 	createDragCandidate,
 	type DragDataPoint,
@@ -131,7 +158,7 @@ function isControlledInteractionOverlay(overlay: SceneOverlay): boolean {
  * ChartScene 与 KLineCharts 之间的唯一边界。
  * 引擎对象和内部 ID 永不从该类的公共接口泄露。
  */
-export class KLineChartsSceneAdapter {
+export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPresentationPort {
 	/** KLineCharts 实例，仅在 Adapter 内部使用。 */
 	readonly #chart: Chart;
 	/** 引擎模块句柄，用于版本读取和精确销毁。 */
@@ -156,6 +183,23 @@ export class KLineChartsSceneAdapter {
 	#interactivePriceMeasurement: InteractivePriceMeasurement | undefined;
 	/** 确定性 opaque 交互 ID 序号。 */
 	#interactionSequence = 0;
+	/** 显式 Workspace 模式；Legacy 与 Workspace 状态严格隔离。 */
+	#workspaceMode = false;
+	/** Workspace 模式与引擎同步的 Overlay 几何（不写入 #scene.overlays）。 */
+	#workspaceOverlays: SceneOverlay[] = [];
+	/** Workspace 模式权威业务 Drawing（含 granularity/target/text）。 */
+	#workspaceSources = new Map<string, Drawing>();
+	/** 公共 Drawing 端口监听器。 */
+	readonly #portListeners = new Set<(event: EngineDrawingEvent) => void>();
+	/** 交互启用开关。 */
+	#mutationsEnabled = true;
+	/** 主序列回滚失败后的只能销毁终止态。 */
+	#terminated = false;
+	/** 当前拖动会话的编辑维度。 */
+	#interactionDimensions: InteractionDimensions = {
+		horizontal: false,
+		vertical: false,
+	};
 
 	private constructor(
 		container: HTMLElement,
@@ -214,10 +258,185 @@ export class KLineChartsSceneAdapter {
 		}
 	}
 
+	/** 显式 Workspace factory：非空 Legacy overlays 由工作区语义校验拒绝。 */
+	public static async createWorkspace(
+		container: HTMLElement,
+		value: unknown,
+	): Promise<KLineChartsSceneAdapter> {
+		const workspace = parseDrawableWorkspaceDocument(value);
+		if (workspace.scene.kind !== 'chart') {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/scene/kind',
+				'KLineChartsSceneAdapter requires a chart Workspace Scene.',
+			);
+		}
+		const scene = workspace.scene.document;
+		const originalBackground = container.style.backgroundColor;
+		let handle: EngineHandle | undefined;
+		let adapter: KLineChartsSceneAdapter | undefined;
+		try {
+			handle = await createEngine(container, scene);
+			registerProjectOverlays(handle.module.registerOverlay);
+			const idMap = createEngineIdMap(scene, handle.chart);
+			applyPanes(scene, handle.chart, idMap);
+			adapter = new KLineChartsSceneAdapter(
+				container,
+				scene,
+				handle,
+				idMap,
+				originalBackground,
+			);
+			applyViewport(handle.chart, scene.viewport);
+			container.style.backgroundColor = scene.chart.layout.backgroundColor;
+			adapter.#workspaceMode = true;
+			adapter.#restoreWorkspaceDrawings(
+				workspace.drawings.drawings.map((drawing) => snapshotOfDrawing(drawing)),
+			);
+			return adapter;
+		} catch (error) {
+			if (adapter !== undefined) {
+				adapter.dispose();
+			} else if (handle !== undefined) {
+				handle.module.dispose(container);
+			}
+			container.replaceChildren();
+			container.style.backgroundColor = originalBackground;
+			throw error;
+		}
+	}
+
 	#assertActive(): void {
 		if (this.#disposed) {
 			throw new SceneError('RUNTIME_INIT_FAILED', '/', 'The Adapter has already been disposed.');
 		}
+	}
+
+	#assertNotTerminated(): void {
+		if (this.#terminated) {
+			throw new MainSeriesPresentationError(
+				'MAIN_SERIES_PRESENTATION_ROLLBACK_FAILED',
+				'/chart/candle',
+				'Adapter is in a destroy-only terminal error state.',
+			);
+		}
+	}
+
+	/** 当前模式下的 Overlay 列表：Legacy 用 #scene.overlays，Workspace 用独立状态。 */
+	#activeOverlays(): SceneOverlay[] {
+		return this.#workspaceMode ? this.#workspaceOverlays : this.#scene.overlays;
+	}
+
+	/** 提交 Overlay 列表变更；Workspace 模式不触碰 #scene.overlays。 */
+	#setActiveOverlays(next: readonly SceneOverlay[]): void {
+		if (this.#workspaceMode) {
+			this.#workspaceOverlays = structuredClone(next) as SceneOverlay[];
+			this.#syncWorkspaceSources();
+			return;
+		}
+		this.#scene = parseChartScene({
+			...structuredClone(this.#scene),
+			overlays: structuredClone(next),
+		});
+	}
+
+	#syncWorkspaceSources(): void {
+		const next = new Map<string, Drawing>();
+		for (const overlay of this.#workspaceOverlays) {
+			const source = this.#workspaceSources.get(overlay.id);
+			if (source === undefined) {
+				continue;
+			}
+			next.set(overlay.id, sceneOverlayToDrawing(overlay, source));
+		}
+		this.#workspaceSources = next;
+	}
+
+	#paneIdFor(paneRole: string): string {
+		if (paneRole === 'candle') {
+			const pane = this.#scene.panes.find((candidate) => candidate.kind === 'candle');
+			if (pane === undefined) {
+				throw new SceneError(
+					'INVALID_REFERENCE',
+					'/panes',
+					'Candle pane is missing.',
+				);
+			}
+			return pane.id;
+		}
+		if (paneRole.startsWith('indicator:')) {
+			const indicatorId = paneRole.slice('indicator:'.length);
+			const pane = this.#scene.panes.find((candidate) =>
+				candidate.indicators.some((indicator) => indicator.id === indicatorId),
+			);
+			if (pane === undefined) {
+				throw new SceneError(
+					'INVALID_REFERENCE',
+					'/panes',
+					`Indicator pane is missing: ${indicatorId}.`,
+				);
+			}
+			return pane.id;
+		}
+		throw new SceneError(
+			'INVALID_REFERENCE',
+			'/drawings/target',
+			`Cannot map pane role: ${paneRole}.`,
+		);
+	}
+
+	#emitPort(event: EngineDrawingEvent): void {
+		for (const listener of this.#portListeners) {
+			listener(structuredClone(event));
+		}
+	}
+
+	#restoreWorkspaceDrawings(drawings: readonly EngineDrawingSnapshot[]): void {
+		for (const overlay of this.#workspaceOverlays) {
+			this.#chart.removeOverlay({ id: overlay.id });
+		}
+		this.#workspaceOverlays = [];
+		this.#workspaceSources = new Map();
+		for (const snapshot of drawings) {
+			const drawing = drawingFromSnapshot(snapshot);
+			this.#workspaceSources.set(drawing.id, drawing);
+			const overlay = drawingToSceneOverlay(
+				drawing,
+				this.#paneIdFor(drawing.target.paneRole),
+			);
+			const result = this.#chart.createOverlay(
+				toEngineOverlay(
+					overlay,
+					this.#idMap,
+					`/drawings/${this.#workspaceOverlays.length}`,
+					this.#overlayCallbacks(overlay),
+				),
+			);
+			if (result !== overlay.id) {
+				throw new SceneError(
+					'RUNTIME_INIT_FAILED',
+					`/drawings/${this.#workspaceOverlays.length}`,
+					`KLineCharts failed to restore Drawing ${overlay.id}.`,
+				);
+			}
+			this.#workspaceOverlays.push(structuredClone(overlay));
+		}
+	}
+
+	#fromPixelToData(
+		point: EnginePixelCoordinate,
+		paneId: string,
+	): EnginePointProjection {
+		const filter = this.#primaryAxisFilter(paneId);
+		const converted = this.#chart.convertFromPixel(
+			[point],
+			filter,
+		) as Array<Partial<import('klinecharts').Point>>;
+		const value = converted[0];
+		return {
+			...(value?.timestamp !== undefined ? { timestamp: value.timestamp } : {}),
+			...(value?.value !== undefined ? { value: value.value } : {}),
+		};
 	}
 
 	#engineOverlays(): Overlay[] {
@@ -236,9 +455,39 @@ export class KLineChartsSceneAdapter {
 			return;
 		}
 		this.#selectedOverlayId = id;
+		if (this.#workspaceMode) {
+			this.#emitPort({
+				type: id === null ? 'deselected' : 'selected',
+				id: id ?? previousId ?? '',
+			});
+			return;
+		}
 		this.#emit({ type: 'overlay-selection-changed', previousId, id });
 		if (id !== null) {
 			this.#emit({ type: 'overlay-selected', id });
+		}
+	}
+
+	#dimensionsForHit(
+		overlay: SceneOverlay,
+		hit: { readonly target: 'anchor' | 'body' },
+	): InteractionDimensions {
+		if (hit.target !== 'anchor') {
+			return { horizontal: true, vertical: true };
+		}
+		switch (overlay.type) {
+			case 'horizontalStraightLine':
+			case 'priceLine':
+			case 'simpleTag':
+			case 'horizontalRayLine':
+			case 'horizontalSegment':
+				return { horizontal: false, vertical: true };
+			case 'verticalStraightLine':
+			case 'verticalRayLine':
+			case 'verticalSegment':
+				return { horizontal: true, vertical: false };
+			default:
+				return { horizontal: true, vertical: true };
 		}
 	}
 
@@ -247,9 +496,10 @@ export class KLineChartsSceneAdapter {
 		source: OverlayDrawingSource | SceneOverlay,
 		kind: 'created' | 'updated',
 	): void {
-		const existingIndex = this.#scene.overlays.findIndex((overlay) => overlay.id === source.id);
-		const path = existingIndex < 0 ? `/overlays/${this.#scene.overlays.length}` : `/overlays/${existingIndex}`;
-		const currentSource = existingIndex < 0 ? source : this.#scene.overlays[existingIndex]!;
+		const active = this.#activeOverlays();
+		const existingIndex = active.findIndex((overlay) => overlay.id === source.id);
+		const path = existingIndex < 0 ? `/overlays/${active.length}` : `/overlays/${existingIndex}`;
+		const currentSource = existingIndex < 0 ? source : active[existingIndex]!;
 		const overlay = fromEngineOverlay(
 			engineOverlay,
 			currentSource,
@@ -257,16 +507,27 @@ export class KLineChartsSceneAdapter {
 			path,
 			this.#scene.symbol.pricePrecision,
 		);
-		const overlays = structuredClone(this.#scene.overlays);
+		const overlays = structuredClone(active);
 		if (existingIndex < 0) {
 			overlays.push(overlay);
 		} else {
 			overlays[existingIndex] = overlay;
 		}
-		this.#scene = parseChartScene({
-			...structuredClone(this.#scene),
-			overlays,
-		});
+		this.#setActiveOverlays(overlays);
+		if (this.#workspaceMode) {
+			const drawing = this.#workspaceSources.get(overlay.id);
+			if (drawing !== undefined) {
+				this.#emitPort({
+					type: kind === 'created' ? 'created' : 'updated',
+					id: overlay.id,
+					drawing: snapshotOfDrawing(
+						sceneOverlayToDrawing(overlay, drawing),
+					),
+					editDimensions: structuredClone(this.#interactionDimensions),
+				});
+			}
+			return;
+		}
 		this.#emit({
 			type: kind === 'created' ? 'overlay-created' : 'overlay-updated',
 			overlay,
@@ -322,13 +583,17 @@ export class KLineChartsSceneAdapter {
 				if (this.#interactivePriceMeasurement?.source.id === overlay.id) {
 					this.#interactivePriceMeasurement = undefined;
 				}
-				if (this.#scene.overlays.some((candidate) => candidate.id === overlay.id)) {
-					this.#scene = parseChartScene({
-						...structuredClone(this.#scene),
-						overlays: this.#scene.overlays.filter((candidate) => candidate.id !== overlay.id),
-					});
+				if (this.#activeOverlays().some((candidate) => candidate.id === overlay.id)) {
+					this.#setActiveOverlays(
+						this.#activeOverlays().filter((candidate) => candidate.id !== overlay.id),
+					);
 					if (this.#selectedOverlayId === overlay.id) {
 						this.#selectOverlay(null);
+					}
+					if (this.#workspaceMode) {
+						this.#workspaceSources.delete(overlay.id);
+						this.#emitPort({ type: 'removed', id: overlay.id });
+						return;
 					}
 					this.#emit({ type: 'overlay-removed', id: overlay.id });
 				}
@@ -484,8 +749,9 @@ export class KLineChartsSceneAdapter {
 
 	#overlayGeometries(): readonly OverlayPixelGeometry[] {
 		const geometries: OverlayPixelGeometry[] = [];
-		for (let sceneIndex = 0; sceneIndex < this.#scene.overlays.length; sceneIndex++) {
-			const overlay = this.#scene.overlays[sceneIndex];
+		const active = this.#activeOverlays();
+		for (let sceneIndex = 0; sceneIndex < active.length; sceneIndex++) {
+			const overlay = active[sceneIndex];
 			if (overlay === undefined || !overlay.visible) {
 				continue;
 			}
@@ -568,11 +834,12 @@ export class KLineChartsSceneAdapter {
 			return;
 		}
 		this.#pointerInteraction = undefined;
+		this.#interactionDimensions = { horizontal: false, vertical: false };
 		this.#stopPointerCapture(interaction);
 		if (!interaction.started) {
 			return;
 		}
-		const index = this.#scene.overlays.findIndex((overlay) => overlay.id === interaction.before.id);
+		const index = this.#activeOverlays().findIndex((overlay) => overlay.id === interaction.before.id);
 		if (
 			index < 0 ||
 			!this.#chart.overrideOverlay(
@@ -601,7 +868,12 @@ export class KLineChartsSceneAdapter {
 	}
 
 	readonly #handlePointerDown = (event: PointerEvent): void => {
-		if (this.#disposed || event.button !== 0 || this.#pointerInteraction !== undefined) {
+		if (
+			this.#disposed ||
+			event.button !== 0 ||
+			this.#pointerInteraction !== undefined ||
+			!this.#mutationsEnabled
+		) {
 			return;
 		}
 		const coordinate = this.#pointerCoordinate(event);
@@ -633,7 +905,7 @@ export class KLineChartsSceneAdapter {
 		}
 		const hit = hitTestOverlayGeometries(coordinate, this.#overlayGeometries());
 		if (hit === null) {
-			const selected = this.#scene.overlays.find(
+			const selected = this.#activeOverlays().find(
 				(overlay) => overlay.id === this.#selectedOverlayId,
 			);
 			if (selected !== undefined && isControlledInteractionOverlay(selected)) {
@@ -641,7 +913,7 @@ export class KLineChartsSceneAdapter {
 			}
 			return;
 		}
-		const before = this.#scene.overlays.find((overlay) => overlay.id === hit.overlayId);
+		const before = this.#activeOverlays().find((overlay) => overlay.id === hit.overlayId);
 		if (before === undefined) {
 			return;
 		}
@@ -655,6 +927,7 @@ export class KLineChartsSceneAdapter {
 			return;
 		}
 		this.#container.setPointerCapture(event.pointerId);
+		this.#interactionDimensions = this.#dimensionsForHit(before, hit);
 		this.#pointerInteraction = {
 			pointerId: event.pointerId,
 			originClient: coordinate,
@@ -699,11 +972,13 @@ export class KLineChartsSceneAdapter {
 				this.#scene.data.map((bar) => bar.timestamp),
 				this.#scene.symbol.pricePrecision,
 			);
-			const index = this.#scene.overlays.findIndex((overlay) => overlay.id === candidate.id);
-			const overlays = structuredClone(this.#scene.overlays);
+			const active = this.#activeOverlays();
+			const index = active.findIndex((overlay) => overlay.id === candidate.id);
+			const overlays = structuredClone(active);
 			overlays[index] = candidate;
-			const parsed = parseChartScene({ ...structuredClone(this.#scene), overlays });
-			const normalized = parsed.overlays[index]!;
+			const normalized = this.#workspaceMode
+				? candidate
+				: parseChartScene({ ...structuredClone(this.#scene), overlays }).overlays[index]!;
 			if (!this.#chart.overrideOverlay(toEngineOverlay(
 				normalized,
 				this.#idMap,
@@ -715,6 +990,10 @@ export class KLineChartsSceneAdapter {
 					`/overlays/${index}`,
 					`KLineCharts failed to preview Overlay ${normalized.id}.`,
 				);
+			}
+			if (this.#workspaceMode) {
+				this.#setActiveOverlays(overlays);
+				return;
 			}
 			interaction.candidate = normalized;
 			this.#emit({
@@ -739,14 +1018,31 @@ export class KLineChartsSceneAdapter {
 		event.preventDefault();
 		event.stopImmediatePropagation();
 		this.#pointerInteraction = undefined;
+		this.#interactionDimensions = { horizontal: false, vertical: false };
 		this.#stopPointerCapture(interaction);
 		if (!interaction.started) {
 			return;
 		}
 		const overlay = interaction.candidate ?? interaction.before;
-		const index = this.#scene.overlays.findIndex((candidate) => candidate.id === overlay.id);
-		const overlays = structuredClone(this.#scene.overlays);
+		const active = this.#activeOverlays();
+		const index = active.findIndex((candidate) => candidate.id === overlay.id);
+		const overlays = structuredClone(active);
 		overlays[index] = overlay;
+		if (this.#workspaceMode) {
+			this.#setActiveOverlays(overlays);
+			const drawing = this.#workspaceSources.get(overlay.id);
+			if (drawing !== undefined) {
+				this.#emitPort({
+					type: 'updated',
+					id: overlay.id,
+					drawing: snapshotOfDrawing(
+						sceneOverlayToDrawing(overlay, drawing),
+					),
+					editDimensions: structuredClone(this.#interactionDimensions),
+				});
+			}
+			return;
+		}
 		this.#scene = parseChartScene({ ...structuredClone(this.#scene), overlays });
 		const committed = this.#scene.overlays[index]!;
 		this.#emit({
@@ -840,6 +1136,437 @@ export class KLineChartsSceneAdapter {
 		}
 		this.#scene = candidate;
 		return structuredClone(candidate);
+	}
+
+	/** 同结构场景替换：symbol/period/data/viewport 原子更新，失败恢复旧场景。 */
+	public replaceScene(value: ChartScene): ChartScene {
+		this.#assertActive();
+		const candidate = parseChartScene(value);
+		const paneShape = (scene: ChartScene): string =>
+			JSON.stringify(
+				scene.panes.map((pane) => ({
+					id: pane.id,
+					kind: pane.kind,
+					order: pane.order,
+				})),
+			);
+		if (paneShape(candidate) !== paneShape(this.#scene)) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/panes',
+				'Scene replacement requires an identical Pane structure.',
+			);
+		}
+		const previous = this.#scene;
+		const previousBackground = this.#container.style.backgroundColor;
+		try {
+			this.#chart.setSymbol({
+				ticker: candidate.symbol.ticker,
+				pricePrecision: candidate.symbol.pricePrecision,
+				volumePrecision: candidate.symbol.volumePrecision,
+				...(candidate.symbol.name === undefined ? {} : { name: candidate.symbol.name }),
+			});
+			this.#chart.setPeriod(structuredClone(candidate.period));
+			this.#chart.setDataLoader(createStaticDataLoader(candidate.data));
+			this.#chart.resetData();
+			applyViewport(this.#chart, candidate.viewport);
+			this.#scene = candidate;
+			this.#container.style.backgroundColor =
+				candidate.chart.layout.backgroundColor;
+			return structuredClone(candidate);
+		} catch (error) {
+			try {
+				this.#chart.setSymbol({
+					ticker: previous.symbol.ticker,
+					pricePrecision: previous.symbol.pricePrecision,
+					volumePrecision: previous.symbol.volumePrecision,
+					...(previous.symbol.name === undefined ? {} : { name: previous.symbol.name }),
+				});
+				this.#chart.setPeriod(structuredClone(previous.period));
+				this.#chart.setDataLoader(createStaticDataLoader(previous.data));
+				this.#chart.resetData();
+				applyViewport(this.#chart, previous.viewport);
+				this.#container.style.backgroundColor = previousBackground;
+			} catch {
+				// 回滚失败：保留原错误，Adapter 状态由调用方决定是否终止。
+			}
+			throw error;
+		}
+	}
+
+	public get sceneKind(): 'chart' | 'time-series' {
+		return 'chart';
+	}
+
+	public restoreDrawings(
+		drawings: readonly EngineDrawingSnapshot[],
+	): void {
+		this.#assertActive();
+		this.#assertNotTerminated();
+		if (!this.#workspaceMode) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/',
+				'Drawing port operations require the Workspace factory.',
+			);
+		}
+		this.#restoreWorkspaceDrawings(drawings);
+	}
+
+	public startDrawing(request: EngineDrawingStartRequest): string {
+		this.#assertActive();
+		this.#assertNotTerminated();
+		const drawing = placeholderDrawing(request);
+		if (this.#workspaceSources.has(request.id)) {
+			throw new SceneError(
+				'DUPLICATE_ID',
+				`/drawings/${request.id}`,
+				`Drawing ${request.id} already exists.`,
+			);
+		}
+		this.#workspaceSources.set(request.id, drawing);
+		const overlay = drawingToSceneOverlay(
+			drawing,
+			this.#paneIdFor(request.target.paneRole),
+		);
+		const result = this.#chart.createOverlay(
+			toEngineOverlayDrawing(
+				{
+					...structuredClone(request),
+					...structuredClone(overlay),
+				},
+				this.#idMap,
+				this.#overlayCallbacks(overlay, true),
+			),
+		);
+		if (result !== request.id) {
+			this.#workspaceSources.delete(request.id);
+			throw new SceneError(
+				'RUNTIME_INIT_FAILED',
+				'/drawings',
+				`KLineCharts failed to start Drawing ${request.id}.`,
+			);
+		}
+		return request.id;
+	}
+
+	public listDrawings(): readonly EngineDrawingSnapshot[] {
+		this.#assertActive();
+		return Array.from(
+			this.#workspaceSources.values(),
+			(drawing) => snapshotOfDrawing(drawing),
+		);
+	}
+
+	public getDrawing(id: string): EngineDrawingSnapshot | undefined {
+		this.#assertActive();
+		const drawing = this.#workspaceSources.get(id);
+		return drawing === undefined ? undefined : snapshotOfDrawing(drawing);
+	}
+
+	public updateDrawingStyles(
+		id: string,
+		styles: Drawing['styles'],
+	): EngineDrawingSnapshot {
+		this.#assertActive();
+		this.#assertNotTerminated();
+		const source = this.#workspaceSources.get(id);
+		const overlay = this.#workspaceOverlays.find((candidate) => candidate.id === id);
+		if (source === undefined || overlay === undefined) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				`/drawings/${id}`,
+				`Drawing ${id} does not exist.`,
+			);
+		}
+		if (!this.#chart.overrideOverlay({
+			id,
+			styles: toOverlayStyles(styles),
+		})) {
+			throw new SceneError(
+				'RUNTIME_INIT_FAILED',
+				`/drawings/${id}/styles`,
+				`KLineCharts failed to update Drawing ${id} styles.`,
+			);
+		}
+		const updated: Drawing = {
+			...structuredClone(source),
+			styles: structuredClone(styles),
+		};
+		this.#workspaceSources.set(id, updated);
+		this.#emitPort({
+			type: 'updated',
+			id,
+			drawing: snapshotOfDrawing(updated),
+			editDimensions: { horizontal: false, vertical: false },
+		});
+		return snapshotOfDrawing(updated);
+	}
+
+	public updateDrawingText(id: string, text: string): EngineDrawingSnapshot {
+		this.#assertActive();
+		this.#assertNotTerminated();
+		const source = this.#workspaceSources.get(id);
+		const overlay = this.#workspaceOverlays.find((candidate) => candidate.id === id);
+		if (source === undefined || overlay === undefined) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				`/drawings/${id}`,
+				`Drawing ${id} does not exist.`,
+			);
+		}
+		if (!this.#chart.overrideOverlay({ id, extendData: text })) {
+			throw new SceneError(
+				'RUNTIME_INIT_FAILED',
+				`/drawings/${id}/text`,
+				`KLineCharts failed to update Drawing ${id} text.`,
+			);
+		}
+		const updated = withDrawingText(structuredClone(source), text);
+		this.#workspaceSources.set(id, updated);
+		this.#emitPort({
+			type: 'updated',
+			id,
+			drawing: snapshotOfDrawing(updated),
+			editDimensions: { horizontal: false, vertical: false },
+		});
+		return snapshotOfDrawing(updated);
+	}
+
+	public removeDrawing(id: string): boolean {
+		this.#assertActive();
+		this.#assertNotTerminated();
+		return this.#chart.removeOverlay({ id });
+	}
+
+	public restoreDrawing(snapshot: EngineDrawingSnapshot): void {
+		this.#assertActive();
+		this.#assertNotTerminated();
+		const drawing = drawingFromSnapshot(snapshot);
+		const existing = this.#workspaceOverlays.find(
+			(overlay) => overlay.id === drawing.id,
+		);
+		const overlay = drawingToSceneOverlay(
+			drawing,
+			this.#paneIdFor(drawing.target.paneRole),
+		);
+		if (existing !== undefined) {
+			if (!this.#chart.overrideOverlay(
+				toEngineOverlay(
+					overlay,
+					this.#idMap,
+					`/drawings/${drawing.id}`,
+					this.#overlayCallbacks(overlay),
+				),
+			)) {
+				throw new SceneError(
+					'RUNTIME_INIT_FAILED',
+					`/drawings/${drawing.id}`,
+					`KLineCharts failed to restore Drawing ${drawing.id}.`,
+				);
+			}
+			return;
+		}
+		const result = this.#chart.createOverlay(
+			toEngineOverlay(
+				overlay,
+				this.#idMap,
+				`/drawings/${drawing.id}`,
+				this.#overlayCallbacks(overlay),
+			),
+		);
+		if (result !== drawing.id) {
+			throw new SceneError(
+				'RUNTIME_INIT_FAILED',
+				`/drawings/${drawing.id}`,
+				`KLineCharts failed to restore Drawing ${drawing.id}.`,
+			);
+		}
+	}
+
+	public selectDrawing(id: string | null): void {
+		this.#assertActive();
+		this.#selectOverlay(id);
+	}
+
+	public hitTestDrawing(point: EnginePixelCoordinate): string | null {
+		this.#assertActive();
+		return this.hitTestOverlay(point)?.overlayId ?? null;
+	}
+
+	public projectToPixel(
+		anchor: { readonly timestamp?: number; readonly value?: number },
+		paneRole: string,
+	): EnginePointProjection {
+		this.#assertActive();
+		const paneId = this.#paneIdFor(paneRole);
+		return this.#toPixel(anchor, paneId) as EnginePointProjection;
+	}
+
+	public unprojectFromPixel(
+		point: EnginePixelCoordinate,
+		paneRole: string,
+	): EnginePointProjection {
+		this.#assertActive();
+		return this.#fromPixelToData(point, this.#paneIdFor(paneRole));
+	}
+
+	public setMutationsEnabled(enabled: boolean): void {
+		this.#assertActive();
+		this.#mutationsEnabled = enabled;
+	}
+
+	public subscribeDrawingEvents(
+		listener: (event: EngineDrawingEvent) => void,
+	): () => void {
+		this.#portListeners.add(listener);
+		return () => {
+			this.#portListeners.delete(listener);
+		};
+	}
+
+	public applyMainSeriesPresentation(
+		presentation: MainSeriesPresentation,
+	): MainSeriesPresentationResult {
+		this.#assertActive();
+		this.#assertNotTerminated();
+		if (presentation.type === 'area') {
+			const expected = STANDARD_CLOSE_LINE_PRESENTATION;
+			if (
+				presentation.value !== expected.value ||
+				presentation.line.color !== expected.line.color ||
+				presentation.line.size !== expected.line.size ||
+				presentation.backgroundColor !== expected.backgroundColor ||
+				presentation.smooth !== expected.smooth ||
+				presentation.pointVisible !== expected.pointVisible
+			) {
+				throw new MainSeriesPresentationError(
+					'MAIN_SERIES_PRESENTATION_INVALID',
+					'/chart/candle/area',
+					'Area presentation must use the standard frozen close-line configuration.',
+				);
+			}
+		}
+		const candidate = parseChartScene(
+			presentationToSceneCandle(this.#scene, presentation),
+		);
+		const oldStyles = structuredClone(this.#chart.getStyles());
+		const overlayBefore = this.#chart.getOverlays().map((overlay) => ({
+			id: overlay.id,
+			currentStep: overlay.currentStep,
+			points: structuredClone(overlay.points),
+		}));
+		const selectionBefore = this.#selectedOverlayId;
+		const targetType = presentation.type as ActiveMainSeriesType;
+		const newStyles: import('klinecharts').DeepPartial<import('klinecharts').Styles> =
+			presentation.type === 'area'
+				? {
+						candle: {
+							type: 'area',
+							area: {
+								lineColor: presentation.line.color,
+								lineSize: presentation.line.size,
+								value: presentation.value,
+								backgroundColor: presentation.backgroundColor,
+								smooth: presentation.smooth,
+								point: { show: false, animation: false },
+							},
+						},
+					}
+				: {
+						candle: {
+							type: presentation.type,
+						},
+					};
+		try {
+			this.#chart.setStyles(newStyles);
+		} catch (error) {
+			this.#rollbackPresentation(oldStyles, overlayBefore, selectionBefore);
+		}
+		if (
+			!this.#verifyPresentation(targetType) ||
+			!this.#verifyOverlaySnapshot(overlayBefore, selectionBefore)
+		) {
+			this.#rollbackPresentation(oldStyles, overlayBefore, selectionBefore);
+		}
+		this.#scene = candidate;
+		return { activeType: targetType };
+	}
+
+	#verifyPresentation(type: ActiveMainSeriesType): boolean {
+		const styles = this.#chart.getStyles();
+		if (styles.candle.type !== type) {
+			return false;
+		}
+		if (type !== 'area') {
+			return true;
+		}
+		const area = styles.candle.area;
+		return area.value === 'close'
+			&& area.lineColor === 'rgba(41, 98, 255, 1)'
+			&& area.lineSize === 2
+			&& area.backgroundColor === 'rgba(0, 0, 0, 0)'
+			&& area.smooth === false
+			&& area.point.show === false;
+	}
+
+	#verifyOverlaySnapshot(
+		before: ReadonlyArray<{
+			readonly id: string;
+			readonly currentStep: number;
+			readonly points: readonly unknown[];
+		}>,
+		selection: string | null,
+	): boolean {
+		const after = this.#chart.getOverlays();
+		if (after.length !== before.length) {
+			return false;
+		}
+		for (let index = 0; index < after.length; index++) {
+			const left = after[index]!;
+			const right = before[index]!;
+			if (
+				left.id !== right.id ||
+				left.currentStep !== right.currentStep ||
+				JSON.stringify(left.points) !== JSON.stringify(right.points)
+			) {
+				return false;
+			}
+		}
+		return this.#selectedOverlayId === selection;
+	}
+
+	#rollbackPresentation(
+		oldStyles: import('klinecharts').Styles,
+		overlayBefore: ReadonlyArray<{
+			readonly id: string;
+			readonly currentStep: number;
+			readonly points: readonly unknown[];
+		}>,
+		selection: string | null,
+	): never {
+		let rollbackOk = false;
+		try {
+			this.#chart.setStyles(oldStyles);
+			rollbackOk =
+				JSON.stringify(this.#chart.getStyles()) === JSON.stringify(oldStyles) &&
+				this.#verifyOverlaySnapshot(overlayBefore, selection);
+		} catch {
+			rollbackOk = false;
+		}
+		if (rollbackOk) {
+			throw new MainSeriesPresentationError(
+				'MAIN_SERIES_PRESENTATION_APPLY_FAILED',
+				'/chart/candle',
+				'KLineCharts failed to apply the main series presentation; the previous styles were restored.',
+			);
+		}
+		this.#terminated = true;
+		throw new MainSeriesPresentationError(
+			'MAIN_SERIES_PRESENTATION_ROLLBACK_FAILED',
+			'/chart/candle',
+			'KLineCharts failed to roll back the main series presentation; the Adapter is destroy-only.',
+		);
 	}
 
 	public projectPoint(
@@ -1050,8 +1777,138 @@ export class KLineChartsSceneAdapter {
 		this.#disposed = true;
 		this.#removeInteractionListeners();
 		this.#listeners.clear();
+		this.#portListeners.clear();
+		this.#workspaceSources.clear();
+		this.#workspaceOverlays = [];
 		this.#engine.dispose(this.#container);
 		this.#container.replaceChildren();
 		this.#container.style.backgroundColor = this.#originalBackground;
+	}
+}
+
+function snapshotOfDrawing(drawing: Drawing): EngineDrawingSnapshot {
+	return {
+		id: drawing.id,
+		type: drawing.type,
+		target: structuredClone(drawing.target) as EngineDrawingSnapshot['target'],
+		geometry: structuredClone(drawing.geometry),
+		styles: structuredClone(drawing.styles),
+		locked: drawing.locked,
+		visible: drawing.visible,
+		zLevel: drawing.zLevel,
+		mode: drawing.mode,
+	};
+}
+
+function drawingFromSnapshot(
+	snapshot: EngineDrawingSnapshot,
+): Drawing {
+	return {
+		id: snapshot.id,
+		type: snapshot.type,
+		target: structuredClone(snapshot.target),
+		geometry: structuredClone(snapshot.geometry),
+		styles: structuredClone(snapshot.styles),
+		visible: snapshot.visible,
+		locked: snapshot.locked,
+		zLevel: snapshot.zLevel,
+		mode: snapshot.mode,
+	} as unknown as Drawing;
+}
+
+function placeholderGeometry(type: Drawing['type']): Drawing['geometry'] {
+	switch (type) {
+		case 'horizontalStraightLine':
+		case 'priceLine':
+			return { value: 0 };
+		case 'simpleTag':
+			return { value: 0, text: '' };
+		case 'verticalStraightLine':
+			return { time: 0 };
+		case 'horizontalRayLine':
+		case 'horizontalSegment':
+			return { value: 0, startTime: 0, endTime: 0 };
+		case 'verticalRayLine':
+		case 'verticalSegment':
+			return { time: 0, startValue: 0, endValue: 0 };
+		case 'rayLine':
+		case 'segment':
+		case 'straightLine':
+		case 'fibonacciLine':
+			return {
+				points: [
+					{ timestamp: 0, granularity: { type: 'day', span: 1 }, value: 0 },
+					{ timestamp: 0, granularity: { type: 'day', span: 1 }, value: 0 },
+				],
+			};
+		case 'priceChannelLine':
+		case 'parallelStraightLine':
+			return {
+				points: [
+					{ timestamp: 0, granularity: { type: 'day', span: 1 }, value: 0 },
+					{ timestamp: 0, granularity: { type: 'day', span: 1 }, value: 0 },
+					{ timestamp: 0, granularity: { type: 'day', span: 1 }, value: 0 },
+				],
+			};
+		case 'brush':
+			return {
+				points: [
+					{ timestamp: 0, granularity: { type: 'day', span: 1 }, value: 0 },
+					{ timestamp: 0, granularity: { type: 'day', span: 1 }, value: 0 },
+				],
+			};
+		case 'simpleAnnotation':
+		case 'callout':
+		case 'text':
+			return {
+				point: { timestamp: 0, granularity: { type: 'day', span: 1 }, value: 0 },
+				text: '',
+			};
+		case 'crossLine':
+			return {
+				point: { timestamp: 0, granularity: { type: 'day', span: 1 }, value: 0 },
+			};
+		case 'rectangle':
+		case 'arrow':
+		case 'priceMeasurement':
+			return {
+				start: { timestamp: 0, granularity: { type: 'day', span: 1 }, value: 0 },
+				end: { timestamp: 0, granularity: { type: 'day', span: 1 }, value: 0 },
+			};
+	}
+}
+
+function placeholderDrawing(
+	request: EngineDrawingStartRequest,
+): Drawing {
+	return {
+		id: request.id,
+		type: request.type,
+		target: structuredClone(request.target),
+		geometry: placeholderGeometry(request.type),
+		styles: structuredClone(request.styles),
+		visible: true,
+		locked: false,
+		zLevel: 0,
+		mode: 'normal',
+	} as unknown as Drawing;
+}
+
+function withDrawingText(drawing: Drawing, text: string): Drawing {
+	switch (drawing.type) {
+		case 'simpleTag':
+			return {
+				...structuredClone(drawing),
+				geometry: { ...drawing.geometry, text },
+			} as unknown as Drawing;
+		case 'simpleAnnotation':
+		case 'callout':
+		case 'text':
+			return {
+				...structuredClone(drawing),
+				geometry: { ...drawing.geometry, text },
+			} as unknown as Drawing;
+		default:
+			return structuredClone(drawing);
 	}
 }

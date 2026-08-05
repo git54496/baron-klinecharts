@@ -32,7 +32,7 @@
       "$ref": "#/$defs/symbol"
     },
     "period": {
-      "$ref": "#/$defs/period"
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/period"
     },
     "data": {
       "type": "array",
@@ -99,32 +99,6 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 16
-        }
-      }
-    },
-    "period": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "span",
-        "type"
-      ],
-      "properties": {
-        "span": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 100000
-        },
-        "type": {
-          "enum": [
-            "second",
-            "minute",
-            "hour",
-            "day",
-            "week",
-            "month",
-            "year"
-          ]
         }
       }
     },

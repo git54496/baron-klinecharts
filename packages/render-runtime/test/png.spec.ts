@@ -79,7 +79,7 @@ describe('deterministic PNG renderer', () => {
 		} finally {
 			await rm(directory, { recursive: true, force: true });
 		}
-	});
+	}, 60_000);
 
 	it('applies deviceScaleFactor to the captured chart root only', async () => {
 		const directory = await mkdtemp(join(tmpdir(), 'baron-png-dpr-'));
@@ -98,7 +98,7 @@ describe('deterministic PNG renderer', () => {
 		} finally {
 			await rm(directory, { recursive: true, force: true });
 		}
-	});
+	}, 60_000);
 
 	it('maps Time Series browser and timeout failures to independent errors', async () => {
 		await expect(

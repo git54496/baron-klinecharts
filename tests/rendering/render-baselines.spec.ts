@@ -4,7 +4,10 @@ import { join, resolve } from 'node:path';
 
 import { expect, test } from '@playwright/test';
 
-import { renderScenePng } from '@baron1996/klinecharts-render-runtime';
+import {
+	renderDrawableWorkspacePng,
+	renderScenePng,
+} from '@baron1996/klinecharts-render-runtime';
 
 import { loadScene } from '../browser/helpers.js';
 
@@ -50,3 +53,31 @@ test('render baseline: controlled dark style', async () => {
 		await readFile(baselinePath('minimal-dark.png')),
 	);
 });
+
+for (const [baseline, fixture] of [
+	['drawable-workspace-chart', 'workspaces/chart-minimal.json'],
+	['drawable-workspace-area', 'workspaces/chart-minimal.json'],
+] as const) {
+	test(`render baseline: ${baseline}`, async () => {
+		const workspace = JSON.parse(
+			await readFile(resolve('tests', 'fixtures', fixture), 'utf8'),
+		) as {
+			scene: { document: { chart: { candle: Record<string, unknown> } } };
+		};
+		if (baseline === 'drawable-workspace-area') {
+			const areaScene = JSON.parse(
+				await readFile(
+					resolve('tests', 'fixtures', 'scenes', 'chart-area-close-line.json'),
+					'utf8',
+				),
+			) as { chart: { candle: Record<string, unknown> } };
+			workspace.scene.document.chart.candle = areaScene.chart.candle;
+		}
+		const directory = await mkdtemp(join(tmpdir(), 'baron-workspace-baseline-'));
+		const output = join(directory, `${baseline}.png`);
+		await renderDrawableWorkspacePng(workspace, output);
+		expect(await readFile(output)).toEqual(
+			await readFile(baselinePath(`${baseline}.png`)),
+		);
+	});
+}

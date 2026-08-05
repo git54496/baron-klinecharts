@@ -13,12 +13,23 @@ describe('engine price normalization', () => {
 		{ value: -1.005, precision: 2, expected: -1.01 },
 		{ value: 12.5, precision: 0, expected: 13 },
 		{ value: 1.2345678901234567, precision: 16, expected: 1.2345678901234567 },
+		{ value: -12.5, precision: 0, expected: -13 },
+		{ value: 2.675, precision: 2, expected: 2.68 },
+		{ value: -2.675, precision: 2, expected: -2.68 },
+		{ value: 0.0000000000000001, precision: 16, expected: 0.0000000000000001 },
+		{ value: 0.00000000000000005, precision: 16, expected: 0.0000000000000001 },
+		{ value: 123456789.123456789, precision: 6, expected: 123456789.123457 },
 	])('rounds $value to $precision decimals with half values away from zero', ({
 		value,
 		precision,
 		expected,
 	}) => {
 		expect(normalizePriceValue(value, precision, '/value')).toBe(expected);
+	});
+
+	it('canonicalizes negative zero produced by a tiny negative value', () => {
+		expect(Object.is(normalizePriceValue(-0.0004, 3, '/value'), -0)).toBe(false);
+		expect(normalizePriceValue(-0.0004, 3, '/value')).toBe(0);
 	});
 
 	it('canonicalizes negative zero to positive zero', () => {

@@ -1,0 +1,1170 @@
+{
+  "schema": "@baron1996/drawable-workspace",
+  "version": 1,
+  "runtime": {
+    "engine": "klinecharts",
+    "engineVersion": "10.0.0",
+    "workspaceRuntimeVersion": "1.0.0"
+  },
+  "scene": {
+    "kind": "chart",
+    "document": {
+      "schema": "@baron1996/kline-scene",
+      "version": 1,
+      "runtime": {
+        "engine": "klinecharts",
+        "engineVersion": "10.0.0",
+        "runtimeVersion": "0.2.0"
+      },
+      "symbol": {
+        "ticker": "000001.SZ",
+        "name": "平安银行",
+        "pricePrecision": 2,
+        "volumePrecision": 0
+      },
+      "period": {
+        "span": 1,
+        "type": "day"
+      },
+      "data": [
+        {
+          "timestamp": 1784736000000,
+          "open": 12.34,
+          "high": 12.68,
+          "low": 12.21,
+          "close": 12.55,
+          "volume": 102400,
+          "turnover": 1285120
+        },
+        {
+          "timestamp": 1784822400000,
+          "open": 12.55,
+          "high": 12.83,
+          "low": 12.42,
+          "close": 12.74,
+          "volume": 119800,
+          "turnover": 1526252
+        },
+        {
+          "timestamp": 1784908800000,
+          "open": 12.74,
+          "high": 12.91,
+          "low": 12.5,
+          "close": 12.63,
+          "volume": 98400,
+          "turnover": 1242792
+        }
+      ],
+      "chart": {
+        "locale": "zh-CN",
+        "timezone": "Asia/Shanghai",
+        "layout": {
+          "backgroundColor": "rgba(255, 255, 255, 1)",
+          "textColor": "rgba(34, 34, 34, 1)",
+          "fontFamily": "Baron Sans",
+          "fontSize": 12
+        },
+        "candle": {
+          "type": "candle_solid",
+          "upColor": "rgba(239, 83, 80, 1)",
+          "downColor": "rgba(38, 166, 154, 1)",
+          "noChangeColor": "rgba(120, 123, 134, 1)",
+          "upBorderColor": "rgba(239, 83, 80, 1)",
+          "downBorderColor": "rgba(38, 166, 154, 1)",
+          "noChangeBorderColor": "rgba(120, 123, 134, 1)",
+          "upWickColor": "rgba(239, 83, 80, 1)",
+          "downWickColor": "rgba(38, 166, 154, 1)",
+          "noChangeWickColor": "rgba(120, 123, 134, 1)"
+        },
+        "grid": {
+          "horizontalColor": "rgba(225, 226, 230, 1)",
+          "verticalColor": "rgba(225, 226, 230, 1)"
+        },
+        "thousandsSeparator": ",",
+        "decimalFold": {
+          "enabled": false,
+          "threshold": 8
+        },
+        "zoomAnchor": "cursor",
+        "dateFormat": "yyyy-MM-dd",
+        "largeNumberFormat": "western"
+      },
+      "panes": [
+        {
+          "id": "pane-candle",
+          "kind": "candle",
+          "order": 0,
+          "height": 480,
+          "minHeight": 180,
+          "state": "normal",
+          "yAxes": [
+            {
+              "id": "axis-price",
+              "role": "primary",
+              "position": "right",
+              "reverse": false,
+              "inside": false,
+              "scrollZoomEnabled": true,
+              "topGap": 0.15,
+              "bottomGap": 0.1,
+              "scale": "linear"
+            }
+          ],
+          "indicators": []
+        }
+      ],
+      "overlays": [
+        {
+          "id": "overlay-horizontalRayLine-0",
+          "type": "horizontalRayLine",
+          "paneId": "pane-candle",
+          "visible": true,
+          "locked": false,
+          "zLevel": 0,
+          "mode": "normal",
+          "styles": {
+            "line": {
+              "color": "rgba(41, 98, 255, 1)",
+              "size": 1,
+              "style": "solid"
+            },
+            "fill": {
+              "color": "rgba(41, 98, 255, 0.15)"
+            },
+            "text": {
+              "color": "rgba(255, 255, 255, 1)",
+              "size": 12,
+              "family": "Baron Sans",
+              "weight": "normal",
+              "backgroundColor": "rgba(41, 98, 255, 1)",
+              "borderColor": "rgba(41, 98, 255, 1)"
+            }
+          },
+          "value": 12.5,
+          "startTimestamp": 1784736000000,
+          "endTimestamp": 1784822400000
+        }
+      ],
+      "viewport": {
+        "barSpace": 10,
+        "rightOffsetDistance": 48,
+        "anchorTimestamp": 1784908800000
+      },
+      "render": {
+        "width": 1000,
+        "height": 600,
+        "deviceScaleFactor": 1,
+        "background": "rgba(255, 255, 255, 1)",
+        "fontFamily": "Baron Sans",
+        "timeoutMs": 10000
+      },
+      "metadata": {}
+    }
+  },
+  "drawings": {
+    "schema": "@baron1996/drawing-document",
+    "version": 1,
+    "scopeKey": "fixture-instrument-000001",
+    "coordinateSystem": {
+      "timezone": "Asia/Shanghai",
+      "valueAxes": [
+        {
+          "paneRole": "candle",
+          "yAxisRole": "primary",
+          "valuePrecision": 2
+        }
+      ]
+    },
+    "drawings": [
+      {
+        "id": "drawing-horizontalStraightLine-1",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 0,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "horizontalStraightLine",
+        "geometry": {
+          "value": 12.55
+        }
+      },
+      {
+        "id": "drawing-priceLine-2",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 1,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "priceLine",
+        "geometry": {
+          "value": 12.55
+        }
+      },
+      {
+        "id": "drawing-simpleTag-3",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 2,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "simpleTag",
+        "geometry": {
+          "value": 12.55,
+          "text": "tag"
+        }
+      },
+      {
+        "id": "drawing-verticalStraightLine-4",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 3,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "verticalStraightLine",
+        "geometry": {
+          "time": 1784736000000
+        }
+      },
+      {
+        "id": "drawing-horizontalRayLine-5",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 4,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "horizontalRayLine",
+        "geometry": {
+          "value": 12.55,
+          "startTime": 1784736000000,
+          "endTime": 1784908800000
+        }
+      },
+      {
+        "id": "drawing-horizontalSegment-6",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 5,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "horizontalSegment",
+        "geometry": {
+          "value": 12.55,
+          "startTime": 1784736000000,
+          "endTime": 1784908800000
+        }
+      },
+      {
+        "id": "drawing-verticalRayLine-7",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 6,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "verticalRayLine",
+        "geometry": {
+          "time": 1784822400000,
+          "startValue": 12.34,
+          "endValue": 12.74
+        }
+      },
+      {
+        "id": "drawing-verticalSegment-8",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 7,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "verticalSegment",
+        "geometry": {
+          "time": 1784822400000,
+          "startValue": 12.34,
+          "endValue": 12.74
+        }
+      },
+      {
+        "id": "drawing-rayLine-9",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 8,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "rayLine",
+        "geometry": {
+          "points": [
+            {
+              "timestamp": 1784736000000,
+              "granularity": {
+                "type": "day",
+                "span": 1
+              },
+              "value": 12.34
+            },
+            {
+              "timestamp": 1784908800000,
+              "granularity": {
+                "type": "day",
+                "span": 1
+              },
+              "value": 12.74
+            }
+          ]
+        }
+      },
+      {
+        "id": "drawing-segment-10",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 9,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "segment",
+        "geometry": {
+          "points": [
+            {
+              "timestamp": 1784736000000,
+              "granularity": {
+                "type": "day",
+                "span": 1
+              },
+              "value": 12.34
+            },
+            {
+              "timestamp": 1784908800000,
+              "granularity": {
+                "type": "day",
+                "span": 1
+              },
+              "value": 12.74
+            }
+          ]
+        }
+      },
+      {
+        "id": "drawing-straightLine-11",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 10,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "straightLine",
+        "geometry": {
+          "points": [
+            {
+              "timestamp": 1784736000000,
+              "granularity": {
+                "type": "day",
+                "span": 1
+              },
+              "value": 12.34
+            },
+            {
+              "timestamp": 1784908800000,
+              "granularity": {
+                "type": "day",
+                "span": 1
+              },
+              "value": 12.74
+            }
+          ]
+        }
+      },
+      {
+        "id": "drawing-fibonacciLine-12",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 11,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "fibonacciLine",
+        "geometry": {
+          "points": [
+            {
+              "timestamp": 1784736000000,
+              "granularity": {
+                "type": "day",
+                "span": 1
+              },
+              "value": 12.34
+            },
+            {
+              "timestamp": 1784908800000,
+              "granularity": {
+                "type": "day",
+                "span": 1
+              },
+              "value": 12.74
+            }
+          ]
+        }
+      },
+      {
+        "id": "drawing-priceChannelLine-13",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 12,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "priceChannelLine",
+        "geometry": {
+          "points": [
+            {
+              "timestamp": 1784736000000,
+              "granularity": {
+                "type": "day",
+                "span": 1
+              },
+              "value": 12.34
+            },
+            {
+              "timestamp": 1784822400000,
+              "granularity": {
+                "type": "day",
+                "span": 1
+              },
+              "value": 12.55
+            },
+            {
+              "timestamp": 1784908800000,
+              "granularity": {
+                "type": "day",
+                "span": 1
+              },
+              "value": 12.74
+            }
+          ]
+        }
+      },
+      {
+        "id": "drawing-parallelStraightLine-14",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 13,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "parallelStraightLine",
+        "geometry": {
+          "points": [
+            {
+              "timestamp": 1784736000000,
+              "granularity": {
+                "type": "day",
+                "span": 1
+              },
+              "value": 12.34
+            },
+            {
+              "timestamp": 1784822400000,
+              "granularity": {
+                "type": "day",
+                "span": 1
+              },
+              "value": 12.55
+            },
+            {
+              "timestamp": 1784908800000,
+              "granularity": {
+                "type": "day",
+                "span": 1
+              },
+              "value": 12.74
+            }
+          ]
+        }
+      },
+      {
+        "id": "drawing-brush-15",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 14,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "brush",
+        "geometry": {
+          "points": [
+            {
+              "timestamp": 1784736000000,
+              "granularity": {
+                "type": "day",
+                "span": 1
+              },
+              "value": 12.34
+            },
+            {
+              "timestamp": 1784822400000,
+              "granularity": {
+                "type": "day",
+                "span": 1
+              },
+              "value": 12.55
+            },
+            {
+              "timestamp": 1784908800000,
+              "granularity": {
+                "type": "day",
+                "span": 1
+              },
+              "value": 12.74
+            }
+          ]
+        }
+      },
+      {
+        "id": "drawing-simpleAnnotation-16",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 15,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "simpleAnnotation",
+        "geometry": {
+          "point": {
+            "timestamp": 1784822400000,
+            "granularity": {
+              "type": "day",
+              "span": 1
+            },
+            "value": 12.55
+          },
+          "text": "annotation"
+        }
+      },
+      {
+        "id": "drawing-callout-17",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 16,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "callout",
+        "geometry": {
+          "point": {
+            "timestamp": 1784822400000,
+            "granularity": {
+              "type": "day",
+              "span": 1
+            },
+            "value": 12.55
+          },
+          "text": "callout"
+        }
+      },
+      {
+        "id": "drawing-text-18",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 17,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "text",
+        "geometry": {
+          "point": {
+            "timestamp": 1784822400000,
+            "granularity": {
+              "type": "day",
+              "span": 1
+            },
+            "value": 12.55
+          },
+          "text": "text"
+        }
+      },
+      {
+        "id": "drawing-crossLine-19",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 18,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "crossLine",
+        "geometry": {
+          "point": {
+            "timestamp": 1784822400000,
+            "granularity": {
+              "type": "day",
+              "span": 1
+            },
+            "value": 12.55
+          }
+        }
+      },
+      {
+        "id": "drawing-rectangle-20",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 19,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "rectangle",
+        "geometry": {
+          "start": {
+            "timestamp": 1784736000000,
+            "granularity": {
+              "type": "day",
+              "span": 1
+            },
+            "value": 12.34
+          },
+          "end": {
+            "timestamp": 1784908800000,
+            "granularity": {
+              "type": "day",
+              "span": 1
+            },
+            "value": 12.74
+          }
+        }
+      },
+      {
+        "id": "drawing-arrow-21",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 20,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "arrow",
+        "geometry": {
+          "start": {
+            "timestamp": 1784736000000,
+            "granularity": {
+              "type": "day",
+              "span": 1
+            },
+            "value": 12.34
+          },
+          "end": {
+            "timestamp": 1784908800000,
+            "granularity": {
+              "type": "day",
+              "span": 1
+            },
+            "value": 12.74
+          }
+        }
+      },
+      {
+        "id": "drawing-priceMeasurement-22",
+        "target": {
+          "paneRole": "candle",
+          "yAxisRole": "primary"
+        },
+        "visible": true,
+        "locked": false,
+        "zLevel": 21,
+        "mode": "normal",
+        "styles": {
+          "line": {
+            "color": "rgba(41, 98, 255, 1)",
+            "size": 1,
+            "style": "solid"
+          },
+          "fill": {
+            "color": "rgba(41, 98, 255, 0.15)"
+          },
+          "text": {
+            "color": "rgba(255, 255, 255, 1)",
+            "size": 12,
+            "family": "Baron Sans",
+            "weight": "normal",
+            "backgroundColor": "rgba(41, 98, 255, 1)",
+            "borderColor": "rgba(41, 98, 255, 1)"
+          }
+        },
+        "metadata": {},
+        "type": "priceMeasurement",
+        "geometry": {
+          "start": {
+            "timestamp": 1784736000000,
+            "granularity": {
+              "type": "day",
+              "span": 1
+            },
+            "value": 12.34
+          },
+          "end": {
+            "timestamp": 1784908800000,
+            "granularity": {
+              "type": "day",
+              "span": 1
+            },
+            "value": 12.74
+          }
+        }
+      }
+    ],
+    "metadata": {}
+  },
+  "binding": {
+    "scopeKey": "fixture-instrument-000001",
+    "timezone": "Asia/Shanghai",
+    "valueAxes": [
+      {
+        "paneRole": "candle",
+        "yAxisRole": "primary",
+        "valuePrecision": 2
+      }
+    ]
+  },
+  "metadata": {}
+}

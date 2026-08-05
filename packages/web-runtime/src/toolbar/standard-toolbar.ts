@@ -1,8 +1,10 @@
-import { serializeCanonicalScene } from '@baron1996/kline-scene-schema';
 import { SUPPORTED_OVERLAYS } from '@baron1996/klinecharts-adapter';
 
 import { registerRuntimeTeardown } from '../lifecycle.js';
-import type { KLineSceneRuntime } from '../runtime.js';
+import type {
+	DrawingRuntimeCapability,
+	RuntimeAuxiliaryCapability,
+} from '../drawing/capabilities.js';
 import type {
 	StandardToolbar,
 	StandardToolbarOptions,
@@ -46,6 +48,22 @@ function htmlHexColorToSceneRgba(value: string): string {
 	const green = Number.parseInt(match[2]!, 16);
 	const blue = Number.parseInt(match[3]!, 16);
 	return `rgba(${red}, ${green}, ${blue}, 1)`;
+}
+
+type StandardDrawingRuntime = DrawingRuntimeCapability & RuntimeAuxiliaryCapability;
+
+function downloadArtifact(
+	runtime: StandardDrawingRuntime,
+	fileName: string,
+): void {
+	const artifact = runtime.exportArtifact(fileName);
+	const blob = new Blob([artifact.bytes as unknown as BlobPart], { type: artifact.mediaType });
+	const url = URL.createObjectURL(blob);
+	const anchor = document.createElement('a');
+	anchor.href = url;
+	anchor.download = fileName;
+	anchor.click();
+	URL.revokeObjectURL(url);
 }
 
 function createIconButton(
@@ -170,17 +188,6 @@ function createTooltip(
 	};
 }
 
-function downloadScene(runtime: KLineSceneRuntime, fileName: string): void {
-	const bytes = serializeCanonicalScene(runtime.exportScene());
-	const blob = new Blob([bytes], { type: 'application/json' });
-	const url = URL.createObjectURL(blob);
-	const anchor = document.createElement('a');
-	anchor.href = url;
-	anchor.download = fileName;
-	anchor.click();
-	URL.revokeObjectURL(url);
-}
-
 function setActiveOverlayButton(
 	buttons: readonly HTMLButtonElement[],
 	activeButton: HTMLButtonElement,
@@ -232,9 +239,14 @@ function createInputControl(
 /** 创建不含撤销/重做的标准离线编辑工具栏。 */
 export function createStandardToolbar(
 	container: HTMLElement,
-	runtime: KLineSceneRuntime,
+	runtime: StandardDrawingRuntime,
 	options: StandardToolbarOptions = {},
 ): StandardToolbar {
+	const descriptor = runtime.getRuntimeCapabilityDescriptor(
+		options.hostActions === undefined ? {} : { hostActions: options.hostActions },
+	);
+	const defaultFileName = options.downloadFileName
+		?? descriptor.exportArtifact.defaultFileName;
 	const toolbarId = nextToolbarId++;
 	const root = document.createElement('div');
 	root.className = 'baron-kline-toolbar';
@@ -266,10 +278,39 @@ export function createStandardToolbar(
 		{ value: 'linear', label: '线性' },
 		{ value: 'logarithmic', label: '对数' },
 	]);
+	scaleControl.select.hidden = !descriptor.valueAxis.mutable || descriptor.valueAxis.supportedScales.length < 2;
+	for (const child of Array.from(scaleControl.select.children)) {
+		child.remove();
+	}
+	for (const scale of descriptor.valueAxis.supportedScales) {
+		const option = document.createElement('option');
+		option.value = scale;
+		option.textContent = scale === 'linear' ? '线性' : '对数';
+		scaleControl.select.append(option);
+	}
 	const lineStyleControl = createSelectControl('线型', 'line-style', [
 		{ value: 'solid', label: '实线' },
 		{ value: 'dashed', label: '虚线' },
+		{ value: 'dotted', label: '点线' },
 	]);
+	const mainSeries = descriptor.mainSeriesPresentation;
+	const mainSeriesOptions = mainSeries === null
+		? []
+		: mainSeries.presentations.map((presentation) => ({
+				value: presentation.type,
+				label: presentationLabel(presentation.type),
+				presentation: structuredClone(presentation),
+			}));
+	const mainSeriesControl = mainSeries === null
+		? null
+		: createSelectControl(
+				'主序列',
+				'main-series',
+				mainSeriesOptions,
+			);
+	if (mainSeries !== null && mainSeriesControl !== null) {
+		mainSeriesControl.select.value = mainSeries.activeType;
+	}
 	const lineSizeControl = createInputControl('线宽', 'line-size', 'number');
 	lineSizeControl.input.min = '0.5';
 	lineSizeControl.input.max = '10';
@@ -277,22 +318,19 @@ export function createStandardToolbar(
 	lineSizeControl.input.value = '1';
 	const lineColorControl = createInputControl('线色', 'line-color', 'color');
 	lineColorControl.input.value = '#2962ff';
-	const primaryAxis = runtime.getScene().panes
-		.find((pane) => pane.kind === 'candle')
-		?.yAxes.find((axis) => axis.role === 'primary');
-	scaleControl.select.value = primaryAxis?.scale ?? 'linear';
+	scaleControl.select.value = descriptor.valueAxis.activeScale;
 
 	const applySelectedLineStyle = (change: {
 		readonly color?: string;
 		readonly size?: number;
-		readonly style?: 'solid' | 'dashed';
+		readonly style?: 'solid' | 'dashed' | 'dotted';
 	}): void => {
-		const id = runtime.getSelectedOverlayId();
-		const overlay = id === undefined ? undefined : runtime.getOverlay(id);
+		const id = runtime.getSelectedDrawingId();
+		const overlay = id === undefined ? undefined : runtime.getDrawing(id);
 		if (id === undefined || overlay === undefined) {
 			return;
 		}
-		runtime.updateOverlayStyles(id, {
+		runtime.updateDrawingStyles(id, {
 			...structuredClone(overlay.styles),
 			line: {
 				...structuredClone(overlay.styles.line),
@@ -301,11 +339,11 @@ export function createStandardToolbar(
 		});
 	};
 	const handleScaleChange = async (): Promise<void> => {
-		await runtime.setPriceScale(scaleControl.select.value as 'linear' | 'logarithmic');
+		await runtime.setValueAxisScale(scaleControl.select.value as 'linear' | 'logarithmic');
 	};
 	const handleLineStyleChange = (): void => {
 		applySelectedLineStyle({
-			style: lineStyleControl.select.value as 'solid' | 'dashed',
+			style: lineStyleControl.select.value as 'solid' | 'dashed' | 'dotted',
 		});
 	};
 	const handleLineSizeChange = (): void => {
@@ -314,18 +352,157 @@ export function createStandardToolbar(
 	const handleLineColorChange = (): void => {
 		applySelectedLineStyle({ color: htmlHexColorToSceneRgba(lineColorControl.input.value) });
 	};
+	const handleTextChange = (): void => {
+		const id = runtime.getSelectedDrawingId();
+		const drawing = id === undefined ? undefined : runtime.getDrawing(id);
+		if (
+			id === undefined ||
+			drawing === undefined ||
+			!(
+				drawing.type === 'simpleTag' ||
+				drawing.type === 'simpleAnnotation' ||
+				drawing.type === 'callout' ||
+				drawing.type === 'text'
+			)
+		) {
+			return;
+		}
+		runtime.updateDrawingText(id, textInput.value);
+	};
 	scaleControl.select.addEventListener('change', handleScaleChange);
 	lineStyleControl.select.addEventListener('change', handleLineStyleChange);
 	lineSizeControl.input.addEventListener('change', handleLineSizeChange);
 	lineColorControl.input.addEventListener('change', handleLineColorChange);
+	textInput.addEventListener('change', handleTextChange);
 	cleanupCallbacks.push(
 		() => scaleControl.select.removeEventListener('change', handleScaleChange),
 		() => lineStyleControl.select.removeEventListener('change', handleLineStyleChange),
 		() => lineSizeControl.input.removeEventListener('change', handleLineSizeChange),
 		() => lineColorControl.input.removeEventListener('change', handleLineColorChange),
+		() => textInput.removeEventListener('change', handleTextChange),
 	);
 
+	const useContextMenu = options.editControlsPlacement === 'context-menu';
+	if (useContextMenu && options.contextMenuTarget === undefined) {
+		throw new TypeError(
+			'STANDARD_TOOLBAR_CONTEXT_MENU_TARGET_REQUIRED: ' +
+			'editControlsPlacement "context-menu" requires contextMenuTarget.',
+		);
+	}
+	const contextMenuTarget = options.contextMenuTarget;
+	const editLabels: HTMLLabelElement[] = [
+		scaleControl.label,
+		lineStyleControl.label,
+		lineSizeControl.label,
+		lineColorControl.label,
+	];
+	if (
+		mainSeriesControl !== null &&
+		options.mainSeriesPresentationControl === 'enabled'
+	) {
+		editLabels.push(mainSeriesControl.label);
+	}
+	// 主序列切换监听与控件放置位置无关，统一注册一次。
+	if (
+		mainSeries !== null &&
+		mainSeriesControl !== null &&
+		options.mainSeriesPresentationControl === 'enabled'
+	) {
+		const handleMainSeriesChange = (): void => {
+			const presentation = mainSeries?.presentations.find(
+				(candidate) => candidate.type === mainSeriesControl.select.value,
+			);
+			if (presentation === undefined) {
+				return;
+			}
+			const result = runtime.setMainSeriesPresentation(presentation);
+			mainSeriesControl.select.value = result.activeType;
+		};
+		mainSeriesControl.select.addEventListener(
+			'change',
+			handleMainSeriesChange,
+		);
+		cleanupCallbacks.push(() =>
+			mainSeriesControl.select.removeEventListener(
+				'change',
+				handleMainSeriesChange,
+			),
+		);
+	}
+	if (useContextMenu && contextMenuTarget !== undefined) {
+		const menu = document.createElement('div');
+		menu.className = 'baron-kline-context-menu';
+		menu.setAttribute('role', 'group');
+		menu.setAttribute('aria-label', '坐标与样式');
+		menu.hidden = true;
+		menu.append(...editLabels);
+		document.body.append(menu);
+
+		const hideContextMenu = (): void => {
+			menu.hidden = true;
+			menu.classList.remove('baron-kline-context-menu--visible');
+		};
+		const handleContextMenu = (event: MouseEvent): void => {
+			const rect = contextMenuTarget.getBoundingClientRect();
+			const point = {
+				x: event.clientX - rect.left,
+				y: event.clientY - rect.top,
+			};
+			// 只有图表空白处右键才弹出编辑菜单；命中 Drawing 时不接管。
+			if (runtime.hitTestDrawing(point) !== null) {
+				return;
+			}
+			event.preventDefault();
+			menu.hidden = false;
+			menu.classList.add('baron-kline-context-menu--visible');
+			const gap = 8;
+			menu.style.left = `${Math.max(
+				0,
+				Math.min(
+					event.clientX,
+					window.innerWidth - menu.offsetWidth - gap,
+				),
+			)}px`;
+			menu.style.top = `${Math.max(
+				0,
+				Math.min(
+					event.clientY,
+					window.innerHeight - menu.offsetHeight - gap,
+				),
+			)}px`;
+		};
+		const handlePointerDown = (event: PointerEvent): void => {
+			if (!menu.contains(event.target as Node)) {
+				hideContextMenu();
+			}
+		};
+		const handleKeyDown = (event: KeyboardEvent): void => {
+			if (event.key === 'Escape') {
+				hideContextMenu();
+			}
+		};
+		contextMenuTarget.addEventListener('contextmenu', handleContextMenu);
+		document.addEventListener('pointerdown', handlePointerDown);
+		window.addEventListener('keydown', handleKeyDown);
+		window.addEventListener('resize', hideContextMenu);
+		window.addEventListener('scroll', hideContextMenu, true);
+		cleanupCallbacks.push(() => {
+			contextMenuTarget.removeEventListener('contextmenu', handleContextMenu);
+			document.removeEventListener('pointerdown', handlePointerDown);
+			window.removeEventListener('keydown', handleKeyDown);
+			window.removeEventListener('resize', hideContextMenu);
+			window.removeEventListener('scroll', hideContextMenu, true);
+			menu.remove();
+		});
+	}
+
+	const drawableTypes = (descriptor.drawingTypes.length === 0
+		? SUPPORTED_OVERLAYS
+		: descriptor.drawingTypes) as readonly SupportedOverlayType[];
 	for (const group of TOOLBAR_GROUPS) {
+		if (group.id === 'edit' && useContextMenu) {
+			continue;
+		}
 		const groupElement = document.createElement('div');
 		groupElement.className = 'baron-kline-toolbar__group';
 		groupElement.dataset.toolbarGroup = group.id;
@@ -333,33 +510,38 @@ export function createStandardToolbar(
 		groupElement.setAttribute('aria-label', group.label);
 
 		if (group.id === 'edit') {
-			groupElement.append(
-				scaleControl.label,
-				lineStyleControl.label,
-				lineSizeControl.label,
-				lineColorControl.label,
-			);
+			groupElement.append(...editLabels);
 		} else if (group.id === 'action') {
 			for (const presentation of TOOLBAR_ACTIONS) {
 				const action = presentation.action === 'delete'
 					? (): void => {
-							const id = runtime.getSelectedOverlayId();
+							const id = runtime.getSelectedDrawingId();
 							if (id === undefined) {
 								return;
 							}
-							const overlay = runtime.getOverlay(id);
+							const overlay = runtime.getDrawing(id);
 							if (overlay !== undefined && !overlay.locked) {
 								if ((options.deleteBehavior ?? 'direct') === 'request') {
-									runtime.requestOverlayDelete(id);
+									runtime.requestDrawingDelete(id);
 								} else {
-									runtime.removeOverlay(id);
+									runtime.removeDrawing(id);
 								}
 							}
 						}
+					: presentation.action === 'clear-all'
+						? (): void => {
+								// 清空全部 Drawing；锁定的 Drawing 保持既有“不接受 mutation”契约。
+								for (const drawing of runtime.listDrawings()) {
+									if (!drawing.locked) {
+										runtime.removeDrawing(drawing.id);
+									}
+								}
+								runtime.selectDrawing(null);
+							}
 					: (): void => {
-							downloadScene(
+							downloadArtifact(
 								runtime,
-								options.downloadFileName ?? 'kline-scene.json',
+								defaultFileName,
 							);
 						};
 				const button = createIconButton(presentation, action);
@@ -383,21 +565,21 @@ export function createStandardToolbar(
 				button.setAttribute('aria-label', hostAction.label);
 				const action = (): void => runtime.requestHostAction(
 					hostAction.actionId,
-					runtime.getSelectedOverlayId() ?? null,
+					runtime.getSelectedDrawingId() ?? null,
 				);
 				button.addEventListener('click', action);
 				groupElement.append(button);
 				cleanupCallbacks.push(() => button.removeEventListener('click', action));
 			}
 		} else {
-			for (const overlayType of SUPPORTED_OVERLAYS) {
+			for (const overlayType of drawableTypes) {
 				const presentation = OVERLAY_TOOL_PRESENTATIONS[overlayType];
 				if (presentation.group !== group.id) {
 					continue;
 				}
 				let buttonElement: HTMLButtonElement;
 				const action = (): void => {
-					runtime.startOverlayDrawing(
+					runtime.startDrawing(
 						overlayType,
 						TEXT_OVERLAY_TYPES.has(overlayType)
 							? { text: textInput.value }
@@ -454,4 +636,23 @@ export function createStandardToolbar(
 	};
 	unregisterRuntime = registerRuntimeTeardown(runtime, () => toolbar.destroy());
 	return toolbar;
+}
+
+function presentationLabel(type: string): string {
+	switch (type) {
+		case 'candle_solid':
+			return '实心蜡烛';
+		case 'candle_stroke':
+			return '描边蜡烛';
+		case 'candle_up_stroke':
+			return '上涨描边';
+		case 'candle_down_stroke':
+			return '下跌描边';
+		case 'ohlc':
+			return 'OHLC';
+		case 'area':
+			return '收盘价折线';
+		default:
+			return type;
+	}
 }

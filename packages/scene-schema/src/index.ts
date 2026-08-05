@@ -1,11 +1,24 @@
 /** 场景协议包版本；Scene version 仍保持 1。 */
-export const SCENE_PACKAGE_VERSION = '0.3.0' as const;
+export const SCENE_PACKAGE_VERSION = '0.4.0' as const;
 
 export * from './canonical-json.js';
 export * from './canonicalize.js';
+export * from './decimal-normalization.js';
+export * from './drawing-canonical-json.js';
+export * from './drawing-canonicalize.js';
+export * from './drawing-errors.js';
+export * from './drawing-semantic-validator.js';
+export * from './drawing-validator.js';
+export * from './drawable-workspace-canonical-json.js';
+export * from './drawable-workspace-canonicalize.js';
+export * from './drawable-workspace-errors.js';
+export * from './drawable-workspace-semantic-validator.js';
+export * from './drawable-workspace-validator.js';
 export * from './errors.js';
 export * from './generated/chart-scene.js';
+export * from './generated/drawing-document.js';
 export * from './generated/schemas.js';
+export type { DrawableWorkspaceDocument } from './generated/drawable-workspace.js';
 export * from './semantic-validator.js';
 export * from './generated/time-series-scene.js';
 export * from './time-series-canonical-json.js';

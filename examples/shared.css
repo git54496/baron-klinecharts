@@ -98,6 +98,20 @@ h1 {
 	height: 600px;
 }
 
+.hint {
+	margin: 14px 2px 0;
+	color: #526079;
+	font-size: 13px;
+	line-height: 1.7;
+}
+
+.hint code {
+	padding: 1px 5px;
+	border-radius: 5px;
+	background: #e7ecf4;
+	color: #2b3a55;
+}
+
 @media (max-width: 720px) {
 	body {
 		padding: 20px 12px;

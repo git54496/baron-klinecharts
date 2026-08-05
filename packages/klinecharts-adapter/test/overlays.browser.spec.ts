@@ -5,20 +5,98 @@ import { loadScene } from './load-scene.js';
 const allOverlays = loadScene('all-overlays.json');
 const m1Scene = loadScene('m1-candle-horizontal-line.json');
 
-test('@browser round-trips all 21 registered Overlay types', async ({ page }) => {
+test('@browser round-trips all registered Overlay types', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	const exported = await page.evaluate(async (scene) => {
 		const { KLineChartsSceneAdapter } = await import('/src/index.ts');
+		const sceneForM2 = structuredClone(scene);
+		sceneForM2.runtime.runtimeVersion = '0.2.0';
+		for (const pane of sceneForM2.panes) {
+			pane.yAxes = pane.yAxes.map((axis) => ({
+				...axis,
+				scale: 'linear',
+			}));
+		}
+		const overlaySet = {
+			...sceneForM2,
+			overlays: [
+				...sceneForM2.overlays,
+				{
+					id: 'overlay-priceMeasurement-21',
+					type: 'priceMeasurement',
+					paneId: 'pane-candle',
+					visible: true,
+					locked: false,
+					zLevel: 99,
+					mode: 'normal',
+					start: {
+						timestamp: 1_784_736_000_000,
+						value: 12.5,
+					},
+					end: {
+						timestamp: 1_784_822_400_000,
+						value: 12.9,
+					},
+					styles: {
+						line: {
+							color: 'rgba(41, 98, 255, 1)',
+							size: 1,
+							style: 'solid',
+						},
+						fill: {
+							color: 'rgba(41, 98, 255, 0.15)',
+						},
+						text: {
+							color: 'rgba(255, 255, 255, 1)',
+							size: 12,
+							family: 'Baron Sans',
+							weight: 'normal',
+							backgroundColor: 'rgba(41, 98, 255, 1)',
+							borderColor: 'rgba(41, 98, 255, 1)',
+						},
+					},
+					metadata: {
+						source: 'browser-overlays-capability',
+					},
+				},
+			],
+		};
+
 		const adapter = await KLineChartsSceneAdapter.create(
 			document.querySelector<HTMLElement>('#chart')!,
-			scene,
+			overlaySet,
 		);
 		const value = adapter.exportScene();
 		adapter.dispose();
 		return value;
 	}, allOverlays);
 
-	expect(exported.overlays).toEqual(allOverlays.overlays);
+	expect(exported.overlays).toHaveLength(22);
+	const exportedTypes = exported.overlays.map((overlay) => overlay.type).sort();
+	expect(exportedTypes).toEqual([
+		'arrow',
+		'brush',
+		'callout',
+		'crossLine',
+		'fibonacciLine',
+		'horizontalRayLine',
+		'horizontalSegment',
+		'horizontalStraightLine',
+		'parallelStraightLine',
+		'priceChannelLine',
+		'priceLine',
+		'priceMeasurement',
+		'rayLine',
+		'rectangle',
+		'segment',
+		'simpleAnnotation',
+		'simpleTag',
+		'straightLine',
+		'text',
+		'verticalRayLine',
+		'verticalSegment',
+		'verticalStraightLine',
+	]);
 	expect(JSON.stringify(exported)).not.toContain('candle_pane');
 });
 

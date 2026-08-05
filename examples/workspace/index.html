@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<meta
+			name="description"
+			content="使用 DrawableWorkspace 验证统一画图能力：22 工具、candle/area 切换与 Drawing 导出。"
+		>
+		<title>Baron KLineCharts Workspace 验证页</title>
+		<link rel="icon" href="data:,">
+	</head>
+	<body>
+		<main class="example-shell">
+			<header class="example-header">
+				<div>
+					<p class="eyebrow">BARON KLINECHARTS · DRAWABLE WORKSPACE</p>
+					<h1>统一画图工作区</h1>
+					<p class="description">
+						使用统一 <code>DrawableWorkspaceRuntime</code> 与标准工具栏：22 种
+						Drawing、创建中 candle/area 切换、样式编辑与 Workspace 导出。
+						价格轴/线型/线宽/线色/主序列已收进“图表空白处右键”菜单。
+					</p>
+				</div>
+				<p class="status" data-example-status data-state="loading" aria-live="polite">
+					正在加载 Workspace…
+				</p>
+			</header>
+			<section class="chart-panel" aria-label="统一画图工作区验证区域">
+				<div id="toolbar" class="toolbar"></div>
+				<div id="chart" class="chart"></div>
+			</section>
+			<p class="hint">
+				验证路径：选择任意工具在图表上创建 → 创建过程中切换“主序列”为
+				收盘价折线 → 完成后切回蜡烛 → 在图表空白处右键，通过弹出的
+				“坐标与样式”菜单修改价格轴/线型/线宽/线色/主序列 →
+				点击工具栏“清空全部标注”一键删除所有 Drawing（锁定的除外）→
+				点击“导出场景”下载 Workspace JSON。
+			</p>
+		</main>
+		<script type="module" src="./main.ts"></script>
+	</body>
+</html>

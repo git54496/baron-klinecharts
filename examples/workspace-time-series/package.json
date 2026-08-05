@@ -1,0 +1,8 @@
+{
+  "name": "@baron1996/example-workspace-time-series",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  }
+}

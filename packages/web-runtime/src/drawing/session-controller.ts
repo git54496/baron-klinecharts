@@ -1,0 +1,492 @@
+import type { DrawingDocument, ValueAxis } from '@baron1996/kline-scene-schema';
+import {
+	hashCanonicalDrawingDocument,
+} from '@baron1996/kline-scene-schema';
+import type {
+	DrawingEnginePort,
+	EngineDrawingEvent,
+	EngineDrawingSnapshot,
+} from '@baron1996/klinecharts-adapter';
+
+import {
+	DrawingProjectionService,
+	type ProjectionScene,
+} from './projection-service.js';
+import type {
+	WorkspaceDrawingOperation,
+	WorkspaceRuntimeEvent,
+} from './workspace-events.js';
+import { deepFreeze } from './workspace-events.js';
+
+export type DrawingSessionState =
+	| 'ready'
+	| 'interacting'
+	| 'awaiting-host-confirmation'
+	| 'reprojecting'
+	| 'terminal-error'
+	| 'destroyed';
+
+export type DrawingSessionErrorCode =
+	| 'DRAWING_CHANGE_IN_PROGRESS'
+	| 'DRAWING_CHANGE_HASH_MISMATCH'
+	| 'DRAWING_CHANGE_REJECTED'
+	| 'DRAWING_PROJECTION_INVALID'
+	| 'DRAWABLE_WORKSPACE_RUNTIME_DESTROYED';
+
+export class DrawingSessionError extends Error {
+	public readonly code: DrawingSessionErrorCode;
+	public readonly path: string;
+
+	public constructor(code: DrawingSessionErrorCode, path: string, message: string) {
+		super(message);
+		this.name = 'DrawingSessionError';
+		this.code = code;
+		this.path = path;
+	}
+}
+
+interface SessionCandidate {
+	readonly requestId: string;
+	readonly operation: WorkspaceDrawingOperation;
+	readonly before?: EngineDrawingSnapshot;
+	readonly after: EngineDrawingSnapshot;
+	readonly document: DrawingDocument;
+	readonly canonicalHash: string;
+}
+
+export interface DrawingSessionControllerOptions {
+	readonly runtimeId: string;
+	readonly commitMode: 'immediate' | 'host-confirmed';
+	readonly engine: DrawingEnginePort;
+	readonly projectionService: DrawingProjectionService;
+	readonly scene: ProjectionScene;
+	readonly valueAxes: readonly ValueAxis[];
+	readonly target: {
+		readonly paneRole: string;
+		readonly yAxisRole: 'primary';
+	};
+	readonly scopeKey: string;
+	readonly timezone: string;
+	readonly buildDocument: (drawings: readonly EngineDrawingSnapshot[]) => DrawingDocument;
+	readonly emit: (event: WorkspaceRuntimeEvent) => void;
+}
+
+/**
+ * 场景无关的 Drawing 会话状态机。
+ * 所有变更都走 candidate 校验/投影/展示/确认链；进度事件永不改 confirmed。
+ */
+export class DrawingSessionController {
+	readonly #options: DrawingSessionControllerOptions;
+	#state: DrawingSessionState = 'ready';
+	#confirmed: EngineDrawingSnapshot[] = [];
+	#candidate: SessionCandidate | null = null;
+	#selectedId: string | null = null;
+	#requestSequence = 0;
+	#suppressEngineEvents = false;
+	readonly #unsubscribeEngine: () => void;
+
+	public constructor(options: DrawingSessionControllerOptions) {
+		this.#options = options;
+		this.#unsubscribeEngine = options.engine.subscribeDrawingEvents(
+			(event) => this.#handleEngineEvent(event),
+		);
+	}
+
+	public get state(): DrawingSessionState {
+		return this.#state;
+	}
+
+	public get confirmedDrawings(): readonly EngineDrawingSnapshot[] {
+		this.#assertUsable();
+		return this.#confirmed.map((drawing) => structuredClone(drawing));
+	}
+
+	public get selectedId(): string | null {
+		return this.#selectedId;
+	}
+
+	public restoreConfirmed(drawings: readonly EngineDrawingSnapshot[]): void {
+		this.#assertUsable();
+		this.#suppressEngineEvents = true;
+		try {
+			this.#confirmed = drawings.map((drawing) => structuredClone(drawing));
+			this.#options.engine.restoreDrawings(this.#confirmed);
+		} finally {
+			this.#suppressEngineEvents = false;
+		}
+	}
+
+	public startCreate(
+		type: string,
+		options?: {
+			readonly text?: string;
+			readonly id?: string;
+			readonly styles?: EngineDrawingSnapshot['styles'];
+		},
+	): string {
+		this.#assertReady();
+		this.#state = 'interacting';
+		try {
+			return this.#options.engine.startDrawing({
+				id: options?.id ?? `drawing-${++this.#requestSequence}`,
+				type: type as EngineDrawingSnapshot['type'],
+				target: structuredClone(this.#options.target),
+				styles: options?.styles ?? defaultStyles(),
+				...(options?.text === undefined ? {} : { text: options.text }),
+			});
+		} catch (error) {
+			this.#state = 'ready';
+			throw error;
+		}
+	}
+
+	public updateDrawingStyles(
+		id: string,
+		styles: EngineDrawingSnapshot['styles'],
+	): EngineDrawingSnapshot {
+		this.#assertReady();
+		return this.#options.engine.updateDrawingStyles(id, styles);
+	}
+
+	public updateDrawingText(id: string, text: string): EngineDrawingSnapshot {
+		this.#assertReady();
+		return this.#options.engine.updateDrawingText(id, text);
+	}
+
+	public removeDrawing(id: string): boolean {
+		this.#assertReady();
+		return this.#options.engine.removeDrawing(id);
+	}
+
+	public selectDrawing(id: string | null): void {
+		this.#assertUsable();
+		this.#selectedId = id;
+		this.#options.engine.selectDrawing(id);
+		this.#options.emit({
+			type: 'selection-changed',
+			id,
+		});
+	}
+
+	public commitDrawingChange(requestId: string, canonicalHash: string): boolean {
+		this.#assertUsable();
+		if (this.#state !== 'awaiting-host-confirmation') {
+			throw new DrawingSessionError(
+				'DRAWING_CHANGE_IN_PROGRESS',
+				'/drawings',
+				'There is no host-confirmed candidate waiting for commit.',
+			);
+		}
+		const candidate = this.#candidate;
+		if (candidate === null || candidate.requestId !== requestId) {
+			throw new DrawingSessionError(
+				'DRAWING_CHANGE_REJECTED',
+				'/drawings',
+				`Unknown drawing change request: ${requestId}.`,
+			);
+		}
+		if (candidate.canonicalHash !== canonicalHash) {
+			throw new DrawingSessionError(
+				'DRAWING_CHANGE_HASH_MISMATCH',
+				'/drawings',
+				'Candidate canonical hash does not match the requested commit.',
+			);
+		}
+		this.#commitCandidate(candidate);
+		return true;
+	}
+
+	public rejectDrawingChange(requestId: string): boolean {
+		this.#assertUsable();
+		if (this.#state !== 'awaiting-host-confirmation') {
+			throw new DrawingSessionError(
+				'DRAWING_CHANGE_IN_PROGRESS',
+				'/drawings',
+				'There is no host-confirmed candidate waiting for rejection.',
+			);
+		}
+		const candidate = this.#candidate;
+		if (candidate === null || candidate.requestId !== requestId) {
+			throw new DrawingSessionError(
+				'DRAWING_CHANGE_REJECTED',
+				'/drawings',
+				`Unknown drawing change request: ${requestId}.`,
+			);
+		}
+		try {
+			if (candidate.before !== undefined) {
+				this.#options.engine.restoreDrawing(candidate.before);
+			} else {
+				this.#options.engine.removeDrawing(candidate.after.id);
+			}
+		} catch (error) {
+			this.#enterTerminalError(
+				'DRAWING_PROJECTION_INVALID',
+				`Failed to restore the rejected candidate: ${String(error)}`,
+			);
+			return false;
+		}
+		this.#candidate = null;
+		this.#state = 'ready';
+		this.#options.emit({
+			type: 'drawing-rejected',
+			requestId,
+			drawing: structuredClone(candidate.after),
+			document: structuredClone(candidate.document),
+			canonicalHash: candidate.canonicalHash,
+		});
+		return true;
+	}
+
+	public enterTerminalError(code: string, message: string): void {
+		this.#enterTerminalError(code, message);
+	}
+
+	public destroy(): void {
+		if (this.#state === 'destroyed') {
+			return;
+		}
+		this.#state = 'destroyed';
+		this.#candidate = null;
+		this.#confirmed = [];
+		this.#unsubscribeEngine();
+	}
+
+	#handleEngineEvent(event: EngineDrawingEvent): void {
+		if (
+			this.#suppressEngineEvents ||
+			this.#state === 'destroyed' ||
+			this.#state === 'terminal-error'
+		) {
+			return;
+		}
+		try {
+			if (event.type === 'created' || event.type === 'updated') {
+				if (event.drawing === undefined) {
+					return;
+				}
+				void this.#onMutation({
+					operation: event.type === 'created' ? 'create' : 'update',
+					...(this.#confirmed.find((drawing) => drawing.id === event.id) === undefined
+						? {}
+						: {
+								before: this.#confirmed.find((drawing) => drawing.id === event.id)!,
+							}),
+					after: event.drawing,
+				}).catch((error: unknown) => {
+					this.#options.emit({
+						type: 'workspace-error',
+						code: error instanceof DrawingSessionError
+							? error.code
+							: 'DRAWING_PROJECTION_INVALID',
+						message: error instanceof Error
+							? error.message
+							: String(error),
+					});
+				});
+				return;
+			}
+			if (event.type === 'removed') {
+				const before = this.#confirmed.find((drawing) => drawing.id === event.id);
+				if (before === undefined) {
+					return;
+				}
+				void this.#onMutation({
+					operation: 'delete',
+					before,
+					after: before,
+				}).catch((error: unknown) => {
+					this.#options.emit({
+						type: 'workspace-error',
+						code: error instanceof DrawingSessionError
+							? error.code
+							: 'DRAWING_PROJECTION_INVALID',
+						message: error instanceof Error
+							? error.message
+							: String(error),
+					});
+				});
+				return;
+			}
+			if (event.type === 'selected' || event.type === 'deselected') {
+				this.#selectedId = event.type === 'selected' ? event.id : null;
+				this.#options.emit({ type: 'selection-changed', id: this.#selectedId });
+			}
+		} catch (error) {
+			if (error instanceof DrawingSessionError) {
+				this.#options.emit({
+					type: 'workspace-error',
+					code: error.code,
+					message: error.message,
+				});
+			}
+		}
+	}
+
+	async #onMutation(input: {
+		readonly operation: WorkspaceDrawingOperation;
+		readonly before?: EngineDrawingSnapshot;
+		readonly after: EngineDrawingSnapshot;
+	}): Promise<void> {
+		if (this.#state === 'awaiting-host-confirmation') {
+			throw new DrawingSessionError(
+				'DRAWING_CHANGE_IN_PROGRESS',
+				'/drawings',
+				'A host-confirmed candidate is pending; new mutations are rejected.',
+			);
+		}
+		if (this.#state === 'interacting' && input.operation !== 'create') {
+			return;
+		}
+		const candidateDocument = this.#options.buildDocument(
+			this.#confirmedWith(input.operation, input.before, input.after),
+		);
+		try {
+			const projected = this.#options.projectionService.projectDocument({
+				scene: this.#options.scene,
+				drawings: candidateDocument,
+			});
+			if (input.after !== undefined && input.operation !== 'delete') {
+				const projectedDrawing = projected.drawings.find(
+					(drawing) => drawing.drawing.id === input.after.id,
+				);
+				if (projectedDrawing === undefined) {
+					throw new DrawingSessionError(
+						'DRAWING_PROJECTION_INVALID',
+						`/drawings/${input.after.id}`,
+						'Candidate Drawing cannot be projected on the current Scene.',
+					);
+				}
+			}
+		} catch (error) {
+			if (error instanceof DrawingSessionError) {
+				this.#restoreBefore(input.before, input.after);
+				this.#options.emit({
+					type: 'workspace-error',
+					code: error.code,
+					message: error.message,
+				});
+			}
+			return;
+		}
+		const canonicalHash = await hashCanonicalDrawingDocument(candidateDocument);
+		const candidate: SessionCandidate = {
+			requestId: `change-${++this.#requestSequence}`,
+			operation: input.operation,
+			...(input.before === undefined ? {} : { before: structuredClone(input.before) }),
+			after: structuredClone(input.after),
+			document: structuredClone(candidateDocument),
+			canonicalHash,
+		};
+		this.#candidate = candidate;
+		this.#options.emit(
+			deepFreeze({
+				type: 'drawing-candidate',
+				requestId: candidate.requestId,
+				operation: input.operation,
+				...(input.before === undefined ? {} : { before: structuredClone(input.before) }),
+				candidate: structuredClone(input.after),
+				candidateDocument: structuredClone(candidateDocument),
+				canonicalHash,
+			}),
+		);
+		if (this.#options.commitMode === 'immediate') {
+			this.#commitCandidate(candidate);
+		} else {
+			this.#state = 'awaiting-host-confirmation';
+		}
+	}
+
+	#confirmedWith(
+		operation: WorkspaceDrawingOperation,
+		before: EngineDrawingSnapshot | undefined,
+		after: EngineDrawingSnapshot,
+	): EngineDrawingSnapshot[] {
+		if (operation === 'delete') {
+			return this.#confirmed.filter((drawing) => drawing.id !== after.id);
+		}
+		if (before === undefined) {
+			return [...this.#confirmed, structuredClone(after)];
+		}
+		return this.#confirmed.map((drawing) =>
+			drawing.id === before.id ? structuredClone(after) : drawing,
+		);
+	}
+
+	#commitCandidate(candidate: SessionCandidate): void {
+		this.#confirmed = this.#confirmedWith(
+			candidate.operation,
+			candidate.before,
+			candidate.after,
+		);
+		this.#candidate = null;
+		this.#state = 'ready';
+		this.#options.emit({
+			type: 'drawing-committed',
+			requestId: candidate.requestId,
+			drawing: structuredClone(candidate.after),
+			document: structuredClone(candidate.document),
+			canonicalHash: candidate.canonicalHash,
+		});
+	}
+
+	#restoreBefore(
+		before: EngineDrawingSnapshot | undefined,
+		after: EngineDrawingSnapshot,
+	): void {
+		try {
+			if (before !== undefined) {
+				this.#options.engine.restoreDrawing(before);
+			} else {
+				this.#options.engine.removeDrawing(after.id);
+			}
+		} catch (error) {
+			this.#enterTerminalError(
+				'DRAWING_PROJECTION_INVALID',
+				`Failed to restore the rejected candidate: ${String(error)}`,
+			);
+		}
+	}
+
+	#enterTerminalError(code: string, message: string): void {
+		this.#state = 'terminal-error';
+		this.#candidate = null;
+		this.#options.emit({ type: 'workspace-error', code, message });
+	}
+
+	#assertUsable(): void {
+		if (this.#state === 'terminal-error' || this.#state === 'destroyed') {
+			throw new DrawingSessionError(
+				'DRAWABLE_WORKSPACE_RUNTIME_DESTROYED',
+				'/',
+				'The Workspace Runtime is in a destroy-only state.',
+			);
+		}
+	}
+
+	#assertReady(): void {
+		this.#assertUsable();
+		if (this.#state !== 'ready') {
+			throw new DrawingSessionError(
+				'DRAWING_CHANGE_IN_PROGRESS',
+				'/drawings',
+				'Another Drawing mutation is already in progress.',
+			);
+		}
+	}
+}
+
+function defaultStyles(): EngineDrawingSnapshot['styles'] {
+	return {
+		line: { color: 'rgba(41, 98, 255, 1)', size: 1, style: 'solid' },
+		fill: { color: 'rgba(41, 98, 255, 0.15)' },
+		text: {
+			color: 'rgba(255, 255, 255, 1)',
+			size: 12,
+			family: 'Baron Sans',
+			weight: 'normal',
+			backgroundColor: 'rgba(41, 98, 255, 1)',
+			borderColor: 'rgba(41, 98, 255, 1)',
+		},
+	};
+}

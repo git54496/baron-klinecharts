@@ -11,6 +11,27 @@ const execFileAsync = promisify(execFile);
 const packageDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryDirectory = resolve(packageDirectory, '..', '..');
 const fixture = join(repositoryDirectory, 'tests', 'fixtures', 'scenes', 'minimal-valid.json');
+const workspaceFixture = join(
+	repositoryDirectory,
+	'tests',
+	'fixtures',
+	'workspaces',
+	'chart-minimal.json',
+);
+const timeSeriesWorkspaceFixture = join(
+	repositoryDirectory,
+	'tests',
+	'fixtures',
+	'workspaces',
+	'time-series-minimal.json',
+);
+const drawingsFixture = join(
+	repositoryDirectory,
+	'tests',
+	'fixtures',
+	'drawings',
+	'all-drawings.json',
+);
 const cli = join(packageDirectory, 'dist', 'cli.js');
 
 async function invoke(arguments_: readonly string[]) {
@@ -128,6 +149,184 @@ describe('ChartScene CLI', () => {
 			const diagnostic = JSON.parse(result.stderr);
 			expect(diagnostic.code).toBe('CLI_ARGUMENT_INVALID');
 			expect(diagnostic.issues).toHaveLength(1);
+		}
+	});
+});
+
+describe('DrawableWorkspace CLI', () => {
+	it('validates and inspects chart and time-series Workspaces', async () => {
+		const chartValidation = await invoke(['workspace', 'validate', workspaceFixture]);
+		expect(chartValidation.stdout).toBe('');
+		expect(chartValidation.stderr).toBe('');
+		const timeSeriesValidation = await invoke([
+			'workspace', 'validate', timeSeriesWorkspaceFixture,
+		]);
+		expect(timeSeriesValidation.stderr).toBe('');
+		const inspection = await invoke([
+			'workspace', 'inspect', workspaceFixture, '--json',
+		]);
+		expect(JSON.parse(inspection.stdout)).toMatchObject({
+			schema: '@baron1996/drawable-workspace',
+			kind: 'chart',
+			drawings: 22,
+			panes: 1,
+			indicators: 0,
+		});
+		expect(inspection.stderr).toBe('');
+		const timeSeriesInspection = await invoke([
+			'workspace', 'inspect', timeSeriesWorkspaceFixture, '--json',
+		]);
+		expect(JSON.parse(timeSeriesInspection.stdout)).toMatchObject({
+			kind: 'time-series',
+			drawings: 22,
+			series: 3,
+		});
+	});
+
+	it('lists, adds, gets, replaces, and removes drawings', async () => {
+		const directory = await mkdtemp(join(tmpdir(), 'baron-cli-drawings-'));
+		const drawingSource = JSON.parse(await readFile(drawingsFixture, 'utf8'));
+		const drawing = structuredClone(drawingSource.drawings[0]);
+		drawing.id = 'drawing-cli-added';
+		drawing.geometry.value = 13.25;
+		const drawingPath = join(directory, 'drawing.json');
+		await writeFile(drawingPath, JSON.stringify(drawing));
+		const added = join(directory, 'added.json');
+		const replaced = join(directory, 'replaced.json');
+		const removed = join(directory, 'removed.json');
+
+		const listed = JSON.parse((await invoke([
+			'workspace', 'drawings', 'list', workspaceFixture,
+		])).stdout);
+		expect(listed).toHaveLength(22);
+
+		await invoke([
+			'workspace', 'drawings', 'add', workspaceFixture,
+			'--drawing', drawingPath, '--output', added,
+		]);
+		expect(JSON.parse((await invoke([
+			'workspace', 'drawings', 'get', added, '--id', drawing.id,
+		])).stdout).geometry.value).toBe(13.25);
+		expect(JSON.parse((await invoke([
+			'workspace', 'drawings', 'list', added,
+		])).stdout)).toHaveLength(23);
+
+		drawing.geometry.value = 14.75;
+		await writeFile(drawingPath, JSON.stringify(drawing));
+		await invoke([
+			'workspace', 'drawings', 'replace', added,
+			'--id', drawing.id, '--drawing', drawingPath, '--output', replaced,
+		]);
+		expect(JSON.parse((await invoke([
+			'workspace', 'drawings', 'get', replaced, '--id', drawing.id,
+		])).stdout).geometry.value).toBe(14.75);
+
+		await invoke([
+			'workspace', 'drawings', 'remove', replaced,
+			'--id', drawing.id, '--output', removed,
+		]);
+		expect(JSON.parse((await invoke([
+			'workspace', 'drawings', 'list', removed,
+		])).stdout)).toHaveLength(22);
+		expect(JSON.parse((await invoke([
+			'workspace', 'inspect', removed, '--json',
+		])).stdout)).toMatchObject({ schema: '@baron1996/drawable-workspace' });
+	});
+
+	it('renders Workspace HTML and PNG through the explicit namespace', async () => {
+		const directory = await mkdtemp(join(tmpdir(), 'baron-cli-workspace-render-'));
+		const html = join(directory, 'workspace.html');
+		const png = join(directory, 'workspace.png');
+		await invoke([
+			'workspace', 'render', workspaceFixture,
+			'--format', 'html', '--output', html,
+		]);
+		expect(await readFile(html, 'utf8')).toContain('__BARON_DRAWABLE_WORKSPACE__');
+		await invoke([
+			'workspace', 'render', workspaceFixture,
+			'--format', 'png', '--output', png,
+		]);
+		expect((await readFile(png)).subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+	});
+
+	it('rejects cross-root inputs without guessing the parser', async () => {
+		try {
+			await invoke(['validate', workspaceFixture]);
+			throw new Error('Expected legacy validate to reject a Workspace.');
+		} catch (error) {
+			const diagnostic = JSON.parse((error as { stderr: string }).stderr);
+			expect(diagnostic.code).toBe('SCENE_SCHEMA_INVALID');
+			expect(diagnostic.path).toBe('/');
+		}
+		try {
+			await invoke(['workspace', 'validate', fixture]);
+			throw new Error('Expected workspace validate to reject a raw Scene.');
+		} catch (error) {
+			const diagnostic = JSON.parse((error as { stderr: string }).stderr);
+			expect(diagnostic.code).toBe('DRAWABLE_WORKSPACE_SCHEMA_INVALID');
+			expect(diagnostic.path).toBe('/binding');
+		}
+		try {
+			await invoke([
+				'overlays', 'list', workspaceFixture,
+			]);
+			throw new Error('Expected overlays to reject a Workspace.');
+		} catch (error) {
+			const diagnostic = JSON.parse((error as { stderr: string }).stderr);
+			expect(diagnostic.code).toBe('SCENE_SCHEMA_INVALID');
+		}
+		try {
+			await invoke([
+				'indicators', 'list', workspaceFixture,
+			]);
+			throw new Error('Expected indicators to reject a Workspace.');
+		} catch (error) {
+			const diagnostic = JSON.parse((error as { stderr: string }).stderr);
+			expect(diagnostic.code).toBe('SCENE_SCHEMA_INVALID');
+		}
+		try {
+			await invoke([
+				'render', workspaceFixture, '--format', 'html', '--output', '/tmp/should-not-exist.html',
+			]);
+			throw new Error('Expected render to reject a Workspace.');
+		} catch (error) {
+			const diagnostic = JSON.parse((error as { stderr: string }).stderr);
+			expect(diagnostic.code).toBe('SCENE_SCHEMA_INVALID');
+		}
+	});
+
+	it('keeps input/output distinct and replaces existing output only with --force', async () => {
+		const directory = await mkdtemp(join(tmpdir(), 'baron-cli-workspace-atomic-'));
+		const output = join(directory, 'next.json');
+		const drawingSource = JSON.parse(await readFile(drawingsFixture, 'utf8'));
+		const drawing = structuredClone(drawingSource.drawings[0]);
+		drawing.id = 'drawing-cli-atomic';
+		const drawingPath = join(directory, 'drawing.json');
+		await writeFile(drawingPath, JSON.stringify(drawing));
+		await invoke([
+			'workspace', 'drawings', 'add', workspaceFixture,
+			'--drawing', drawingPath, '--output', output,
+		]);
+		try {
+			await invoke([
+				'workspace', 'drawings', 'add', output,
+				'--drawing', drawingPath, '--output', output,
+			]);
+			throw new Error('Expected input/output conflict.');
+		} catch (error) {
+			const diagnostic = JSON.parse((error as { stderr: string }).stderr);
+			expect(diagnostic.code).toBe('INPUT_OUTPUT_CONFLICT');
+		}
+		try {
+			await invoke([
+				'workspace', 'drawings', 'add', output,
+				'--drawing', drawingPath, '--output', output,
+				'--force',
+			]);
+			throw new Error('Expected conflict even with --force.');
+		} catch (error) {
+			const diagnostic = JSON.parse((error as { stderr: string }).stderr);
+			expect(diagnostic.code).toBe('INPUT_OUTPUT_CONFLICT');
 		}
 	});
 });

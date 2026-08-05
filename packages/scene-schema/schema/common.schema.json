@@ -9,6 +9,32 @@
       "maxLength": 128,
       "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
     },
+    "period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "span",
+        "type"
+      ],
+      "properties": {
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "type": {
+          "enum": [
+            "second",
+            "minute",
+            "hour",
+            "day",
+            "week",
+            "month",
+            "year"
+          ]
+        }
+      }
+    },
     "finiteNumber": {
       "type": "number",
       "minimum": -1.7976931348623157e+308,

@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 const execFileAsync = promisify(execFile);
 const vite = resolve('node_modules', '.bin', 'vite');
 
-for (const name of ['vanilla', 'react', 'vue']) {
+for (const name of ['vanilla', 'react', 'vue', 'workspace', 'workspace-time-series']) {
 	test(`builds the ${name} consumer example`, async () => {
 		const output = await mkdtemp(join(tmpdir(), `baron-example-${name}-`));
 		await execFileAsync(vite, ['build', resolve('examples', name), '--outDir', output]);

@@ -1,0 +1,130 @@
+{
+  "schema": "@baron1996/kline-scene",
+  "version": 1,
+  "runtime": {
+    "engine": "klinecharts",
+    "engineVersion": "10.0.0",
+    "runtimeVersion": "0.1.0"
+  },
+  "symbol": {
+    "ticker": "000001.SZ",
+    "name": "平安银行",
+    "pricePrecision": 2,
+    "volumePrecision": 0
+  },
+  "period": {
+    "span": 1,
+    "type": "day"
+  },
+  "data": [
+    {
+      "timestamp": 1784736000000,
+      "open": 12.34,
+      "high": 12.68,
+      "low": 12.21,
+      "close": 12.55,
+      "volume": 102400,
+      "turnover": 1285120
+    },
+    {
+      "timestamp": 1784822400000,
+      "open": 12.55,
+      "high": 12.83,
+      "low": 12.42,
+      "close": 12.74,
+      "volume": 119800,
+      "turnover": 1526252
+    },
+    {
+      "timestamp": 1784908800000,
+      "open": 12.74,
+      "high": 12.91,
+      "low": 12.5,
+      "close": 12.63,
+      "volume": 98400,
+      "turnover": 1242792
+    }
+  ],
+  "chart": {
+    "locale": "zh-CN",
+    "timezone": "Asia/Shanghai",
+    "layout": {
+      "backgroundColor": "rgba(255, 255, 255, 1)",
+      "textColor": "rgba(34, 34, 34, 1)",
+      "fontFamily": "Baron Sans",
+      "fontSize": 12
+    },
+    "candle": {
+      "type": "area",
+      "upColor": "rgba(239, 83, 80, 1)",
+      "downColor": "rgba(38, 166, 154, 1)",
+      "noChangeColor": "rgba(120, 123, 134, 1)",
+      "upBorderColor": "rgba(239, 83, 80, 1)",
+      "downBorderColor": "rgba(38, 166, 154, 1)",
+      "noChangeBorderColor": "rgba(120, 123, 134, 1)",
+      "upWickColor": "rgba(239, 83, 80, 1)",
+      "downWickColor": "rgba(38, 166, 154, 1)",
+      "noChangeWickColor": "rgba(120, 123, 134, 1)",
+      "area": {
+        "value": "close",
+        "line": {
+          "color": "rgba(41, 98, 255, 1)",
+          "size": 2
+        },
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "smooth": false,
+        "pointVisible": false
+      }
+    },
+    "grid": {
+      "horizontalColor": "rgba(225, 226, 230, 1)",
+      "verticalColor": "rgba(225, 226, 230, 1)"
+    },
+    "thousandsSeparator": ",",
+    "decimalFold": {
+      "enabled": false,
+      "threshold": 8
+    },
+    "zoomAnchor": "cursor",
+    "dateFormat": "yyyy-MM-dd",
+    "largeNumberFormat": "western"
+  },
+  "panes": [
+    {
+      "id": "pane-candle",
+      "kind": "candle",
+      "order": 0,
+      "height": 480,
+      "minHeight": 180,
+      "state": "normal",
+      "yAxes": [
+        {
+          "id": "axis-price",
+          "role": "primary",
+          "position": "right",
+          "reverse": false,
+          "inside": false,
+          "scrollZoomEnabled": true,
+          "topGap": 0.15,
+          "bottomGap": 0.1
+        }
+      ],
+      "indicators": []
+    }
+  ],
+  "overlays": [],
+  "viewport": {
+    "barSpace": 10,
+    "rightOffsetDistance": 48,
+    "anchorTimestamp": 1784908800000
+  },
+  "render": {
+    "width": 1000,
+    "height": 600,
+    "deviceScaleFactor": 1,
+    "background": "rgba(255, 255, 255, 1)",
+    "fontFamily": "Baron Sans",
+    "timeoutMs": 10000
+  },
+  "metadata": {}
+}

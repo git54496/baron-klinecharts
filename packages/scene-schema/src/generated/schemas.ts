@@ -11,6 +11,32 @@ export const CommonSchema = {
       "maxLength": 128,
       "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
     },
+    "period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "span",
+        "type"
+      ],
+      "properties": {
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "type": {
+          "enum": [
+            "second",
+            "minute",
+            "hour",
+            "day",
+            "week",
+            "month",
+            "year"
+          ]
+        }
+      }
+    },
     "finiteNumber": {
       "type": "number",
       "minimum": -1.7976931348623157e+308,
@@ -303,8 +329,50 @@ export const ChartConfigSchema = {
             "candle_stroke",
             "candle_up_stroke",
             "candle_down_stroke",
-            "ohlc"
+            "ohlc",
+            "area"
           ]
+        },
+        "area": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "line",
+            "backgroundColor",
+            "smooth",
+            "pointVisible"
+          ],
+          "properties": {
+            "value": {
+              "const": "close"
+            },
+            "line": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "color",
+                "size"
+              ],
+              "properties": {
+                "color": {
+                  "const": "rgba(41, 98, 255, 1)"
+                },
+                "size": {
+                  "const": 2
+                }
+              }
+            },
+            "backgroundColor": {
+              "const": "rgba(0, 0, 0, 0)"
+            },
+            "smooth": {
+              "const": false
+            },
+            "pointVisible": {
+              "const": false
+            }
+          }
         },
         "upColor": {
           "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
@@ -332,6 +400,31 @@ export const ChartConfigSchema = {
         },
         "noChangeWickColor": {
           "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        }
+      },
+      "if": {
+        "properties": {
+          "type": {
+            "const": "area"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "required": [
+          "area"
+        ],
+        "properties": {
+          "area": true
+        }
+      },
+      "else": {
+        "not": {
+          "required": [
+            "area"
+          ]
         }
       }
     },
@@ -895,7 +988,7 @@ export const ChartSceneSchema = {
       "$ref": "#/$defs/symbol"
     },
     "period": {
-      "$ref": "#/$defs/period"
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/period"
     },
     "data": {
       "type": "array",
@@ -965,32 +1058,6 @@ export const ChartSceneSchema = {
         }
       }
     },
-    "period": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "span",
-        "type"
-      ],
-      "properties": {
-        "span": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 100000
-        },
-        "type": {
-          "enum": [
-            "second",
-            "minute",
-            "hour",
-            "day",
-            "week",
-            "month",
-            "year"
-          ]
-        }
-      }
-    },
     "viewport": {
       "type": "object",
       "additionalProperties": false,
@@ -1056,6 +1123,929 @@ export const ChartSceneSchema = {
           "maximum": 120000
         }
       }
+    }
+  }
+} as const;
+
+export const DrawingDocumentSchema = {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://baron.dev/kline-scene/drawing-document.schema.json",
+  "title": "DrawingDocument",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "scopeKey",
+    "coordinateSystem",
+    "drawings",
+    "metadata"
+  ],
+  "properties": {
+    "schema": {
+      "const": "@baron1996/drawing-document"
+    },
+    "version": {
+      "const": 1
+    },
+    "scopeKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "coordinateSystem": {
+      "$ref": "#/$defs/coordinateSystem"
+    },
+    "drawings": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/drawing"
+      }
+    },
+    "metadata": {
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/metadata"
+    }
+  },
+  "$defs": {
+    "coordinateSystem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timezone",
+        "valueAxes"
+      ],
+      "properties": {
+        "timezone": {
+          "$ref": "#/$defs/timezone"
+        },
+        "valueAxes": {
+          "$ref": "#/$defs/valueAxes"
+        }
+      }
+    },
+    "timezone": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z_+-]+(?:/[A-Za-z0-9_+-]+)*$"
+    },
+    "valueAxes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/valueAxis"
+      }
+    },
+    "valueAxis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "paneRole",
+        "yAxisRole",
+        "valuePrecision"
+      ],
+      "properties": {
+        "paneRole": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "yAxisRole": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "valuePrecision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "paneRole",
+        "yAxisRole"
+      ],
+      "properties": {
+        "paneRole": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "yAxisRole": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "drawingStyles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "line",
+        "fill",
+        "text"
+      ],
+      "properties": {
+        "line": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/lineStyle"
+        },
+        "fill": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/fillStyle"
+        },
+        "text": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/textStyle"
+        }
+      }
+    },
+    "drawingBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "target",
+        "visible",
+        "locked",
+        "zLevel",
+        "mode",
+        "styles"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/stableId"
+        },
+        "groupId": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/stableId"
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "zLevel": {
+          "type": "integer",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "mode": {
+          "enum": [
+            "normal",
+            "weak_magnet",
+            "strong_magnet"
+          ]
+        },
+        "styles": {
+          "$ref": "#/$defs/drawingStyles"
+        },
+        "metadata": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/metadata"
+        }
+      }
+    },
+    "drawingTimeAnchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timestamp",
+        "granularity"
+      ],
+      "properties": {
+        "timestamp": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/safeInteger"
+        },
+        "granularity": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/period"
+        }
+      }
+    },
+    "timeValuePoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timestamp",
+        "granularity",
+        "value"
+      ],
+      "properties": {
+        "timestamp": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/safeInteger"
+        },
+        "granularity": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/period"
+        },
+        "value": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/finiteNumber"
+        }
+      }
+    },
+    "geometryValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "value": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/finiteNumber"
+        }
+      }
+    },
+    "geometryValueText": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "text"
+      ],
+      "properties": {
+        "value": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/finiteNumber"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      }
+    },
+    "geometryTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "time"
+      ],
+      "properties": {
+        "time": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/safeInteger"
+        }
+      }
+    },
+    "geometryValueSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "startTime",
+        "endTime"
+      ],
+      "properties": {
+        "value": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/finiteNumber"
+        },
+        "startTime": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/safeInteger"
+        },
+        "endTime": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/safeInteger"
+        }
+      }
+    },
+    "geometryTimeSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "time",
+        "startValue",
+        "endValue"
+      ],
+      "properties": {
+        "time": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/safeInteger"
+        },
+        "startValue": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/finiteNumber"
+        },
+        "endValue": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/finiteNumber"
+        }
+      }
+    },
+    "geometryTwoPoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "points"
+      ],
+      "properties": {
+        "points": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/timeValuePoint"
+          }
+        }
+      }
+    },
+    "geometryThreePoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "points"
+      ],
+      "properties": {
+        "points": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/timeValuePoint"
+          }
+        }
+      }
+    },
+    "geometryBrushPoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "points"
+      ],
+      "properties": {
+        "points": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/timeValuePoint"
+          }
+        }
+      }
+    },
+    "geometryPointText": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "point",
+        "text"
+      ],
+      "properties": {
+        "point": {
+          "$ref": "#/$defs/timeValuePoint"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      }
+    },
+    "geometryPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "point"
+      ],
+      "properties": {
+        "point": {
+          "$ref": "#/$defs/timeValuePoint"
+        }
+      }
+    },
+    "geometryStartEnd": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end"
+      ],
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/timeValuePoint"
+        },
+        "end": {
+          "$ref": "#/$defs/timeValuePoint"
+        }
+      }
+    },
+    "drawing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "target",
+        "visible",
+        "locked",
+        "zLevel",
+        "mode",
+        "styles",
+        "type",
+        "geometry"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/stableId"
+        },
+        "groupId": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/stableId"
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "zLevel": {
+          "type": "integer",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "mode": {
+          "enum": [
+            "normal",
+            "weak_magnet",
+            "strong_magnet"
+          ]
+        },
+        "styles": {
+          "$ref": "#/$defs/drawingStyles"
+        },
+        "metadata": {
+          "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/metadata"
+        },
+        "type": {
+          "enum": [
+            "horizontalStraightLine",
+            "priceLine",
+            "simpleTag",
+            "verticalStraightLine",
+            "horizontalRayLine",
+            "horizontalSegment",
+            "verticalRayLine",
+            "verticalSegment",
+            "rayLine",
+            "segment",
+            "straightLine",
+            "fibonacciLine",
+            "priceChannelLine",
+            "parallelStraightLine",
+            "brush",
+            "simpleAnnotation",
+            "callout",
+            "text",
+            "crossLine",
+            "rectangle",
+            "arrow",
+            "priceMeasurement"
+          ]
+        },
+        "geometry": {
+          "type": "object"
+        }
+      },
+      "oneOf": [
+        {
+          "title": "DrawingHorizontalStraightLine",
+          "properties": {
+            "type": {
+              "const": "horizontalStraightLine"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryValue"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingPriceLine",
+          "properties": {
+            "type": {
+              "const": "priceLine"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryValue"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingSimpleTag",
+          "properties": {
+            "type": {
+              "const": "simpleTag"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryValueText"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingVerticalStraightLine",
+          "properties": {
+            "type": {
+              "const": "verticalStraightLine"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryTime"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingHorizontalRayLine",
+          "properties": {
+            "type": {
+              "const": "horizontalRayLine"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryValueSpan"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingHorizontalSegment",
+          "properties": {
+            "type": {
+              "const": "horizontalSegment"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryValueSpan"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingVerticalRayLine",
+          "properties": {
+            "type": {
+              "const": "verticalRayLine"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryTimeSpan"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingVerticalSegment",
+          "properties": {
+            "type": {
+              "const": "verticalSegment"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryTimeSpan"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingRayLine",
+          "properties": {
+            "type": {
+              "const": "rayLine"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryTwoPoints"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingSegment",
+          "properties": {
+            "type": {
+              "const": "segment"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryTwoPoints"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingStraightLine",
+          "properties": {
+            "type": {
+              "const": "straightLine"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryTwoPoints"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingFibonacciLine",
+          "properties": {
+            "type": {
+              "const": "fibonacciLine"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryTwoPoints"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingPriceChannelLine",
+          "properties": {
+            "type": {
+              "const": "priceChannelLine"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryThreePoints"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingParallelStraightLine",
+          "properties": {
+            "type": {
+              "const": "parallelStraightLine"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryThreePoints"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingBrush",
+          "properties": {
+            "type": {
+              "const": "brush"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryBrushPoints"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingSimpleAnnotation",
+          "properties": {
+            "type": {
+              "const": "simpleAnnotation"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryPointText"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingCallout",
+          "properties": {
+            "type": {
+              "const": "callout"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryPointText"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingText",
+          "properties": {
+            "type": {
+              "const": "text"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryPointText"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingCrossLine",
+          "properties": {
+            "type": {
+              "const": "crossLine"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryPoint"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingRectangle",
+          "properties": {
+            "type": {
+              "const": "rectangle"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryStartEnd"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingArrow",
+          "properties": {
+            "type": {
+              "const": "arrow"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryStartEnd"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        },
+        {
+          "title": "DrawingPriceMeasurement",
+          "properties": {
+            "type": {
+              "const": "priceMeasurement"
+            },
+            "geometry": {
+              "$ref": "#/$defs/geometryStartEnd"
+            }
+          },
+          "required": [
+            "type",
+            "geometry"
+          ]
+        }
+      ]
+    }
+  }
+} as const;
+
+export const DrawableWorkspaceSchema = {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://baron.dev/kline-scene/drawable-workspace.schema.json",
+  "title": "DrawableWorkspaceDocument",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "runtime",
+    "scene",
+    "drawings",
+    "binding",
+    "metadata"
+  ],
+  "properties": {
+    "schema": {
+      "const": "@baron1996/drawable-workspace"
+    },
+    "version": {
+      "const": 1
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine",
+        "engineVersion",
+        "workspaceRuntimeVersion"
+      ],
+      "properties": {
+        "engine": {
+          "const": "klinecharts"
+        },
+        "engineVersion": {
+          "const": "10.0.0"
+        },
+        "workspaceRuntimeVersion": {
+          "const": "1.0.0"
+        }
+      }
+    },
+    "scene": {
+      "oneOf": [
+        {
+          "title": "ChartWorkspaceScene",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "document"
+          ],
+          "properties": {
+            "kind": {
+              "const": "chart"
+            },
+            "document": {
+              "$ref": "https://baron.dev/kline-scene/chart-scene.schema.json"
+            }
+          }
+        },
+        {
+          "title": "TimeSeriesWorkspaceScene",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "document"
+          ],
+          "properties": {
+            "kind": {
+              "const": "time-series"
+            },
+            "document": {
+              "$ref": "https://baron.dev/kline-scene/time-series-scene.schema.json"
+            }
+          }
+        }
+      ]
+    },
+    "drawings": {
+      "$ref": "https://baron.dev/kline-scene/drawing-document.schema.json"
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scopeKey",
+        "timezone",
+        "valueAxes"
+      ],
+      "properties": {
+        "scopeKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "timezone": {
+          "$ref": "https://baron.dev/kline-scene/drawing-document.schema.json#/$defs/timezone"
+        },
+        "valueAxes": {
+          "$ref": "https://baron.dev/kline-scene/drawing-document.schema.json#/$defs/valueAxes"
+        }
+      }
+    },
+    "metadata": {
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/metadata"
     }
   }
 } as const;
@@ -1236,7 +2226,7 @@ export const TimeSeriesSceneSchema = {
       "$ref": "https://baron.dev/kline-scene/time-series-runtime.schema.json"
     },
     "period": {
-      "$ref": "#/$defs/timeSeriesPeriod"
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/period"
     },
     "series": {
       "type": "array",
@@ -1268,32 +2258,6 @@ export const TimeSeriesSceneSchema = {
     }
   },
   "$defs": {
-    "timeSeriesPeriod": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "span",
-        "type"
-      ],
-      "properties": {
-        "span": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 100000
-        },
-        "type": {
-          "enum": [
-            "second",
-            "minute",
-            "hour",
-            "day",
-            "week",
-            "month",
-            "year"
-          ]
-        }
-      }
-    },
     "timeSeriesDefinition": {
       "type": "object",
       "additionalProperties": false,

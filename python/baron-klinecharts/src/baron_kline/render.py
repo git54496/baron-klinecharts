@@ -15,6 +15,12 @@ from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
+from .drawing_models import DrawableWorkspaceDocument
+from .drawing_validation import (
+    DrawableWorkspaceError,
+    canonical_drawable_workspace_bytes,
+    validate_drawable_workspace,
+)
 from .errors import SceneError, TimeSeriesSceneError
 from .io import write_bytes_atomic
 from .models import ChartScene, TimeSeriesScene
@@ -74,6 +80,43 @@ def build_time_series_standalone_html(
     return template.replace(SCENE_BASE64_PLACEHOLDER, encoded)
 
 
+def _workspace_dict(
+    workspace: DrawableWorkspaceDocument | dict[str, Any],
+) -> dict[str, Any]:
+    return (
+        workspace.to_dict()
+        if isinstance(workspace, DrawableWorkspaceDocument)
+        else validate_drawable_workspace(workspace)
+    )
+
+
+def build_drawable_workspace_standalone_html(
+    workspace: DrawableWorkspaceDocument | dict[str, Any],
+) -> str:
+    template = runtime_template_bytes().decode("utf-8")
+    if template.count(SCENE_BASE64_PLACEHOLDER) != 1:
+        raise RuntimeError(
+            "Standalone HTML template must contain exactly one Scene placeholder."
+        )
+    encoded = base64.b64encode(
+        canonical_drawable_workspace_bytes(_workspace_dict(workspace))
+    ).decode("ascii")
+    return template.replace(SCENE_BASE64_PLACEHOLDER, encoded)
+
+
+def render_drawable_workspace_html(
+    workspace: DrawableWorkspaceDocument | dict[str, Any],
+    output_path: str | Path,
+    *,
+    force: bool = False,
+) -> None:
+    write_bytes_atomic(
+        output_path,
+        build_drawable_workspace_standalone_html(workspace).encode("utf-8"),
+        force=force,
+    )
+
+
 def render_scene_html(
     scene: ChartScene | dict[str, Any],
     output_path: str | Path,
@@ -122,6 +165,22 @@ def _time_series_render_failed() -> TimeSeriesSceneError:
         "TIME_SERIES_RENDER_FAILED",
         "/render",
         "Time Series browser rendering failed.",
+    )
+
+
+def _workspace_render_timeout(timeout_ms: int) -> DrawableWorkspaceError:
+    return DrawableWorkspaceError(
+        "RENDER_TIMEOUT",
+        "/render/timeoutMs",
+        f"DrawableWorkspace rendering did not finish within {timeout_ms}ms.",
+    )
+
+
+def _workspace_render_failed() -> DrawableWorkspaceError:
+    return DrawableWorkspaceError(
+        "RENDER_FAILED",
+        "/render",
+        "DrawableWorkspace browser rendering failed.",
     )
 
 
@@ -223,6 +282,135 @@ def render_scene_png(
                     "Run `python -m playwright install chromium`.",
                 ) from error
             raise
+
+    target = Path(output_path).resolve()
+    if target.exists() and not force:
+        raise FileExistsError(f"Output already exists: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.parent / (
+        f".{target.name}.{os.getpid()}.{secrets.token_hex(8)}.render.tmp"
+    )
+    try:
+        write_temporary(temporary)
+        if target.exists() and not force:
+            raise FileExistsError(f"Output was created concurrently: {target}")
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def render_drawable_workspace_png(
+    workspace: DrawableWorkspaceDocument | dict[str, Any],
+    output_path: str | Path,
+    *,
+    force: bool = False,
+) -> None:
+    parsed = _workspace_dict(workspace)
+    scene = parsed["scene"]["document"]
+
+    def write_temporary(temporary_path: Path) -> None:
+        try:
+            with sync_playwright() as playwright:
+                try:
+                    browser = playwright.chromium.launch(headless=True)
+                except PlaywrightError as error:
+                    if _is_missing_browser(error):
+                        raise DrawableWorkspaceError(
+                            "BROWSER_NOT_INSTALLED",
+                            "/render",
+                            "Pinned Playwright Chromium is not installed. "
+                            "Run `python -m playwright install chromium`.",
+                        ) from error
+                    raise
+                try:
+                    context = browser.new_context(
+                        viewport={
+                            "width": scene["render"]["width"],
+                            "height": scene["render"]["height"],
+                        },
+                        device_scale_factor=scene["render"]["deviceScaleFactor"],
+                        locale=scene["chart"]["locale"],
+                        timezone_id=scene["chart"]["timezone"],
+                        offline=True,
+                        service_workers="block",
+                        reduced_motion="reduce",
+                    )
+                    try:
+                        page = context.new_page()
+                        page.set_content(
+                            build_drawable_workspace_standalone_html(parsed),
+                            wait_until="load",
+                        )
+                        deadline = (
+                            time.monotonic()
+                            + scene["render"]["timeoutMs"] / 1000
+                        )
+                        try:
+                            page.wait_for_function(
+                                "() => typeof window.__BARON_DRAWABLE_WORKSPACE__ "
+                                "!== 'undefined'",
+                                timeout=_remaining_deadline_ms(
+                                    deadline,
+                                    scene["render"]["timeoutMs"],
+                                ),
+                            )
+                            page.evaluate(
+                                """timeout => Promise.race([
+                                  window.__BARON_DRAWABLE_WORKSPACE__.ready,
+                                  new Promise((_, reject) => setTimeout(
+                                    () => reject(new Error('BARON_WORKSPACE_RENDER_TIMEOUT')),
+                                    timeout
+                                  ))
+                                ])""",
+                                _remaining_deadline_ms(
+                                    deadline,
+                                    scene["render"]["timeoutMs"],
+                                ),
+                            )
+                        except DrawableWorkspaceError:
+                            raise
+                        except PlaywrightTimeoutError as error:
+                            raise _workspace_render_timeout(
+                                scene["render"]["timeoutMs"]
+                            ) from error
+                        except PlaywrightError as error:
+                            if "BARON_WORKSPACE_RENDER_TIMEOUT" in str(error):
+                                raise _workspace_render_timeout(
+                                    scene["render"]["timeoutMs"]
+                                ) from error
+                            raise _workspace_render_failed() from error
+                        screenshot = page.locator(
+                            "[data-baron-render-root]"
+                        ).screenshot(
+                            type="png",
+                            animations="disabled",
+                            caret="hide",
+                            scale="device",
+                        )
+                        encoded = base64.b64encode(screenshot).decode("ascii")
+                        canonical = page.evaluate(
+                            "encoded => "
+                            "window.__BARON_DRAWABLE_WORKSPACE__.canonicalizePng(encoded)",
+                            encoded,
+                        )
+                        temporary_path.write_bytes(base64.b64decode(canonical))
+                        page.evaluate(
+                            "() => window.__BARON_DRAWABLE_WORKSPACE__.destroy()"
+                        )
+                    finally:
+                        context.close()
+                finally:
+                    browser.close()
+        except DrawableWorkspaceError:
+            raise
+        except PlaywrightError as error:
+            if _is_missing_browser(error):
+                raise DrawableWorkspaceError(
+                    "BROWSER_NOT_INSTALLED",
+                    "/render",
+                    "Pinned Playwright Chromium is not installed.",
+                ) from error
+            raise _workspace_render_failed() from error
 
     target = Path(output_path).resolve()
     if target.exists() and not force:

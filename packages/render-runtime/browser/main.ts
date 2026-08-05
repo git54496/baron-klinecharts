@@ -1,8 +1,10 @@
 import '@fontsource-variable/noto-sans-sc';
 import {
 	createKLineSceneRuntime,
+	createDrawableWorkspaceRuntime,
 	createStandardToolbar,
 	createTimeSeriesRuntime,
+	type DrawableWorkspaceRuntime,
 	type KLineSceneRuntime,
 	type TimeSeriesRuntime,
 } from '@baron1996/klinecharts-runtime';
@@ -50,8 +52,10 @@ function waitForInitialResizeObservation(target: Element): Promise<void> {
 	});
 }
 
-let runtime: KLineSceneRuntime | TimeSeriesRuntime | undefined;
+let sceneRuntime: KLineSceneRuntime | TimeSeriesRuntime | undefined;
+let workspaceRuntime: DrawableWorkspaceRuntime | undefined;
 let destroyToolbar: (() => void) | undefined;
+let isWorkspace = false;
 
 const ready = (async () => {
 	const scene = decodeScene();
@@ -62,19 +66,40 @@ const ready = (async () => {
 	}
 	const parsed = scene as {
 		schema?: unknown;
-		chart: { layout: { backgroundColor: string } };
-		render: { width: number; height: number; background: string };
+		scene?: {
+			document: {
+				chart: { layout: { backgroundColor: string } };
+				render: { width: number; height: number; background: string };
+			};
+		};
+		chart?: { layout: { backgroundColor: string } };
+		render?: { width: number; height: number; background: string };
 	};
-	renderRoot.style.width = `${parsed.render.width}px`;
-	renderRoot.style.height = `${parsed.render.height}px`;
-	renderRoot.style.backgroundColor = parsed.render.background;
-	document.body.style.backgroundColor = parsed.chart.layout.backgroundColor;
+	isWorkspace = parsed.schema === '@baron1996/drawable-workspace';
+	const renderConfig = isWorkspace
+		? parsed.scene!.document.render
+		: parsed.render!;
+	const chartConfig = isWorkspace
+		? parsed.scene!.document.chart
+		: parsed.chart!;
+	renderRoot.style.width = `${renderConfig.width}px`;
+	renderRoot.style.height = `${renderConfig.height}px`;
+	renderRoot.style.backgroundColor = renderConfig.background;
+	document.body.style.backgroundColor = chartConfig.layout.backgroundColor;
 	if (parsed.schema === '@baron1996/kline-scene') {
-		runtime = await createKLineSceneRuntime(renderRoot, scene);
-		const toolbar = createStandardToolbar(toolbarRoot, runtime);
+		sceneRuntime = await createKLineSceneRuntime(renderRoot, scene);
+		const toolbar = createStandardToolbar(toolbarRoot, sceneRuntime);
 		destroyToolbar = () => toolbar.destroy();
 	} else if (parsed.schema === '@baron1996/time-series-scene') {
-		runtime = await createTimeSeriesRuntime(renderRoot, scene);
+		sceneRuntime = await createTimeSeriesRuntime(renderRoot, scene);
+	} else if (isWorkspace) {
+		workspaceRuntime = await createDrawableWorkspaceRuntime(renderRoot, scene, {
+			commitMode: 'immediate',
+		});
+		const toolbar = createStandardToolbar(toolbarRoot, workspaceRuntime, {
+			mainSeriesPresentationControl: 'enabled',
+		});
+		destroyToolbar = () => toolbar.destroy();
 	} else {
 		throw new Error('Standalone HTML contains an unsupported Scene schema.');
 	}
@@ -92,21 +117,42 @@ const ready = (async () => {
 	await nextAnimationFrame();
 })();
 
-window.__BARON_KLINE_SCENE__ = {
-	ready,
-	canonicalizePng(encoded) {
-		return encodeBase64(canonicalizePng(decodeBase64(encoded)));
-	},
-	exportScene() {
-		if (runtime === undefined) {
-			throw new Error('Scene Runtime is not ready.');
-		}
-		return runtime.exportScene();
-	},
-	destroy() {
-		destroyToolbar?.();
-		destroyToolbar = undefined;
-		runtime?.destroy();
-		runtime = undefined;
-	},
-};
+if (isWorkspace) {
+	window.__BARON_DRAWABLE_WORKSPACE__ = {
+		ready,
+		canonicalizePng(encoded) {
+			return encodeBase64(canonicalizePng(decodeBase64(encoded)));
+		},
+		exportWorkspace() {
+			if (workspaceRuntime === undefined) {
+				throw new Error('Workspace Runtime is not ready.');
+			}
+			return workspaceRuntime.exportWorkspace();
+		},
+		destroy() {
+			destroyToolbar?.();
+			destroyToolbar = undefined;
+			workspaceRuntime?.destroy();
+			workspaceRuntime = undefined;
+		},
+	};
+} else {
+	window.__BARON_KLINE_SCENE__ = {
+		ready,
+		canonicalizePng(encoded) {
+			return encodeBase64(canonicalizePng(decodeBase64(encoded)));
+		},
+		exportScene() {
+			if (sceneRuntime === undefined) {
+				throw new Error('Scene Runtime is not ready.');
+			}
+			return sceneRuntime.exportScene();
+		},
+		destroy() {
+			destroyToolbar?.();
+			destroyToolbar = undefined;
+			sceneRuntime?.destroy();
+			sceneRuntime = undefined;
+		},
+	};
+}

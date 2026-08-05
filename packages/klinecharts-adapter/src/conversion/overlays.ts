@@ -55,7 +55,7 @@ function toLineStyle(style: SceneOverlay['styles']['line']) {
 	};
 }
 
-function toOverlayStyles(styles: SceneOverlay['styles']): DeepPartial<OverlayStyle> {
+export function toOverlayStyles(styles: SceneOverlay['styles']): DeepPartial<OverlayStyle> {
 	const borderStyle = styles.line.style === 'solid' ? 'solid' as const : 'dashed' as const;
 	const borderDashedValue = styles.line.style === 'dotted' ? [1, 2] : [4, 4];
 	return {

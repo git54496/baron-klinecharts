@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://baron.dev/kline-scene/drawable-workspace.schema.json",
+  "title": "DrawableWorkspaceDocument",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "runtime",
+    "scene",
+    "drawings",
+    "binding",
+    "metadata"
+  ],
+  "properties": {
+    "schema": {
+      "const": "@baron1996/drawable-workspace"
+    },
+    "version": {
+      "const": 1
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine",
+        "engineVersion",
+        "workspaceRuntimeVersion"
+      ],
+      "properties": {
+        "engine": {
+          "const": "klinecharts"
+        },
+        "engineVersion": {
+          "const": "10.0.0"
+        },
+        "workspaceRuntimeVersion": {
+          "const": "1.0.0"
+        }
+      }
+    },
+    "scene": {
+      "oneOf": [
+        {
+          "title": "ChartWorkspaceScene",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "document"
+          ],
+          "properties": {
+            "kind": {
+              "const": "chart"
+            },
+            "document": {
+              "$ref": "https://baron.dev/kline-scene/chart-scene.schema.json"
+            }
+          }
+        },
+        {
+          "title": "TimeSeriesWorkspaceScene",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "document"
+          ],
+          "properties": {
+            "kind": {
+              "const": "time-series"
+            },
+            "document": {
+              "$ref": "https://baron.dev/kline-scene/time-series-scene.schema.json"
+            }
+          }
+        }
+      ]
+    },
+    "drawings": {
+      "$ref": "https://baron.dev/kline-scene/drawing-document.schema.json"
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scopeKey",
+        "timezone",
+        "valueAxes"
+      ],
+      "properties": {
+        "scopeKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "timezone": {
+          "$ref": "https://baron.dev/kline-scene/drawing-document.schema.json#/$defs/timezone"
+        },
+        "valueAxes": {
+          "$ref": "https://baron.dev/kline-scene/drawing-document.schema.json#/$defs/valueAxes"
+        }
+      }
+    },
+    "metadata": {
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/metadata"
+    }
+  }
+}

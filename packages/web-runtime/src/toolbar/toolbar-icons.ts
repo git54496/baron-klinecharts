@@ -171,6 +171,19 @@ const ICON_SPECS = {
 			attributes: { d: 'M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3' },
 		},
 	],
+	clearAll: [
+		{ name: 'path', attributes: { d: 'M4 7l16 0' } },
+		{ name: 'path', attributes: { d: 'M10 11l4 4' } },
+		{ name: 'path', attributes: { d: 'M14 11l-4 4' } },
+		{
+			name: 'path',
+			attributes: { d: 'M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12' },
+		},
+		{
+			name: 'path',
+			attributes: { d: 'M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3' },
+		},
+	],
 	fileExport: [
 		{ name: 'path', attributes: { d: 'M14 3v4a1 1 0 0 0 1 1h4' } },
 		{

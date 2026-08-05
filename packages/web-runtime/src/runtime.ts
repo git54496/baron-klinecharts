@@ -1,6 +1,7 @@
-import type {
-	ChartScene,
-	SceneOverlay,
+import {
+	serializeCanonicalScene,
+	type ChartScene,
+	type SceneOverlay,
 } from '@baron1996/kline-scene-schema';
 import {
 	parseChartScene,
@@ -8,12 +9,27 @@ import {
 } from '@baron1996/kline-scene-schema';
 import {
 	KLineChartsSceneAdapter,
+	STANDARD_CLOSE_LINE_PRESENTATION,
+	SUPPORTED_OVERLAYS,
+	type ActiveMainSeriesType,
 	type AdapterSceneEvent,
+	type EngineDrawingSnapshot,
+	type EnginePixelCoordinate,
+	type MainSeriesPresentation,
 	type OverlayHitResult,
 	type OverlayDrawingRequest,
 	type PixelCoordinate,
 } from '@baron1996/klinecharts-adapter';
 
+import type {
+	DrawingRuntimeCapability,
+	RuntimeAuxiliaryCapability,
+} from './drawing/capabilities.js';
+import { overlayToDrawingSnapshot } from './drawing/legacy-runtime-capability.js';
+import type {
+	HostActionDescriptor,
+	RuntimeCapabilityDescriptor,
+} from './drawing/runtime-capability-descriptor.js';
 import { RuntimeEventBus } from './events.js';
 import { runRuntimeTeardowns } from './lifecycle.js';
 import type {
@@ -56,7 +72,7 @@ function toRuntimeEvent(event: AdapterSceneEvent): KLineSceneRuntimeEvent {
  * 面向 Web、离线 HTML 和测试渲染器的纯场景 Runtime。
  * 该类没有撤销/重做栈，也不公开 KLineCharts Chart 实例。
  */
-export class KLineSceneRuntime {
+export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxiliaryCapability {
 	/** 唯一引擎 Adapter。 */
 	readonly #adapter: KLineChartsSceneAdapter;
 	/** Runtime 事件总线。 */
@@ -91,6 +107,9 @@ export class KLineSceneRuntime {
 			this.#events.emit(toRuntimeEvent(event));
 		});
 	}
+
+	readonly #defaultFileName = 'kline-scene.json';
+
 
 	public static async create(
 		container: HTMLElement,
@@ -194,6 +213,145 @@ export class KLineSceneRuntime {
 			),
 		};
 		return this.#adapter.startOverlayDrawing(request);
+	}
+
+	public getRuntimeCapabilityDescriptor(
+		options: Readonly<{ readonly hostActions?: readonly HostActionDescriptor[] }> = {},
+	): RuntimeCapabilityDescriptor {
+		const scene = this.getScene();
+		const pane = scene.panes.find((candidate) => candidate.kind === 'candle');
+		const primaryAxis = pane?.yAxes.find((axis) => axis.role === 'primary');
+		const supportedScales = scene.runtime.runtimeVersion === '0.2.0'
+			? ['linear', 'logarithmic'] as const
+			: ['linear'] as const;
+		return {
+			drawingTypes: [...SUPPORTED_OVERLAYS],
+			valueAxis: {
+				supportedScales,
+				activeScale: primaryAxis?.scale ?? 'linear',
+				mutable: true,
+			},
+			exportArtifact: {
+				kind: 'chart-scene',
+				mediaType: 'application/json',
+				defaultFileName: this.#defaultFileName,
+			},
+			hostActions: options.hostActions ?? [],
+			mainSeriesPresentation: {
+				presentations: [
+					{ type: 'candle_solid' },
+					{ type: 'candle_stroke' },
+					{ type: 'candle_up_stroke' },
+					{ type: 'candle_down_stroke' },
+					{ type: 'ohlc' },
+					STANDARD_CLOSE_LINE_PRESENTATION,
+				],
+				activeType: scene.chart.candle.type as ActiveMainSeriesType,
+				mutable: true,
+			},
+		};
+	}
+
+	public setValueAxisScale(scale: PriceScale): Promise<ChartScene> {
+		return this.setPriceScale(scale);
+	}
+
+	public setMainSeriesPresentation(
+		presentation: MainSeriesPresentation,
+	): { readonly activeType: string } {
+		return this.#adapter.applyMainSeriesPresentation(presentation);
+	}
+
+	public startDrawing(
+		type: SupportedOverlayType,
+		options?: Omit<StartOverlayDrawingOptions, 'paneId' | 'text'> & { readonly text?: string },
+	): string {
+		const resolved = options === undefined
+			? {}
+			: options;
+		return this.startOverlayDrawing(type, resolved);
+	}
+
+	public listDrawings(): readonly EngineDrawingSnapshot[] {
+		return this.listOverlays().map((overlay) =>
+			overlayToDrawingSnapshot(overlay, this.getScene().period),
+		);
+	}
+
+	public getDrawing(id: string): EngineDrawingSnapshot | undefined {
+		const overlay = this.getOverlay(id);
+		return overlay === undefined
+			? undefined
+			: overlayToDrawingSnapshot(overlay, this.getScene().period);
+	}
+
+	public updateDrawingStyles(
+		id: string,
+		styles: SceneOverlay['styles'],
+	): EngineDrawingSnapshot {
+		return overlayToDrawingSnapshot(
+			this.updateOverlayStyles(id, styles),
+			this.getScene().period,
+		);
+	}
+
+	public updateDrawingText(id: string, text: string): EngineDrawingSnapshot {
+		const overlay = this.getOverlay(id);
+		if (overlay === undefined) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				`/overlays/${id}`,
+				`Overlay ${id} does not exist.`,
+			);
+		}
+		if (
+			overlay.type !== 'simpleTag' &&
+			overlay.type !== 'simpleAnnotation' &&
+			overlay.type !== 'callout' &&
+			overlay.type !== 'text'
+		) {
+			throw new SceneError(
+				'SCENE_SCHEMA_INVALID',
+				`/overlays/${id}/text`,
+				'Text updates are only supported on text Drawing types.',
+			);
+		}
+		return overlayToDrawingSnapshot(
+			this.updateOverlay({ ...overlay, text }),
+			this.getScene().period,
+		);
+	}
+
+	public removeDrawing(id: string): boolean {
+		return this.removeOverlay(id);
+	}
+
+	public requestDrawingDelete(id: string): void {
+		this.requestOverlayDelete(id);
+	}
+
+	public getSelectedDrawingId(): string | undefined {
+		return this.getSelectedOverlayId();
+	}
+
+	public selectDrawing(id: string | null): void {
+		this.#adapter.selectDrawing(id);
+	}
+
+	public hitTestDrawing(point: EnginePixelCoordinate): string | null {
+		return this.#adapter.hitTestOverlay(point)?.overlayId ?? null;
+	}
+
+	public exportArtifact(fileName = this.#defaultFileName): {
+		bytes: Uint8Array;
+		mediaType: 'application/json';
+		fileName: string;
+	} {
+		return {
+			bytes: serializeCanonicalScene(this.exportScene()),
+			mediaType: 'application/json',
+			fileName,
+		};
 	}
 
 	public addOverlay(overlay: SceneOverlay): SceneOverlay {

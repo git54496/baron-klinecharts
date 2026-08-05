@@ -250,4 +250,22 @@ export const STANDARD_TOOLBAR_STYLES = String.raw`
 		transition: none;
 	}
 }
+
+.baron-kline-context-menu {
+	position: fixed;
+	z-index: 1000;
+	display: none;
+	flex-direction: column;
+	gap: 8px;
+	min-width: 180px;
+	padding: 10px;
+	border: 1px solid rgba(203, 210, 224, 1);
+	border-radius: 10px;
+	background: rgba(255, 255, 255, 0.98);
+	box-shadow: 0 12px 32px rgba(23, 32, 51, 0.16);
+}
+
+.baron-kline-context-menu--visible {
+	display: flex;
+}
 `;

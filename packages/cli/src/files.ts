@@ -10,7 +10,12 @@ import {
 } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 
-import { parseChartScene, type ChartScene } from '@baron1996/kline-scene-schema';
+import {
+	parseChartScene,
+	parseDrawableWorkspaceDocument,
+	type ChartScene,
+	type DrawableWorkspaceDocument,
+} from '@baron1996/kline-scene-schema';
 
 import { CliError } from './errors.js';
 
@@ -34,6 +39,13 @@ export async function readJsonFile(path: string): Promise<unknown> {
 
 export async function readSceneFile(path: string): Promise<ChartScene> {
 	return parseChartScene(await readJsonFile(path));
+}
+
+/** 显式读取并校验 DrawableWorkspaceDocument；raw Scene 在此失败而非猜测解析。 */
+export async function readWorkspaceFile(
+	path: string,
+): Promise<DrawableWorkspaceDocument> {
+	return parseDrawableWorkspaceDocument(await readJsonFile(path));
 }
 
 export function assertDistinctInputOutput(inputPath: string, outputPath: string): void {

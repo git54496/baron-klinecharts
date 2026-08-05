@@ -4,6 +4,30 @@ from .errors import (
     TimeSeriesSceneError,
     TimeSeriesSceneIssue,
 )
+from .drawing_validation import (
+    DrawableWorkspaceError,
+    DrawableWorkspaceIssue,
+    DrawingDocumentError,
+    DrawingDocumentIssue,
+    canonical_drawable_workspace_bytes,
+    canonical_drawable_workspace_json,
+    canonical_drawing_document_bytes,
+    canonical_drawing_document_json,
+    hash_canonical_drawable_workspace,
+    hash_canonical_drawing_document,
+    normalize_decimal_value,
+)
+from .drawing_models import (
+    DrawableWorkspaceDocument,
+    DrawingDocument,
+)
+from .drawing_io import (
+    load_drawable_workspace,
+    load_drawing_document,
+    save_drawable_workspace,
+    save_drawing_document,
+)
+from .drawing_collections import DrawingCollection
 from .io import (
     load_scene,
     load_time_series_scene,
@@ -20,9 +44,12 @@ from .models import (
     TimeSeriesScene,
 )
 from .render import (
+    build_drawable_workspace_standalone_html,
     build_standalone_html,
     build_time_series_standalone_html,
     install_browser,
+    render_drawable_workspace_html,
+    render_drawable_workspace_png,
     render_scene_html,
     render_scene_png,
     render_time_series_scene_html,
@@ -42,7 +69,15 @@ from .validation import (
 
 __all__ = [
     "ChartScene",
+    "DrawableWorkspaceDocument",
+    "DrawableWorkspaceError",
+    "DrawableWorkspaceIssue",
+    "DrawingCollection",
+    "DrawingDocument",
+    "DrawingDocumentError",
+    "DrawingDocumentIssue",
     "MarketData",
+    "normalize_decimal_value",
     "RuntimeIdentity",
     "SceneData",
     "SceneError",
@@ -54,18 +89,31 @@ __all__ = [
     "TimeSeriesSceneIssue",
     "canonical_scene_bytes",
     "canonical_scene_json",
+    "canonical_drawable_workspace_bytes",
+    "canonical_drawable_workspace_json",
+    "canonical_drawing_document_bytes",
+    "canonical_drawing_document_json",
     "hash_canonical_scene",
+    "hash_canonical_drawable_workspace",
+    "hash_canonical_drawing_document",
     "build_standalone_html",
+    "build_drawable_workspace_standalone_html",
     "build_time_series_standalone_html",
     "install_browser",
     "load_scene",
+    "load_drawable_workspace",
+    "load_drawing_document",
     "load_time_series_scene",
     "render_scene_html",
     "render_scene_png",
+    "render_drawable_workspace_html",
+    "render_drawable_workspace_png",
     "render_time_series_scene_html",
     "render_time_series_scene_png",
     "runtime_template_bytes",
     "save_scene",
+    "save_drawable_workspace",
+    "save_drawing_document",
     "save_time_series_scene",
     "validate_scene",
     "validate_time_series_scene",
@@ -74,4 +122,4 @@ __all__ = [
     "hash_canonical_time_series_scene",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

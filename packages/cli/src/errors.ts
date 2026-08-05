@@ -1,4 +1,8 @@
-import { SceneError } from '@baron1996/kline-scene-schema';
+import {
+	DrawableWorkspaceError,
+	DrawingDocumentError,
+	SceneError,
+} from '@baron1996/kline-scene-schema';
 
 export type CliErrorCode =
 	| 'CLI_ARGUMENT_INVALID'
@@ -33,6 +37,17 @@ export interface SerializedCliError {
 
 export function serializeCliError(error: unknown): SerializedCliError {
 	if (error instanceof SceneError) {
+		return {
+			code: error.code,
+			path: error.path,
+			message: error.message,
+			issues: error.issues,
+		};
+	}
+	if (
+		error instanceof DrawableWorkspaceError ||
+		error instanceof DrawingDocumentError
+	) {
 		return {
 			code: error.code,
 			path: error.path,

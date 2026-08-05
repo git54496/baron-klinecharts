@@ -59,7 +59,23 @@ export interface ChartConfig {
 		fontSize: number;
 	};
 	candle: {
-		type: 'candle_solid' | 'candle_stroke' | 'candle_up_stroke' | 'candle_down_stroke' | 'ohlc';
+		type:
+			| 'candle_solid'
+			| 'candle_stroke'
+			| 'candle_up_stroke'
+			| 'candle_down_stroke'
+			| 'ohlc'
+			| 'area';
+		area?: {
+			value: 'close';
+			line: {
+				color: 'rgba(41, 98, 255, 1)';
+				size: 2;
+			};
+			backgroundColor: 'rgba(0, 0, 0, 0)';
+			smooth: false;
+			pointVisible: false;
+		};
 		upColor: string;
 		downColor: string;
 		noChangeColor: string;

@@ -79,8 +79,50 @@
             "candle_stroke",
             "candle_up_stroke",
             "candle_down_stroke",
-            "ohlc"
+            "ohlc",
+            "area"
           ]
+        },
+        "area": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "line",
+            "backgroundColor",
+            "smooth",
+            "pointVisible"
+          ],
+          "properties": {
+            "value": {
+              "const": "close"
+            },
+            "line": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "color",
+                "size"
+              ],
+              "properties": {
+                "color": {
+                  "const": "rgba(41, 98, 255, 1)"
+                },
+                "size": {
+                  "const": 2
+                }
+              }
+            },
+            "backgroundColor": {
+              "const": "rgba(0, 0, 0, 0)"
+            },
+            "smooth": {
+              "const": false
+            },
+            "pointVisible": {
+              "const": false
+            }
+          }
         },
         "upColor": {
           "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
@@ -108,6 +150,31 @@
         },
         "noChangeWickColor": {
           "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/rgbaColor"
+        }
+      },
+      "if": {
+        "properties": {
+          "type": {
+            "const": "area"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "required": [
+          "area"
+        ],
+        "properties": {
+          "area": true
+        }
+      },
+      "else": {
+        "not": {
+          "required": [
+            "area"
+          ]
         }
       }
     },
