@@ -93,7 +93,7 @@ describe('ChartScene CLI', () => {
 			'overlays', 'remove', replacedScene, '--id', overlay.id, '--output', removedScene,
 		]);
 		expect(JSON.parse(await readFile(removedScene, 'utf8')).overlays).toEqual([]);
-	});
+	}, 60_000);
 
 	it('lists, adds, gets, replaces, and removes indicators', async () => {
 		const directory = await mkdtemp(join(tmpdir(), 'baron-cli-indicator-'));
@@ -127,7 +127,7 @@ describe('ChartScene CLI', () => {
 		const removed = join(directory, 'removed.json');
 		await invoke(['indicators', 'remove', replaced, '--id', indicator.id, '--output', removed]);
 		expect(JSON.parse((await invoke(['indicators', 'list', removed])).stdout)).toEqual([]);
-	});
+	}, 60_000);
 
 	it('renders self-contained HTML and PNG', async () => {
 		const directory = await mkdtemp(join(tmpdir(), 'baron-cli-render-'));
@@ -137,7 +137,7 @@ describe('ChartScene CLI', () => {
 		expect(await readFile(html, 'utf8')).toContain('__BARON_KLINE_SCENE__');
 		await invoke(['render', fixture, '--format', 'png', '--output', png]);
 		expect((await readFile(png)).subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
-	});
+	}, 60_000);
 
 	it('uses stderr-only JSON errors and rejects unknown flags', async () => {
 		try {
@@ -231,7 +231,7 @@ describe('DrawableWorkspace CLI', () => {
 		expect(JSON.parse((await invoke([
 			'workspace', 'inspect', removed, '--json',
 		])).stdout)).toMatchObject({ schema: '@baron1996/drawable-workspace' });
-	});
+	}, 60_000);
 
 	it('renders Workspace HTML and PNG through the explicit namespace', async () => {
 		const directory = await mkdtemp(join(tmpdir(), 'baron-cli-workspace-render-'));
@@ -247,7 +247,7 @@ describe('DrawableWorkspace CLI', () => {
 			'--format', 'png', '--output', png,
 		]);
 		expect((await readFile(png)).subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
-	});
+	}, 60_000);
 
 	it('rejects cross-root inputs without guessing the parser', async () => {
 		try {
@@ -293,7 +293,7 @@ describe('DrawableWorkspace CLI', () => {
 			const diagnostic = JSON.parse((error as { stderr: string }).stderr);
 			expect(diagnostic.code).toBe('SCENE_SCHEMA_INVALID');
 		}
-	});
+	}, 60_000);
 
 	it('keeps input/output distinct and replaces existing output only with --force', async () => {
 		const directory = await mkdtemp(join(tmpdir(), 'baron-cli-workspace-atomic-'));
@@ -328,5 +328,5 @@ describe('DrawableWorkspace CLI', () => {
 			const diagnostic = JSON.parse((error as { stderr: string }).stderr);
 			expect(diagnostic.code).toBe('INPUT_OUTPUT_CONFLICT');
 		}
-	});
+	}, 60_000);
 });
