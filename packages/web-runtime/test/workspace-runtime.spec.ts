@@ -216,6 +216,34 @@ async function makeRuntime(
 	return { runtime, events };
 }
 
+/** 轮询等待指定类型事件；candidate 依赖异步 digest，不能只用单次宏任务。 */
+async function waitForEvent(
+	events: readonly WorkspaceRuntimeEvent[],
+	type: WorkspaceRuntimeEvent['type'],
+): Promise<WorkspaceRuntimeEvent | undefined> {
+	for (let attempt = 0; attempt < 50; attempt += 1) {
+		const event = events.find((candidate) => candidate.type === type);
+		if (event !== undefined) {
+			return event;
+		}
+		await new Promise<void>((resolve) => setTimeout(resolve, 10));
+	}
+	return undefined;
+}
+
+async function waitForDrawing(
+	runtime: { listDrawings(): readonly { readonly id: string }[] },
+	id: string,
+): Promise<boolean> {
+	for (let attempt = 0; attempt < 50; attempt += 1) {
+		if (runtime.listDrawings().some((drawing) => drawing.id === id)) {
+			return true;
+		}
+		await new Promise<void>((resolve) => setTimeout(resolve, 10));
+	}
+	return false;
+}
+
 describe('DrawableWorkspaceRuntime', () => {
 	it('restores confirmed drawings and exports a canonical Workspace', async () => {
 		const { runtime } = await makeRuntime(chartWorkspaceFixture);
@@ -236,8 +264,7 @@ describe('DrawableWorkspaceRuntime', () => {
 			'host-confirmed',
 		);
 		mockEngine!.emitCreated('drawing-new');
-		await new Promise<void>((resolve) => setTimeout(resolve, 0));
-		const candidate = events.find((event) => event.type === 'drawing-candidate');
+		const candidate = await waitForEvent(events, 'drawing-candidate');
 		expect(candidate?.type).toBe('drawing-candidate');
 		if (candidate?.type !== 'drawing-candidate') {
 			return;
@@ -290,9 +317,7 @@ describe('DrawableWorkspaceRuntime', () => {
 			throw new Error('listener failure');
 		});
 		mockEngine!.emitCreated('drawing-x');
-		await new Promise<void>((resolve) => setTimeout(resolve, 0));
-		expect(runtime.listDrawings().some((drawing) => drawing.id === 'drawing-x'))
-			.toBe(true);
+		expect(await waitForDrawing(runtime, 'drawing-x')).toBe(true);
 		runtime.destroy();
 		runtime.destroy();
 		expect(() => runtime.listDrawings()).toThrow();
