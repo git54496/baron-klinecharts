@@ -211,16 +211,26 @@ function buildController(
 	return { engine, controller, events };
 }
 
-async function flush(): Promise<void> {
-	await new Promise<void>((resolve) => setTimeout(resolve, 0));
-	await Promise.resolve();
+/** 轮询等待候选/提交事件；candidate 依赖异步 digest，单次宏任务在慢运行器上不可靠。 */
+async function flush(
+	events: readonly WorkspaceRuntimeEvent[],
+): Promise<void> {
+	for (let attempt = 0; attempt < 50; attempt += 1) {
+		if (events.some((event) =>
+			event.type === 'drawing-candidate' ||
+			event.type === 'drawing-committed'
+		)) {
+			return;
+		}
+		await new Promise<void>((resolve) => setTimeout(resolve, 10));
+	}
 }
 
 describe('DrawingSessionController', () => {
 	it('commits immediately in immediate mode without mutating confirmed on progress', async () => {
 		const { engine, controller, events } = buildController('immediate');
 		engine.emitCreated('drawing-a', 12.55);
-		await flush();
+		await flush(events);
 		expect(controller.confirmedDrawings).toHaveLength(1);
 		expect(controller.state).toBe('ready');
 		expect(events.some((event) => event.type === 'drawing-committed')).toBe(true);
@@ -229,7 +239,7 @@ describe('DrawingSessionController', () => {
 	it('waits for host confirmation and rejects pending mutations in host-confirmed mode', async () => {
 		const { engine, controller, events } = buildController('host-confirmed');
 		engine.emitCreated('drawing-a', 12.55);
-		await flush();
+		await flush(events);
 		expect(controller.state).toBe('awaiting-host-confirmation');
 		expect(controller.confirmedDrawings).toHaveLength(0);
 		const candidate = events.find((event) => event.type === 'drawing-candidate');
@@ -241,7 +251,7 @@ describe('DrawingSessionController', () => {
 	it('commits only on exact request id and canonical hash', async () => {
 		const { engine, controller, events } = buildController('host-confirmed');
 		engine.emitCreated('drawing-a', 12.55);
-		await flush();
+		await flush(events);
 		const candidate = events.find((event) => event.type === 'drawing-candidate');
 		expect(candidate?.type).toBe('drawing-candidate');
 		if (candidate?.type !== 'drawing-candidate') {
@@ -261,7 +271,7 @@ describe('DrawingSessionController', () => {
 		const { engine, controller, events } = buildController('host-confirmed');
 		controller.restoreConfirmed([snapshot('drawing-before', 12.5)]);
 		engine.emitCreated('drawing-after', 12.6);
-		await flush();
+		await flush(events);
 		const candidateEvent = events.find((event) => event.type === 'drawing-candidate');
 		expect(candidateEvent?.type).toBe('drawing-candidate');
 		if (candidateEvent?.type === 'drawing-candidate') {
@@ -287,11 +297,11 @@ describe('DrawingSessionController', () => {
 	});
 
 	it('keeps confirmed unchanged while the candidate is pending', async () => {
-		const { engine, controller } = buildController('host-confirmed');
+		const { engine, controller, events } = buildController('host-confirmed');
 		controller.restoreConfirmed([snapshot('stable', 12.5)]);
 		const before = JSON.stringify(controller.confirmedDrawings);
 		engine.emitCreated('candidate', 12.6);
-		await flush();
+		await flush(events);
 		expect(JSON.stringify(controller.confirmedDrawings)).toBe(before);
 	});
 });
