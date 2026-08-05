@@ -1,7 +1,10 @@
 import { mkdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
-import { renderScenePng } from '@baron1996/klinecharts-render-runtime';
+import {
+	renderDrawableWorkspacePng,
+	renderScenePng,
+} from '@baron1996/klinecharts-render-runtime';
 
 function outputDirectoryFromArguments(arguments_) {
 	const outputIndex = arguments_.indexOf('--output');
@@ -39,5 +42,29 @@ dark.chart.grid.horizontalColor = 'rgba(55, 55, 55, 1)';
 dark.chart.grid.verticalColor = 'rgba(55, 55, 55, 1)';
 dark.render.background = 'rgba(18, 18, 18, 1)';
 await renderScenePng(dark, join(outputDirectory, 'minimal-dark.png'));
+
+const chartWorkspace = JSON.parse(
+	await readFile(
+		resolve('tests', 'fixtures', 'workspaces', 'chart-minimal.json'),
+		'utf8',
+	),
+);
+await renderDrawableWorkspacePng(
+	chartWorkspace,
+	join(outputDirectory, 'drawable-workspace-chart.png'),
+);
+const areaWorkspace = structuredClone(chartWorkspace);
+areaWorkspace.scene.document.chart.candle = (
+	JSON.parse(
+		await readFile(
+			resolve('tests', 'fixtures', 'scenes', 'chart-area-close-line.json'),
+			'utf8',
+		),
+	)
+).chart.candle;
+await renderDrawableWorkspacePng(
+	areaWorkspace,
+	join(outputDirectory, 'drawable-workspace-area.png'),
+);
 
 process.stdout.write(`PNG baselines written to ${outputDirectory}\n`);
