@@ -4,6 +4,6 @@ import { CLI_PACKAGE_VERSION } from '../src/cli.js';
 
 describe('cli package', () => {
 	it('exposes the fixed package version', () => {
-		expect(CLI_PACKAGE_VERSION).toBe('0.4.0');
+		expect(CLI_PACKAGE_VERSION).toBe('0.4.1');
 	});
 });

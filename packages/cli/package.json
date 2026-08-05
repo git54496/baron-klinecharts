@@ -1,6 +1,6 @@
 {
   "name": "@baron1996/klinecharts-cli",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "CLI for validating, editing, and rendering ChartScene files.",
   "type": "module",
   "license": "Apache-2.0",
@@ -35,11 +35,11 @@
     "verify:package": "node scripts/verify-package.mjs"
   },
   "dependencies": {
-    "@baron1996/kline-scene-schema": "0.4.0",
+    "@baron1996/kline-scene-schema": "0.4.1",
     "playwright": "1.61.0"
   },
   "devDependencies": {
-    "@baron1996/klinecharts-render-runtime": "0.4.0",
+    "@baron1996/klinecharts-render-runtime": "0.4.1",
     "esbuild": "0.25.2"
   }
 }
