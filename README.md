@@ -36,13 +36,13 @@ tests                          跨语言、浏览器、视觉与安装门禁
 安装 Web Runtime：
 
 ```bash
-npm install --save-exact @baron1996/klinecharts-runtime@0.4.1
+npm install --save-exact @baron1996/klinecharts-runtime@0.4.2
 ```
 
 安装 CLI：
 
 ```bash
-npm install --global @baron1996/klinecharts-cli@0.4.1
+npm install --global @baron1996/klinecharts-cli@0.4.2
 baron-kline install-browser
 ```
 
@@ -98,7 +98,7 @@ Workspace 示例一致。
 - 禁止把本仓库路径加入其他工程或 Agent 的可写 workspace。
 
 消费方必须安装明确版本并提交自己的 lockfile，例如
-`@baron1996/klinecharts-runtime@0.4.1` 和 `baron-klinecharts==0.4.1`。升级只能
+`@baron1996/klinecharts-runtime@0.4.2` 和 `baron-klinecharts==0.4.2`。升级只能
 通过本仓库发布新版本后，由消费方主动修改依赖版本完成；不得直接修改本仓库来
 适配某个业务工程。
 
@@ -145,7 +145,7 @@ baron-kline install-browser
 要求 Python 3.11–3.14。浏览器客户端随包安装，但 Chromium 不会被隐式下载。
 
 ```bash
-pip install baron-klinecharts==0.4.1
+pip install baron-klinecharts==0.4.2
 python -m playwright install chromium
 ```
 
@@ -174,8 +174,8 @@ CI 分别使用 `tests/rendering/baselines/github-macos-15` 和
 
 ## 发布
 
-当前发布候选协调版本为 `0.4.1`。Scene Schema、Adapter、Web Runtime、CLI、
-Python 和私有 Render Runtime 统一为 `0.4.1`，所有内部依赖使用精确版本。
+当前发布候选协调版本为 `0.4.2`。Scene Schema、Adapter、Web Runtime、CLI、
+Python 和私有 Render Runtime 统一为 `0.4.2`，所有内部依赖使用精确版本。
 ChartScene `version` 仍为 `1`；Runtime protocol `0.2.0` 增加显式线性/对数轴、
 价格量度、精确命中与过程事件，同时继续读取 Runtime `0.1.0` 的 M1 场景。
 发布流水线先执行完整验证，再只为版本与 tag 相同的公共包构建一次不可变产物。
