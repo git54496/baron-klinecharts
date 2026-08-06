@@ -1,6 +1,6 @@
 {
   "name": "@baron1996/klinecharts-runtime",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Web runtime for deterministic KLineCharts scenes.",
   "type": "module",
   "license": "Apache-2.0",
@@ -39,8 +39,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@baron1996/kline-scene-schema": "0.4.2",
-    "@baron1996/klinecharts-adapter": "0.4.2",
+    "@baron1996/kline-scene-schema": "0.4.3",
+    "@baron1996/klinecharts-adapter": "0.4.3",
     "@js-temporal/polyfill": "0.5.1"
   }
 }

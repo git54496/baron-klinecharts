@@ -1,6 +1,6 @@
 {
   "name": "@baron1996/klinecharts-render-runtime",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Private deterministic HTML and PNG render runtime.",
   "private": true,
   "type": "module",
@@ -33,8 +33,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@baron1996/kline-scene-schema": "0.4.2",
-    "@baron1996/klinecharts-runtime": "0.4.2",
+    "@baron1996/kline-scene-schema": "0.4.3",
+    "@baron1996/klinecharts-runtime": "0.4.3",
     "fflate": "0.8.3",
     "playwright": "1.61.0"
   }
