@@ -388,6 +388,30 @@ export function fromEngineOverlay(
 	}
 }
 
+/**
+ * 按 Scene pricePrecision 归一化 Overlay 内的价格类字段。
+ * 复用 toEngineOverlay/fromEngineOverlay 与绘制提交（#commitEngineOverlay）完全一致的
+ * 转换口径：anchor/value/start/end/points 中的价格做十进制舍入，时间戳与非价格字段
+ * 保持原语义。
+ */
+export function normalizeSceneOverlayPrices(
+	overlay: SceneOverlay,
+	idMap: EngineIdMap,
+	path: string,
+	pricePrecision: number,
+): SceneOverlay {
+	// fromEngineOverlay 只读取 toEngineOverlay 恒会填充的 id/name/paneId/points/extendData，
+	// 因此无需真实引擎实例即可复用绘制提交的同一归一化路径。
+	const engine = toEngineOverlay(overlay, idMap, path) as unknown as Overlay;
+	return fromEngineOverlay(
+		engine,
+		overlay,
+		idMap,
+		path,
+		pricePrecision,
+	);
+}
+
 /** 在引擎内创建场景的全部标注。 */
 export function createSceneOverlays(
 	scene: ChartScene,

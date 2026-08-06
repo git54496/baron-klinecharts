@@ -23,6 +23,7 @@ import {
 	createSceneOverlays,
 	type EngineOverlayCallbacks,
 	fromEngineOverlay,
+	normalizeSceneOverlayPrices,
 	type OverlayDrawingSource,
 	toEngineOverlay,
 	toEngineOverlayDrawing,
@@ -1647,11 +1648,17 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 			overlays,
 		});
 		const overlay = candidate.overlays[index]!;
-		if (!this.#chart.overrideOverlay(toEngineOverlay(
+		const normalized = normalizeSceneOverlayPrices(
 			overlay,
 			this.#idMap,
 			`/overlays/${index}`,
-			this.#overlayCallbacks(overlay),
+			this.#scene.symbol.pricePrecision,
+		);
+		if (!this.#chart.overrideOverlay(toEngineOverlay(
+			normalized,
+			this.#idMap,
+			`/overlays/${index}`,
+			this.#overlayCallbacks(normalized),
 		))) {
 			throw new SceneError(
 				'RUNTIME_INIT_FAILED',
@@ -1659,12 +1666,17 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 				`KLineCharts failed to update Overlay ${overlay.id}.`,
 			);
 		}
-		this.#scene = candidate;
+		const nextOverlays = structuredClone(candidate.overlays);
+		nextOverlays[index] = normalized;
+		this.#scene = parseChartScene({
+			...candidate,
+			overlays: nextOverlays,
+		});
 		if (styleChange) {
-			this.#emit({ type: 'overlay-style-changed', before, overlay });
+			this.#emit({ type: 'overlay-style-changed', before, overlay: normalized });
 		}
-		this.#emit({ type: 'overlay-updated', overlay });
-		return structuredClone(overlay);
+		this.#emit({ type: 'overlay-updated', overlay: normalized });
+		return structuredClone(normalized);
 	}
 
 	public updateOverlay(value: SceneOverlay): SceneOverlay {

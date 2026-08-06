@@ -350,6 +350,114 @@ test('@browser chains two-click price measurement into one-click horizontal line
 	expect(Number.isFinite(result.horizontal?.anchor?.value)).toBe(true);
 });
 
+test('@browser updateOverlay normalizes an over-precision anchor to scene pricePrecision', async ({ page }) => {
+	const pageErrors: string[] = [];
+	const consoleErrors: string[] = [];
+	page.on('pageerror', (error) => pageErrors.push(error.message));
+	page.on('console', (message) => {
+		if (message.type() === 'error' && !message.location().url.endsWith('/favicon.ico')) {
+			consoleErrors.push(message.text());
+		}
+	});
+	await page.goto('/test/fixture.html');
+	await page.evaluate(async (scene) => {
+		const { createKLineSceneRuntime } = await import('/src/index.ts');
+		const events: Array<Record<string, unknown>> = [];
+		const runtime = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			scene,
+			{ onEvent: (event) => events.push(event) },
+		);
+		Object.assign(window, {
+			__baronPrecisionRuntime: runtime,
+			__baronPrecisionEvents: events,
+		});
+	}, minimalScene);
+
+	const chartBox = await page.locator('#chart').boundingBox();
+	expect(chartBox).not.toBeNull();
+	const drawing = await page.evaluate(() => {
+		const runtime = (window as unknown as {
+			__baronPrecisionRuntime: {
+				startOverlayDrawing(type: string): string;
+				projectPoint(point: { timestamp: number; value: number }): { x: number; y: number };
+				exportScene(): { data: Array<{ timestamp: number }> };
+			};
+		}).__baronPrecisionRuntime;
+		const data = runtime.exportScene().data;
+		return {
+			id: runtime.startOverlayDrawing('horizontalStraightLine'),
+			point: runtime.projectPoint({ timestamp: data[0]!.timestamp, value: 12.55 }),
+		};
+	});
+	await page.mouse.click(chartBox!.x + drawing.point.x, chartBox!.y + drawing.point.y);
+
+	const result = await page.evaluate(({ id, overPrecision }) => {
+		type HorizontalOverlay = {
+			id: string;
+			type: string;
+			paneId: string;
+			visible: boolean;
+			locked: boolean;
+			zLevel: number;
+			mode: string;
+			styles: unknown;
+			anchor: { value: number };
+			metadata?: unknown;
+		};
+		const state = window as unknown as {
+			__baronPrecisionRuntime: {
+				exportScene(): { overlays: HorizontalOverlay[] };
+				getOverlay(value: string): HorizontalOverlay | undefined;
+				listOverlays(): readonly HorizontalOverlay[];
+				updateOverlay(value: HorizontalOverlay): HorizontalOverlay;
+				destroy(): void;
+			};
+			__baronPrecisionEvents: Array<{ type: string; overlay?: HorizontalOverlay }>;
+		};
+		const runtime = state.__baronPrecisionRuntime;
+		const line = runtime.getOverlay(id);
+		if (line === undefined) {
+			throw new Error(`Overlay ${id} was not committed by the drawing click.`);
+		}
+		const committed = runtime.updateOverlay({
+			...structuredClone(line),
+			anchor: { value: overPrecision },
+		});
+		const updatedEvents = state.__baronPrecisionEvents.filter(
+			(event) => event.type === 'overlay-updated' && event.overlay?.id === id,
+		);
+		const errors = state.__baronPrecisionEvents
+			.filter((event) => event.type === 'scene-error');
+		const exported = runtime.exportScene().overlays
+			.find((overlay) => overlay.id === id);
+		const getValue = runtime.getOverlay(id)?.anchor.value;
+		const listValue = runtime.listOverlays()
+			.find((overlay) => overlay.id === id)?.anchor.value;
+		const serialized = JSON.stringify(runtime.exportScene());
+		runtime.destroy();
+		return {
+			committedValue: committed.anchor.value,
+			eventValue: updatedEvents.at(-1)?.overlay?.anchor.value,
+			exportValue: exported?.anchor.value,
+			getValue,
+			listValue,
+			errors: structuredClone(errors),
+			serializedContainsRawPrecision: serialized.includes(String(overPrecision)),
+		};
+	}, { id: drawing.id, overPrecision: 101.67084494773519 });
+
+	expect(result.committedValue).toBe(101.67);
+	expect(result.eventValue).toBe(101.67);
+	expect(result.exportValue).toBe(101.67);
+	expect(result.getValue).toBe(101.67);
+	expect(result.listValue).toBe(101.67);
+	expect(result.errors).toEqual([]);
+	expect(result.serializedContainsRawPrecision).toBe(false);
+	expect(pageErrors).toEqual([]);
+	expect(consoleErrors).toEqual([]);
+});
+
 test('@browser commits two consecutive one-click horizontal lines in the same Runtime inside the click arbitration window', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	await page.evaluate(async (scene) => {
