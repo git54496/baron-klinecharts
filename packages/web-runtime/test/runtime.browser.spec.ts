@@ -786,6 +786,183 @@ test('@browser routes a new drawing click within 12px of a repriced controlled o
 	expect(consoleErrors).toEqual([]);
 });
 
+test('@browser adds MA and VOL indicators with frozen M3 params and restores them in Scene', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const result = await page.evaluate(async (scene) => {
+		const { createKLineSceneRuntime } = await import('/src/index.ts');
+		const events: unknown[] = [];
+		const runtime = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			scene,
+			{ onEvent: (event) => events.push(event) },
+		);
+		const ma = runtime.addIndicator({
+			name: 'MA',
+			calcParams: [18, 45, 60, 200, 250],
+		});
+		const vol = runtime.addIndicator({
+			name: 'VOL',
+			calcParams: [5, 10, 20],
+		});
+		const before = runtime.listIndicators().map((item) => ({
+			id: item.id,
+			name: item.name,
+			calcParams: item.calcParams,
+		}));
+		const removed = runtime.removeIndicator(vol.id);
+		const after = runtime.listIndicators().map((item) => item.id);
+		const sceneIndicators = runtime.exportScene().panes
+			.flatMap((pane) => pane.indicators)
+			.map((item) => ({
+				id: item.id,
+				name: item.name,
+				calcParams: item.calcParams,
+			}));
+		runtime.destroy();
+		return {
+			ma,
+			vol,
+			before,
+			removed,
+			after,
+			sceneIndicators,
+			events: events.map((event) => (event as { type: string }).type),
+		};
+	}, minimalScene);
+
+	expect(result.ma.name).toBe('MA');
+	expect(result.ma.calcParams).toEqual([18, 45, 60, 200, 250]);
+	expect(result.vol.name).toBe('VOL');
+	expect(result.vol.calcParams).toEqual([5, 10, 20]);
+	expect(result.before.map((item) => item.name)).toEqual(['MA', 'VOL']);
+	expect(result.removed).toBe(true);
+	expect(result.after).toEqual([result.ma.id]);
+	expect(result.sceneIndicators).toEqual([
+		{ id: result.ma.id, name: 'MA', calcParams: [18, 45, 60, 200, 250] },
+	]);
+	expect(result.events).toEqual(
+		expect.arrayContaining(['indicator-created', 'indicator-removed']),
+	);
+});
+
+test('@browser emits fullscreen-changed and toggles runtime fullscreen state', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const result = await page.evaluate(async (scene) => {
+		const { createKLineSceneRuntime } = await import('/src/index.ts');
+		const events: unknown[] = [];
+		const runtime = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			scene,
+			{ onEvent: (event) => events.push(event) },
+		);
+		const container = document.querySelector<HTMLElement>('#chart')!;
+		Object.defineProperty(container, 'requestFullscreen', {
+			configurable: true,
+			value: async () => {
+				Object.defineProperty(document, 'fullscreenElement', {
+					configurable: true,
+					value: container,
+				});
+				document.dispatchEvent(new Event('fullscreenchange'));
+			},
+		});
+		Object.defineProperty(document, 'exitFullscreen', {
+			configurable: true,
+			value: async () => {
+				Object.defineProperty(document, 'fullscreenElement', {
+					configurable: true,
+					value: null,
+				});
+				document.dispatchEvent(new Event('fullscreenchange'));
+			},
+		});
+		await runtime.enterFullscreen();
+		const active = runtime.isFullscreen();
+		await runtime.exitFullscreen();
+		const inactive = runtime.isFullscreen();
+		const fullscreenEvents = events.filter(
+			(event) => (event as { type: string }).type === 'fullscreen-changed',
+		);
+		runtime.destroy();
+		return { active, inactive, fullscreenEvents };
+	}, minimalScene);
+
+	expect(result.active).toBe(true);
+	expect(result.inactive).toBe(false);
+	expect(result.fullscreenEvents).toEqual([
+		expect.objectContaining({ type: 'fullscreen-changed', active: true }),
+		expect.objectContaining({ type: 'fullscreen-changed', active: false }),
+	]);
+});
+
+test('@browser emits crosshair-changed with OHLCV bar after mouse move', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	await page.evaluate(async (scene) => {
+		const { createKLineSceneRuntime } = await import('/src/index.ts');
+		const events: unknown[] = [];
+		const runtime = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			scene,
+			{ onEvent: (event) => events.push(event) },
+		);
+		Object.assign(window, {
+			__baronCrosshairRuntime: runtime,
+			__baronCrosshairEvents: events,
+		});
+	}, minimalScene);
+
+	const chartBox = await page.locator('#chart').boundingBox();
+	expect(chartBox).not.toBeNull();
+	await page.mouse.move(
+		chartBox!.x + chartBox!.width / 2,
+		chartBox!.y + chartBox!.height / 2,
+	);
+
+	await page.waitForFunction(() => {
+		const events = (window as unknown as {
+			__baronCrosshairEvents: Array<{
+				type: string;
+				timestamp: number | null;
+			}>;
+		}).__baronCrosshairEvents;
+		return events.some(
+			(event) => event.type === 'crosshair-changed' && event.timestamp !== null,
+		);
+	}, undefined, { timeout: 5000 });
+
+	const result = await page.evaluate(() => {
+		const state = window as unknown as {
+			__baronCrosshairRuntime: { destroy(): void };
+			__baronCrosshairEvents: Array<{
+				type: string;
+				timestamp: number | null;
+				bar: {
+					open: number;
+					high: number;
+					low: number;
+					close: number;
+				} | null;
+			}>;
+		};
+		const event = state.__baronCrosshairEvents.find(
+			(candidate) =>
+				candidate.type === 'crosshair-changed' &&
+				candidate.timestamp !== null,
+		)!;
+		state.__baronCrosshairRuntime.destroy();
+		return event;
+	});
+
+	expect(result.type).toBe('crosshair-changed');
+	expect(typeof result.timestamp).toBe('number');
+	expect(result.bar).toMatchObject({
+		open: expect.any(Number),
+		high: expect.any(Number),
+		low: expect.any(Number),
+		close: expect.any(Number),
+	});
+});
+
 test('@browser completes the M1 horizontal line lifecycle with stable Scene data', async ({ page }) => {
 	const createdId = 'overlay-m1-runtime-horizontal';
 	const drawPosition = { x: 500, y: 170 };

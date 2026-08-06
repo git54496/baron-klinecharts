@@ -1,6 +1,7 @@
 import {
 	serializeCanonicalScene,
 	type ChartScene,
+	type SceneIndicator,
 	type SceneOverlay,
 } from '@baron1996/kline-scene-schema';
 import {
@@ -33,6 +34,7 @@ import type {
 import { RuntimeEventBus } from './events.js';
 import { runRuntimeTeardowns } from './lifecycle.js';
 import type {
+	AddIndicatorOptions,
 	KLineSceneRuntimeEvent,
 	KLineSceneRuntimeListener,
 	KLineSceneRuntimeOptions,
@@ -60,6 +62,41 @@ export const DEFAULT_OVERLAY_STYLES: SceneOverlay['styles'] = {
 	},
 };
 
+const DEFAULT_INDICATOR_LINE_COLORS = [
+	'rgba(41, 98, 255, 1)',
+	'rgba(245, 158, 11, 1)',
+	'rgba(16, 185, 129, 1)',
+	'rgba(239, 68, 68, 1)',
+	'rgba(139, 92, 246, 1)',
+] as const;
+
+function defaultIndicatorStyles(
+	name: SceneIndicator['name'],
+	calcParams: readonly number[],
+): SceneIndicator['styles'] {
+	const lines = calcParams.map((_param, index) => ({
+		color: DEFAULT_INDICATOR_LINE_COLORS[
+			index % DEFAULT_INDICATOR_LINE_COLORS.length
+		]!,
+		size: 1,
+		style: 'solid' as const,
+	}));
+	if (name === 'VOL') {
+		return {
+			lines,
+			bars: [
+				{
+					upColor: 'rgba(239, 83, 80, 1)',
+					downColor: 'rgba(38, 166, 154, 1)',
+					noChangeColor: 'rgba(88, 88, 88, 1)',
+				},
+			],
+			circles: [],
+		};
+	}
+	return { lines, bars: [], circles: [] };
+}
+
 function toRuntimeEvent(event: AdapterSceneEvent): KLineSceneRuntimeEvent {
 	return {
 		...structuredClone(event),
@@ -79,10 +116,26 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 	readonly #events = new RuntimeEventBus();
 	/** Adapter 事件解绑函数。 */
 	readonly #unsubscribeAdapter: () => void;
+	/** Adapter 十字线监听解绑函数。 */
+	#unsubscribeCrosshair: (() => void) | null = null;
 	/** 当前选中标注的稳定 ID。 */
 	#selectedOverlayId: string | null = null;
 	/** 确定性标注 ID 递增序号。 */
 	#overlaySequence = 0;
+	/** 确定性指标 ID 递增序号。 */
+	#indicatorSequence = 0;
+	/** 全屏状态变化监听器。 */
+	readonly #fullscreenChangeHandler = (): void => {
+		if (this.#destroyed) {
+			return;
+		}
+		this.#events.emit({
+			type: 'fullscreen-changed',
+			active: this.isFullscreen(),
+			sceneVersion: 1,
+			runtimeVersion: '0.2.0',
+		});
+	};
 	/** 防止销毁后的 API 继续访问引擎。 */
 	#destroyed = false;
 
@@ -106,6 +159,16 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 			}
 			this.#events.emit(toRuntimeEvent(event));
 		});
+		this.#unsubscribeCrosshair = adapter.subscribeCrosshair((snapshot) => {
+			this.#events.emit({
+				type: 'crosshair-changed',
+				timestamp: snapshot.timestamp,
+				bar: snapshot.bar,
+				sceneVersion: 1,
+				runtimeVersion: '0.2.0',
+			});
+		});
+		document.addEventListener('fullscreenchange', this.#fullscreenChangeHandler);
 	}
 
 	readonly #defaultFileName = 'kline-scene.json';
@@ -152,6 +215,18 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 		do {
 			id = `overlay-${type}-${this.#overlaySequence}`;
 			this.#overlaySequence++;
+		} while (existing.has(id));
+		return id;
+	}
+
+	#nextIndicatorId(name: SceneIndicator['name']): string {
+		const existing = new Set(
+			this.#adapter.listIndicators().map((indicator) => indicator.id),
+		);
+		let id = '';
+		do {
+			id = `indicator-${name.toLowerCase()}-${this.#indicatorSequence}`;
+			this.#indicatorSequence++;
 		} while (existing.has(id));
 		return id;
 	}
@@ -425,6 +500,97 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 		return structuredClone(this.#adapter.listOverlays());
 	}
 
+	public listIndicators(): readonly SceneIndicator[] {
+		this.#assertActive();
+		return this.#adapter.listIndicators();
+	}
+
+	public addIndicator(options: AddIndicatorOptions): SceneIndicator {
+		this.#assertActive();
+		const scene = this.#adapter.exportScene();
+		const candlePane = scene.panes.find((pane) => pane.kind === 'candle');
+		if (candlePane === undefined) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/panes',
+				'Candle pane does not exist.',
+			);
+		}
+		const paneId = options.paneId ?? candlePane.id;
+		const pane = scene.panes.find((candidate) => candidate.id === paneId);
+		if (pane === undefined) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/panes',
+				`Pane ${paneId} does not exist.`,
+			);
+		}
+		const yAxisId =
+			options.yAxisId ??
+			pane.yAxes.find((axis) => axis.role === 'primary')?.id;
+		if (yAxisId === undefined) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				`/panes/${paneId}/yAxes`,
+				'Primary Y-axis does not exist.',
+			);
+		}
+		const indicator: SceneIndicator = {
+			id: options.id ?? this.#nextIndicatorId(options.name),
+			name: options.name,
+			paneId,
+			yAxisId,
+			calcParams: [...options.calcParams],
+			precision: options.precision ?? 2,
+			visible: options.visible ?? true,
+			zLevel: options.zLevel ?? 0,
+			styles:
+				options.styles ??
+				defaultIndicatorStyles(options.name, options.calcParams),
+		};
+		return this.#adapter.addIndicator(indicator);
+	}
+
+	public removeIndicator(id: string): boolean {
+		this.#assertActive();
+		return this.#adapter.removeIndicator(id);
+	}
+
+	public async enterFullscreen(): Promise<void> {
+		this.#assertActive();
+		const element = this.#adapterContainer() as HTMLElement & {
+			requestFullscreen?: () => Promise<void>;
+		};
+		if (typeof element.requestFullscreen !== 'function') {
+			throw new SceneError(
+				'RUNTIME_INIT_FAILED',
+				'/fullscreen',
+				'Fullscreen API is unavailable.',
+			);
+		}
+		await element.requestFullscreen();
+	}
+
+	public async exitFullscreen(): Promise<void> {
+		this.#assertActive();
+		if (typeof document.exitFullscreen !== 'function') {
+			throw new SceneError(
+				'RUNTIME_INIT_FAILED',
+				'/fullscreen',
+				'Fullscreen API is unavailable.',
+			);
+		}
+		await document.exitFullscreen();
+	}
+
+	public isFullscreen(): boolean {
+		return document.fullscreenElement === this.#adapterContainer();
+	}
+
+	#adapterContainer(): HTMLElement {
+		return this.#adapter.getContainer();
+	}
+
 	public getSelectedOverlayId(): string | undefined {
 		this.#assertActive();
 		return this.#selectedOverlayId ?? undefined;
@@ -440,6 +606,9 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 			return;
 		}
 		this.#destroyed = true;
+		document.removeEventListener('fullscreenchange', this.#fullscreenChangeHandler);
+		this.#unsubscribeCrosshair?.();
+		this.#unsubscribeCrosshair = null;
 		runRuntimeTeardowns(this);
 		this.#adapter.dispose();
 		this.#unsubscribeAdapter();

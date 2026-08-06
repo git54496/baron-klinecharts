@@ -3,6 +3,7 @@ import type {
 	JsonObject,
 	SceneIssue,
 	SceneOverlay,
+	SceneIndicator,
 } from '@baron1996/kline-scene-schema';
 import type { SUPPORTED_OVERLAYS } from '@baron1996/klinecharts-adapter';
 import type { HostActionDescriptor } from './drawing/runtime-capability-descriptor.js';
@@ -23,6 +24,26 @@ export type OverlayDragCancelReason =
 	| 'validation-error';
 export type PriceScale = 'linear' | 'logarithmic';
 
+export interface RuntimeCrosshairBar {
+	readonly open: number;
+	readonly high: number;
+	readonly low: number;
+	readonly close: number;
+	readonly volume: number | null;
+}
+
+export interface AddIndicatorOptions {
+	readonly id?: string;
+	readonly name: SceneIndicator['name'];
+	readonly paneId?: string;
+	readonly yAxisId?: string;
+	readonly calcParams: readonly number[];
+	readonly precision?: number;
+	readonly visible?: boolean;
+	readonly zLevel?: number;
+	readonly styles?: SceneIndicator['styles'];
+}
+
 interface OverlayDragEventIdentity {
 	readonly interactionId: string;
 	readonly overlayId: string;
@@ -33,6 +54,8 @@ interface OverlayDragEventIdentity {
 
 type KLineSceneRuntimeEventPayload =
 	| { readonly type: 'scene-ready'; readonly scene: ChartScene }
+	| { readonly type: 'indicator-created'; readonly indicator: SceneIndicator }
+	| { readonly type: 'indicator-removed'; readonly id: string }
 	| { readonly type: 'overlay-created'; readonly overlay: SceneOverlay }
 	| { readonly type: 'overlay-updated'; readonly overlay: SceneOverlay }
 	| { readonly type: 'overlay-style-changed'; readonly before: SceneOverlay; readonly overlay: SceneOverlay }
@@ -45,6 +68,8 @@ type KLineSceneRuntimeEventPayload =
 	| ({ readonly type: 'overlay-drag-cancelled'; readonly reason: OverlayDragCancelReason } & OverlayDragEventIdentity)
 	| { readonly type: 'overlay-delete-requested'; readonly overlayId: string }
 	| { readonly type: 'host-action-requested'; readonly actionId: string; readonly overlayId: string | null }
+	| { readonly type: 'crosshair-changed'; readonly timestamp: number | null; readonly bar: RuntimeCrosshairBar | null }
+	| { readonly type: 'fullscreen-changed'; readonly active: boolean }
 	| { readonly type: 'scene-error'; readonly issues: readonly SceneIssue[] };
 
 export type KLineSceneRuntimeEvent =

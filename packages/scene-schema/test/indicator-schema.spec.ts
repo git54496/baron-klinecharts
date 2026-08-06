@@ -37,6 +37,16 @@ describe('built-in indicator schema', () => {
 		);
 	});
 
+	it('accepts M3 MA with five independent calculation parameters', () => {
+		const scene = makeScene();
+		const indicator = makeIndicator('MA');
+		indicator.calcParams = [18, 45, 60, 200, 250];
+		addIndicatorPane(scene, indicator);
+		expect(parseChartScene(scene).panes[1]?.indicators[0]?.calcParams).toEqual(
+			[18, 45, 60, 200, 250],
+		);
+	});
+
 	it('rejects a Y-axis reference outside the containing Pane', () => {
 		const scene = makeScene();
 		const indicator = makeIndicator('MACD');

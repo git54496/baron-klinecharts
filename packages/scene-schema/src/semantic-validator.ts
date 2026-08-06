@@ -158,7 +158,20 @@ function validateIndicator(
 		);
 	}
 	const expectedCount = INDICATOR_PARAM_COUNTS[indicator.name];
-	if (indicator.calcParams.length !== expectedCount) {
+	if (indicator.name === 'MA') {
+		if (
+			indicator.calcParams.length < 1 ||
+			indicator.calcParams.length > 8
+		) {
+			issues.push(
+				issue(
+					'SCENE_SCHEMA_INVALID',
+					`${path}/calcParams`,
+					'MA requires 1 to 8 calculation parameters.',
+				),
+			);
+		}
+	} else if (indicator.calcParams.length !== expectedCount) {
 		issues.push(
 			issue(
 				'SCENE_SCHEMA_INVALID',

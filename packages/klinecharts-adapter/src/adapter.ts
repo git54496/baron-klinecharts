@@ -13,6 +13,7 @@ import {
 import type { Chart, Coordinate, Overlay, Point } from 'klinecharts';
 
 import { createEngine, type EngineHandle } from './engine.js';
+import { toIndicatorCreate } from './conversion/indicators.js';
 import { registerProjectOverlays } from './extensions/register.js';
 import {
 	createEngineIdMap,
@@ -82,6 +83,23 @@ export interface AdapterIndicatorSnapshot {
 	readonly yAxisId: string;
 }
 
+export interface AdapterCrosshairBar {
+	readonly open: number;
+	readonly high: number;
+	readonly low: number;
+	readonly close: number;
+	readonly volume: number | null;
+}
+
+export interface AdapterCrosshairSnapshot {
+	readonly timestamp: number | null;
+	readonly bar: AdapterCrosshairBar | null;
+}
+
+export type AdapterCrosshairListener = (
+	snapshot: AdapterCrosshairSnapshot,
+) => void;
+
 export interface AdapterSnapshot {
 	readonly engineVersion: string;
 	readonly runtimeVersion: ChartScene['runtime']['runtimeVersion'];
@@ -103,6 +121,8 @@ interface AdapterDragEventIdentity {
 
 export type AdapterSceneEvent =
 	| { readonly type: 'overlay-created'; readonly overlay: SceneOverlay }
+	| { readonly type: 'indicator-created'; readonly indicator: SceneIndicator }
+	| { readonly type: 'indicator-removed'; readonly id: string }
 	| { readonly type: 'overlay-updated'; readonly overlay: SceneOverlay }
 	| { readonly type: 'overlay-style-changed'; readonly before: SceneOverlay; readonly overlay: SceneOverlay }
 	| { readonly type: 'overlay-removed'; readonly id: string }
@@ -112,6 +132,7 @@ export type AdapterSceneEvent =
 	| ({ readonly type: 'overlay-dragging'; readonly candidate: SceneOverlay } & AdapterDragEventIdentity)
 	| ({ readonly type: 'overlay-drag-committed'; readonly overlay: SceneOverlay } & AdapterDragEventIdentity)
 	| ({ readonly type: 'overlay-drag-cancelled'; readonly reason: AdapterDragCancelReason } & AdapterDragEventIdentity)
+	| { readonly type: 'crosshair-changed'; readonly timestamp: number | null; readonly bar: AdapterCrosshairBar | null }
 	| { readonly type: 'scene-error'; readonly issues: readonly SceneError['issues'][number][] };
 
 export type AdapterSceneEventListener = (event: AdapterSceneEvent) => void;
@@ -166,6 +187,70 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 	readonly #engine: EngineHandle['module'];
 	/** 引擎点击仲裁显式复位；每次绘制开始前调用，保证新绘制首击独立成单击。 */
 	readonly #resetClickArbitration: () => void;
+	/** 引擎十字线动作监听器集合。 */
+	readonly #crosshairListeners = new Set<AdapterCrosshairListener>();
+	/** 引擎十字线动作退订函数。 */
+	#unsubscribeCrosshair: (() => void) | null = null;
+	/** 引擎十字线动作的绑定处理函数。 */
+	readonly #handleCrosshairChange = (payload: unknown): void => {
+		const event = (typeof payload === 'object' && payload !== null
+			? payload
+			: {}) as {
+			readonly dataIndex?: number;
+			readonly timestamp?: number;
+		};
+		const data = this.#chart.getDataList();
+		const store = (this.#chart as unknown as {
+			readonly _chartStore?: {
+				readonly _crosshair?: {
+					readonly dataIndex?: number;
+					readonly timestamp?: number;
+				};
+			};
+		})._chartStore;
+		const current = store?._crosshair;
+		let barIndex: number | null = null;
+		if (
+			typeof event.dataIndex === 'number' &&
+			event.dataIndex >= 0 &&
+			event.dataIndex < data.length
+		) {
+			barIndex = event.dataIndex;
+		} else if (
+			current !== undefined &&
+			typeof current.dataIndex === 'number' &&
+			current.dataIndex >= 0 &&
+			current.dataIndex < data.length
+		) {
+			barIndex = current.dataIndex;
+		} else if (
+			current !== undefined &&
+			typeof current.timestamp === 'number'
+		) {
+			const index = data.findIndex(
+				(item) => item.timestamp === current.timestamp,
+			);
+			if (index >= 0) {
+				barIndex = index;
+			}
+		}
+		const match = barIndex === null ? undefined : data[barIndex];
+		const timestamp = match?.timestamp ?? null;
+		const bar: AdapterCrosshairBar | null =
+			match === undefined
+				? null
+				: {
+						open: match.open,
+						high: match.high,
+						low: match.low,
+						close: match.close,
+						volume: match.volume ?? null,
+					};
+		const snapshot: AdapterCrosshairSnapshot = { timestamp, bar };
+		for (const listener of this.#crosshairListeners) {
+			listener(structuredClone(snapshot));
+		}
+	};
 	/** 场景 ID 与引擎内部 ID 的双向映射。 */
 	readonly #idMap: EngineIdMap;
 	/** 当前最后一次成功提交、可导出的规范化场景。 */
@@ -221,6 +306,10 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 		this.#idMap = idMap;
 		this.#originalBackground = originalBackground;
 		this.#installInteractionListeners();
+		this.#chart.subscribeAction('onCrosshairChange', this.#handleCrosshairChange);
+		this.#unsubscribeCrosshair = () => {
+			this.#chart.unsubscribeAction('onCrosshairChange', this.#handleCrosshairChange);
+		};
 	}
 
 	public static async create(
@@ -1773,6 +1862,93 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 		return structuredClone(this.#scene.overlays);
 	}
 
+	public getContainer(): HTMLElement {
+		this.#assertActive();
+		return this.#container;
+	}
+
+	public listIndicators(): readonly SceneIndicator[] {
+		this.#assertActive();
+		return structuredClone(this.#scene.panes.flatMap((pane) => pane.indicators));
+	}
+
+	public addIndicator(value: SceneIndicator): SceneIndicator {
+		this.#assertActive();
+		const paneIndex = this.#scene.panes.findIndex(
+			(pane) => pane.id === value.paneId,
+		);
+		if (paneIndex < 0) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/panes',
+				`Pane ${value.paneId} does not exist.`,
+			);
+		}
+		const pane = this.#scene.panes[paneIndex]!;
+		if (pane.indicators.some((indicator) => indicator.id === value.id)) {
+			throw new SceneError(
+				'DUPLICATE_ID',
+				`/panes/${paneIndex}/indicators`,
+				`Indicator ${value.id} already exists.`,
+			);
+		}
+		const path = `/panes/${pane.order}/indicators/${pane.indicators.length}`;
+		const createdId = this.#chart.createIndicator(
+			toIndicatorCreate(value, this.#idMap, path),
+			true,
+		);
+		if (createdId === null || createdId !== value.id) {
+			throw new SceneError(
+				'RUNTIME_INIT_FAILED',
+				path,
+				`KLineCharts failed to create Indicator ${value.id}.`,
+			);
+		}
+		const panes = structuredClone(this.#scene.panes);
+		panes[paneIndex]!.indicators.push(structuredClone(value));
+		this.#scene = parseChartScene({
+			...structuredClone(this.#scene),
+			panes,
+		});
+		const committed = this.#scene.panes[paneIndex]!.indicators.at(-1)!;
+		this.#emit({ type: 'indicator-created', indicator: committed });
+		return structuredClone(committed);
+	}
+
+	public removeIndicator(id: string): boolean {
+		this.#assertActive();
+		const paneIndex = this.#scene.panes.findIndex((pane) =>
+			pane.indicators.some((indicator) => indicator.id === id),
+		);
+		if (paneIndex < 0) {
+			return false;
+		}
+		if (!this.#chart.removeIndicator({ id })) {
+			return false;
+		}
+		const panes = structuredClone(this.#scene.panes);
+		const targetPane = panes[paneIndex]!;
+		targetPane.indicators = targetPane.indicators.filter(
+			(indicator) => indicator.id !== id,
+		);
+		this.#scene = parseChartScene({
+			...structuredClone(this.#scene),
+			panes,
+		});
+		this.#emit({ type: 'indicator-removed', id });
+		return true;
+	}
+
+	public subscribeCrosshair(
+		listener: AdapterCrosshairListener,
+	): () => void {
+		this.#assertActive();
+		this.#crosshairListeners.add(listener);
+		return () => {
+			this.#crosshairListeners.delete(listener);
+		};
+	}
+
 	public inspect(): AdapterSnapshot {
 		this.#assertActive();
 		const indicators = this.#chart.getIndicators().map((indicator) => {
@@ -1813,6 +1989,9 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 		this.#drawingInProgressId = null;
 		this.#disposed = true;
 		this.#removeInteractionListeners();
+		this.#unsubscribeCrosshair?.();
+		this.#unsubscribeCrosshair = null;
+		this.#crosshairListeners.clear();
 		this.#listeners.clear();
 		this.#portListeners.clear();
 		this.#workspaceSources.clear();
