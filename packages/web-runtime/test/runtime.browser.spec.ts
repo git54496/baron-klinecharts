@@ -468,6 +468,216 @@ test('@browser commits two consecutive one-click horizontal lines in the same Ru
 	expect(Number.isFinite(result.second?.anchor?.value)).toBe(true);
 });
 
+test('@browser routes a new drawing click within 12px of a repriced controlled overlay to the in-progress drawing', async ({ page }) => {
+	const pageErrors: string[] = [];
+	const consoleErrors: string[] = [];
+	page.on('pageerror', (error) => pageErrors.push(error.message));
+	page.on('console', (message) => {
+		if (message.type() === 'error' && !message.location().url.endsWith('/favicon.ico')) {
+			consoleErrors.push(message.text());
+		}
+	});
+	await page.goto('/test/fixture.html');
+	await page.evaluate(async (scene) => {
+		const { createKLineSceneRuntime } = await import('/src/index.ts');
+		const events: unknown[] = [];
+		const container = document.querySelector<HTMLElement>('#chart')!;
+		const runtime = await createKLineSceneRuntime(
+			container,
+			scene,
+			{ onEvent: (event) => events.push(event) },
+		);
+		type ClickStamp = { type: 'down' | 'up'; time: number; x: number; y: number };
+		const clickStamps: ClickStamp[] = [];
+		const recordClick = (type: 'down' | 'up') => (event: Event) => {
+			const mouseEvent = event as MouseEvent;
+			clickStamps.push({
+				type,
+				time: performance.now(),
+				x: mouseEvent.clientX,
+				y: mouseEvent.clientY,
+			});
+		};
+		container.addEventListener('mousedown', recordClick('down'), true);
+		container.addEventListener('mouseup', recordClick('up'), true);
+		Object.assign(window, {
+			__baronNearLineRuntime: runtime,
+			__baronNearLineEvents: events,
+			__baronNearLineStamps: clickStamps,
+		});
+	}, minimalScene);
+
+	const chartBox = await page.locator('#chart').boundingBox();
+	expect(chartBox).not.toBeNull();
+	const measurement = await page.evaluate(() => {
+		const runtime = (window as unknown as {
+			__baronNearLineRuntime: {
+				startOverlayDrawing(type: string): string;
+				projectPoint(point: { timestamp: number; value: number }): { x: number; y: number };
+				exportScene(): { data: Array<{ timestamp: number }> };
+			};
+		}).__baronNearLineRuntime;
+		const data = runtime.exportScene().data;
+		return {
+			id: runtime.startOverlayDrawing('priceMeasurement'),
+			start: runtime.projectPoint({ timestamp: data[0]!.timestamp, value: 12.4 }),
+			end: runtime.projectPoint({ timestamp: data[2]!.timestamp, value: 12.8 }),
+		};
+	});
+	await page.mouse.click(chartBox!.x + measurement.start.x, chartBox!.y + measurement.start.y);
+	await page.mouse.click(chartBox!.x + measurement.end.x, chartBox!.y + measurement.end.y);
+
+	const first = await page.evaluate(() => {
+		const runtime = (window as unknown as {
+			__baronNearLineRuntime: {
+				startOverlayDrawing(type: string): string;
+				projectPoint(point: { timestamp: number; value: number }): { x: number; y: number };
+				exportScene(): { data: Array<{ timestamp: number }> };
+			};
+		}).__baronNearLineRuntime;
+		const data = runtime.exportScene().data;
+		return {
+			id: runtime.startOverlayDrawing('horizontalStraightLine'),
+			point: runtime.projectPoint({ timestamp: data[0]!.timestamp, value: 12.25 }),
+		};
+	});
+	await page.mouse.click(chartBox!.x + first.point.x, chartBox!.y + first.point.y);
+
+	const nearLine = await page.evaluate((firstId) => {
+		type HorizontalOverlay = {
+			id: string;
+			type: string;
+			paneId: string;
+			visible: boolean;
+			locked: boolean;
+			zLevel: number;
+			mode: string;
+			styles: unknown;
+			anchor: { value: number };
+			metadata?: unknown;
+		};
+		const runtime = (window as unknown as {
+			__baronNearLineRuntime: {
+				getOverlay(id: string): HorizontalOverlay | undefined;
+				updateOverlay(overlay: HorizontalOverlay): HorizontalOverlay;
+				projectPoint(point: { timestamp: number; value: number }): { x: number; y: number };
+				exportScene(): { data: Array<{ timestamp: number }> };
+			};
+		}).__baronNearLineRuntime;
+		const line = runtime.getOverlay(firstId)!;
+		runtime.updateOverlay({ ...structuredClone(line), anchor: { value: 12.4 } });
+		const data = runtime.exportScene().data;
+		const lineY = runtime.projectPoint({
+			timestamp: data[0]!.timestamp,
+			value: 12.4,
+		}).y;
+		let clickValue: number | undefined;
+		let distance = Number.POSITIVE_INFINITY;
+		for (let step = 1; step <= 30; step++) {
+			for (const candidate of [12.4 - step * 0.01, 12.4 + step * 0.01]) {
+				const y = runtime.projectPoint({
+					timestamp: data[0]!.timestamp,
+					value: candidate,
+				}).y;
+				const candidateDistance = Math.abs(y - lineY);
+				if (candidateDistance >= 6 && candidateDistance <= 12) {
+					clickValue = candidate;
+					distance = candidateDistance;
+					break;
+				}
+			}
+			if (clickValue !== undefined) {
+				break;
+			}
+		}
+		if (clickValue === undefined) {
+			throw new Error('No 6..12px click candidate found near the repriced line.');
+		}
+		return {
+			distance,
+			point: runtime.projectPoint({
+				timestamp: data[0]!.timestamp,
+				value: clickValue,
+			}),
+		};
+	}, first.id);
+	expect(nearLine.distance).toBeGreaterThanOrEqual(6);
+	expect(nearLine.distance).toBeLessThanOrEqual(12);
+
+	const second = await page.evaluate(() => (
+		window as unknown as {
+			__baronNearLineRuntime: { startOverlayDrawing(type: string): string };
+		}
+	).__baronNearLineRuntime.startOverlayDrawing('horizontalStraightLine'));
+	await page.mouse.click(chartBox!.x + nearLine.point.x, chartBox!.y + nearLine.point.y);
+
+	const result = await page.evaluate(({ measurementId, firstId, secondId }) => {
+		type Overlay = {
+			id: string;
+			type: string;
+			anchor?: { value: number };
+		};
+		type ClickStamp = { type: 'down' | 'up'; time: number; x: number; y: number };
+		const state = window as unknown as {
+			__baronNearLineRuntime: {
+				exportScene(): { overlays: Overlay[] };
+				destroy(): void;
+			};
+			__baronNearLineEvents: Array<{ type: string; overlay?: Overlay }>;
+			__baronNearLineStamps: ClickStamp[];
+		};
+		const scene = state.__baronNearLineRuntime.exportScene();
+		const created = state.__baronNearLineEvents
+			.filter((event) => event.type === 'overlay-created');
+		const errors = state.__baronNearLineEvents
+			.filter((event) => event.type === 'scene-error');
+		state.__baronNearLineRuntime.destroy();
+		return {
+			clickStamps: structuredClone(state.__baronNearLineStamps),
+			createdIds: created.map((event) => event.overlay?.id),
+			errors,
+			first: scene.overlays.find((overlay) => overlay.id === firstId),
+			measurement: scene.overlays.find((overlay) => overlay.id === measurementId),
+			overlayCount: scene.overlays.length,
+			second: scene.overlays.find((overlay) => overlay.id === secondId),
+		};
+	}, { measurementId: measurement.id, firstId: first.id, secondId: second });
+
+	// 断言 4 次点击的 mousedown/mouseup 全部真实派发。若 adapter 把末次点击当作已有
+	// 受控 overlay 的拖拽消费，preventDefault 会抑制兼容鼠标事件，stamps 将不足 8 条。
+	expect(result.clickStamps).toHaveLength(8);
+	expect(result.clickStamps.map((stamp) => stamp.type)).toEqual([
+		'down',
+		'up',
+		'down',
+		'up',
+		'down',
+		'up',
+		'down',
+		'up',
+	]);
+	expect(result.errors).toEqual([]);
+	expect(result.createdIds).toEqual([measurement.id, first.id, second]);
+	expect(result.overlayCount).toBe(3);
+	expect(result.measurement).toMatchObject({
+		id: measurement.id,
+		type: 'priceMeasurement',
+	});
+	expect(result.first).toMatchObject({
+		id: first.id,
+		type: 'horizontalStraightLine',
+	});
+	expect(result.second).toMatchObject({
+		id: second,
+		type: 'horizontalStraightLine',
+	});
+	expect(result.first?.anchor?.value).toBeCloseTo(12.4, 2);
+	expect(Number.isFinite(result.second?.anchor?.value)).toBe(true);
+	expect(result.second?.anchor?.value).not.toBeCloseTo(12.4, 2);
+	expect(pageErrors).toEqual([]);
+	expect(consoleErrors).toEqual([]);
+});
+
 test('@browser completes the M1 horizontal line lifecycle with stable Scene data', async ({ page }) => {
 	const createdId = 'overlay-m1-runtime-horizontal';
 	const drawPosition = { x: 500, y: 170 };

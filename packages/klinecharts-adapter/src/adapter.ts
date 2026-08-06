@@ -183,6 +183,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 	#pointerInteraction: PointerInteraction | undefined;
 	/** 当前交互式量度的首锚点；只用于补偿引擎丢弃快速第二击，不进入 Scene。 */
 	#interactivePriceMeasurement: InteractivePriceMeasurement | undefined;
+	/** 当前引擎进行中的绘制 Overlay ID；非 null 时 pointerdown 只路由给新绘制，不做命中测试。 */
+	#drawingInProgressId: string | null = null;
 	/** 确定性 opaque 交互 ID 序号。 */
 	#interactionSequence = 0;
 	/** 显式 Workspace 模式；Legacy 与 Workspace 状态严格隔离。 */
@@ -549,6 +551,9 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 				) {
 					this.#interactivePriceMeasurement = undefined;
 				}
+				if (drawing && this.#drawingInProgressId === source.id) {
+					this.#drawingInProgressId = null;
+				}
 				this.#safelyCommitEngineOverlay(overlay, source, drawing ? 'created' : 'updated');
 			},
 			onPressedMoveStart: ({ overlay }) => {
@@ -585,6 +590,9 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 			onRemoved: ({ overlay }) => {
 				if (this.#interactivePriceMeasurement?.source.id === overlay.id) {
 					this.#interactivePriceMeasurement = undefined;
+				}
+				if (this.#drawingInProgressId === overlay.id) {
+					this.#drawingInProgressId = null;
 				}
 				if (this.#activeOverlays().some((candidate) => candidate.id === overlay.id)) {
 					this.#setActiveOverlays(
@@ -724,6 +732,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 		const index = candidate.overlays.length - 1;
 		const overlay = candidate.overlays[index]!;
 		this.#interactivePriceMeasurement = undefined;
+		this.#drawingInProgressId = null;
 		if (!this.#chart.removeOverlay({ id: overlay.id })) {
 			throw new SceneError(
 				'RUNTIME_INIT_FAILED',
@@ -905,6 +914,12 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 				}
 				throw error;
 			}
+		}
+		// 绘制进行中时 pointerdown 必须优先路由给新绘制：不得对已有 overlay 做命中测试、
+		// 选中、取消选中或拖拽，也不得 preventDefault / stopImmediatePropagation /
+		// setPointerCapture，否则引擎收不到 mousedown/click，新绘制首击会被消费。
+		if (this.#drawingInProgressId !== null) {
+			return;
 		}
 		const hit = hitTestOverlayGeometries(coordinate, this.#overlayGeometries());
 		if (hit === null) {
@@ -1250,6 +1265,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 				`KLineCharts failed to start Drawing ${request.id}.`,
 			);
 		}
+		this.#drawingInProgressId = request.id;
 		return request.id;
 	}
 
@@ -1721,6 +1737,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 				`KLineCharts failed to start drawing Overlay ${request.id}.`,
 			);
 		}
+		this.#drawingInProgressId = request.id;
 		this.#scene = candidate;
 		if (request.type === 'priceMeasurement') {
 			this.#interactivePriceMeasurement = {
@@ -1781,6 +1798,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 		}
 		this.#cancelInteraction('destroy');
 		this.#interactivePriceMeasurement = undefined;
+		this.#drawingInProgressId = null;
 		this.#disposed = true;
 		this.#removeInteractionListeners();
 		this.#listeners.clear();
