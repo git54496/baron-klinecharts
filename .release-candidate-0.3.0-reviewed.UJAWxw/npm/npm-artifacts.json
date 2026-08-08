@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "packages": [
+    {
+      "directory": "packages/scene-schema",
+      "name": "@baron1996/kline-scene-schema",
+      "version": "0.3.0",
+      "filename": "baron1996-kline-scene-schema-0.3.0.tgz",
+      "sha256": "72e6b9eb14bbc0f18a8c15f86ddf83876671d32f2d802ff4b300512f0ba453e8",
+      "integrity": "sha512-YtYZU5U4v1zqDkIPeNMXWkniAEVzcPoO3I3DtGn6WCIURPhYnowPJAx8llmJZ9F0JvgPxarsFMdtrIt/jFx9oA=="
+    },
+    {
+      "directory": "packages/klinecharts-adapter",
+      "name": "@baron1996/klinecharts-adapter",
+      "version": "0.3.0",
+      "filename": "baron1996-klinecharts-adapter-0.3.0.tgz",
+      "sha256": "c7fe42818d4687f06c64da41040cd047b32f8528250eae4dc54cc512b87146b1",
+      "integrity": "sha512-0BvBfTsCT6aClYMKRYFfMH45vajYeKAM3qq8+Es4fjAiRmKZ0QDHXJV2paP+e0x1sWSpS3MODhlW9d00ZaoW3g=="
+    },
+    {
+      "directory": "packages/web-runtime",
+      "name": "@baron1996/klinecharts-runtime",
+      "version": "0.3.0",
+      "filename": "baron1996-klinecharts-runtime-0.3.0.tgz",
+      "sha256": "f6b7c255b9290be3cbf642fe35317d826b58a7c912b411b8c48468329f1e8498",
+      "integrity": "sha512-Gbjdifxx2Cff0tgdE8jSK4yA+2khe0BMM0KtqhSTFsE5AecxjAA8VDFgRW9C0kQ6bWMw4K3MNGpoVInLiCA2ag=="
+    },
+    {
+      "directory": "packages/cli",
+      "name": "@baron1996/klinecharts-cli",
+      "version": "0.3.0",
+      "filename": "baron1996-klinecharts-cli-0.3.0.tgz",
+      "sha256": "97428345383b8e473199493a9850a2e366acbfe8f79e45400e84b1fc3c1d815f",
+      "integrity": "sha512-oI3mr/4xGykpqg6IZy47kEjuez2BpruJfkRDm1yri9redhhWrtHppbvZPMvdGir/IScFQtNAqR/oXcYBIjkI3g=="
+    }
+  ]
+}
