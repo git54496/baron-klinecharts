@@ -36,13 +36,13 @@ tests                          跨语言、浏览器、视觉与安装门禁
 安装 Web Runtime：
 
 ```bash
-npm install --save-exact @baron1996/klinecharts-runtime@0.5.1
+npm install --save-exact @baron1996/klinecharts-runtime@0.6.0
 ```
 
 安装 CLI：
 
 ```bash
-npm install --global @baron1996/klinecharts-cli@0.5.1
+npm install --global @baron1996/klinecharts-cli@0.6.0
 baron-kline install-browser
 ```
 
@@ -86,6 +86,12 @@ npm run example:workspace-time-series
 页面加载 `tests/fixtures/workspaces/time-series-minimal.json`，操作方式与 K 线
 Workspace 示例一致。
 
+同标的跨周期画线使用 `DrawableWorkspaceRuntime` 的显式 `host-confirmed` 模式，
+再连接 `createCrossPeriodDrawingCoordinator`。协调器只处理宿主提供的
+`instrumentKey → scopeKey` 绑定、周期 Scene 加载以及候选 Drawing 的持久化
+确认；行情请求和 Scene 装配仍由业务宿主负责，金融行情必须通过 `fxxking-data`
+获取。周期切换只替换 Workspace 的 Scene，confirmed `DrawingDocument` 保持不变。
+
 ### 其他工程接入与源码隔离
 
 其他工程只能消费发布到 npm、PyPI 或 GitHub Release 的版本化产物，并通过
@@ -98,7 +104,7 @@ Workspace 示例一致。
 - 禁止把本仓库路径加入其他工程或 Agent 的可写 workspace。
 
 消费方必须安装明确版本并提交自己的 lockfile，例如
-`@baron1996/klinecharts-runtime@0.5.1` 和 `baron-klinecharts==0.5.1`。升级只能
+`@baron1996/klinecharts-runtime@0.6.0` 和 `baron-klinecharts==0.6.0`。升级只能
 通过本仓库发布新版本后，由消费方主动修改依赖版本完成；不得直接修改本仓库来
 适配某个业务工程。
 
@@ -145,7 +151,7 @@ baron-kline install-browser
 要求 Python 3.11–3.14。浏览器客户端随包安装，但 Chromium 不会被隐式下载。
 
 ```bash
-pip install baron-klinecharts==0.5.1
+pip install baron-klinecharts==0.6.0
 python -m playwright install chromium
 ```
 
@@ -174,8 +180,10 @@ CI 分别使用 `tests/rendering/baselines/github-macos-15` 和
 
 ## 发布
 
-当前发布候选协调版本为 `0.5.1`。Scene Schema、Adapter、Web Runtime、CLI、
-Python 和私有 Render Runtime 统一为 `0.5.1`，所有内部依赖使用精确版本。
+当前发布候选协调版本为 `0.6.0`。Scene Schema、Adapter、Web Runtime、CLI、
+Python 和私有 Render Runtime 统一为 `0.6.0`，所有内部依赖使用精确版本。
+该候选新增 Workspace 跨周期宿主编排 API，但不提升 Drawing/Workspace Schema 版本或
+Runtime 事件协议版本。
 ChartScene `version` 仍为 `1`；Runtime protocol `0.2.0` 增加显式线性/对数轴、
 价格量度、精确命中与过程事件，同时继续读取 Runtime `0.1.0` 的 M1 场景。
 发布流水线先执行完整验证，再只为版本与 tag 相同的公共包构建一次不可变产物。

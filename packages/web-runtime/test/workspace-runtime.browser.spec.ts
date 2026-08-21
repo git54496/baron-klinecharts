@@ -153,6 +153,85 @@ test('@browser Workspace Runtime host-confirmed commit and reject', async ({ pag
 	expect(after).toBe(23);
 });
 
+test('@browser cross-period coordinator persists then switches Scene without changing Drawings', async ({ page }) => {
+	await installRuntime(page, chartWorkspace, 'host-confirmed');
+	await page.evaluate(async () => {
+		const { createCrossPeriodDrawingCoordinator } = await import('/src/index.ts');
+		const runtime = (window as unknown as {
+			__runtime: {
+				readonly commitMode: 'host-confirmed';
+				exportWorkspace(): typeof chartWorkspace;
+				replaceScene(scene: unknown): unknown;
+				commitDrawingChange(requestId: string, hash: string): boolean;
+				rejectDrawingChange(requestId: string): boolean;
+				subscribe(listener: (event: never) => void): () => void;
+				startDrawing(type: string): string;
+				listDrawings(): readonly unknown[];
+			};
+		}).__runtime;
+		const persisted: unknown[] = [];
+		const coordinator = createCrossPeriodDrawingCoordinator(
+			runtime as never,
+			{
+				instrumentKey: 'CN:600519',
+				scopeKey: runtime.exportWorkspace().drawings.scopeKey,
+			},
+			{
+				initialRevision: 'r1',
+				loadScene: async ({ period, currentWorkspace }) => ({
+					...structuredClone(currentWorkspace.scene.document),
+					period: structuredClone(period),
+				}) as never,
+				persistCandidate: async (request) => {
+					persisted.push(request);
+					return {
+						canonicalHash: request.canonicalHash,
+						revision: 'r2',
+					};
+				},
+			},
+		);
+		(window as unknown as Record<string, unknown>).__coordinator = coordinator;
+		(window as unknown as Record<string, unknown>).__persisted = persisted;
+		runtime.startDrawing('horizontalStraightLine');
+	});
+	await page.mouse.click(500, 40);
+	const result = await page.evaluate(async () => {
+		const runtime = (window as unknown as {
+			__runtime: {
+				listDrawings(): readonly unknown[];
+				exportWorkspace(): typeof chartWorkspace;
+			};
+		}).__runtime;
+		const coordinator = (window as unknown as {
+			__coordinator: {
+				readonly currentRevision: string | null;
+				waitForIdle(): Promise<void>;
+				switchPeriod(period: unknown): Promise<unknown>;
+			};
+		}).__coordinator;
+		await coordinator.waitForIdle();
+		const beforeSwitch = runtime.listDrawings().length;
+		await coordinator.switchPeriod({ type: 'week', span: 1 });
+		const workspace = runtime.exportWorkspace();
+		return {
+			beforeSwitch,
+			afterSwitch: runtime.listDrawings().length,
+			period: workspace.scene.document.period,
+			revision: coordinator.currentRevision,
+			persisted: (window as unknown as { __persisted: readonly unknown[] })
+				.__persisted.length,
+		};
+	});
+	expect(result).toEqual({
+		beforeSwitch: 23,
+		afterSwitch: 23,
+		period: { type: 'week', span: 1 },
+		revision: 'r2',
+		persisted: 1,
+	});
+});
+
 test('@browser Workspace Runtime replaces the Scene atomically', async ({ page }) => {
 	await installRuntime(page, chartWorkspace);
 	const result = await page.evaluate((chartWorkspace) => {
@@ -180,6 +259,33 @@ test('@browser Workspace Runtime replaces the Scene atomically', async ({ page }
 	}, chartWorkspace);
 	expect(result.close).toBe(12.6);
 	expect(result.replaced).toBe(true);
+});
+
+test('@browser time-series Workspace replaces period in the same Adapter', async ({ page }) => {
+	await installRuntime(page, timeSeriesWorkspace);
+	const result = await page.evaluate((timeSeriesWorkspace) => {
+		const runtime = (window as unknown as {
+			__runtime: {
+				replaceScene(scene: unknown): unknown;
+				exportWorkspace(): typeof timeSeriesWorkspace;
+				listDrawings(): readonly unknown[];
+			};
+		}).__runtime;
+		const before = runtime.listDrawings().length;
+		const next = structuredClone(timeSeriesWorkspace.scene.document);
+		next.period = { type: 'week', span: 1 };
+		runtime.replaceScene(next);
+		return {
+			before,
+			after: runtime.listDrawings().length,
+			period: runtime.exportWorkspace().scene.document.period,
+		};
+	}, timeSeriesWorkspace);
+	expect(result).toEqual({
+		before: 22,
+		after: 22,
+		period: { type: 'week', span: 1 },
+	});
 });
 
 test('@browser Workspace Runtime switches candle→area→candle without touching Drawings', async ({ page }) => {

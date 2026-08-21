@@ -27,9 +27,52 @@ const legacyDeclarationHashes = new Map([
 	['packages/cli/dist/commands/drawings.d.ts', 'b8ca9c29af8273319f8d5262fcbb2d7dcaade9077cd9276a059ecadd1f7f3f75'],
 ]);
 
-test('legacy schema errors and Runtime declarations remain byte-for-byte compatible', async () => {
+const additiveDeclarationBlocks = new Map([
+	[
+		'packages/web-runtime/dist/drawing/workspace-runtime.d.ts',
+		[
+			"import { DrawingSessionController } from './session-controller.js';\n",
+			`    /** 跨周期等宿主编排只能连接显式 host-confirmed Runtime。 */
+    get commitMode(): DrawableWorkspaceRuntimeOptions['commitMode'];
+    /** 只暴露公共会话状态，不暴露 Adapter 或 Chart。 */
+    getDrawingSessionState(): DrawingSessionController['state'];
+`,
+		],
+	],
+	[
+		'packages/web-runtime/dist/drawing/session-controller.d.ts',
+		[
+			`    /** 当前已确认的投影 Scene；仅返回深拷贝，协调层不能取得引擎对象。 */
+    get projectionScene(): ProjectionScene;
+`,
+			`    /**
+     * 在同一个 Adapter 内原子替换 Scene 投影上下文。
+     * 候选 Scene 先以 confirmed Drawing 全量验证，成功应用引擎后才提升为当前投影 Scene。
+     */
+    replaceProjectionScene<T>(scene: ProjectionScene, apply: () => T): T;
+    /** 异步版本用于轴等需要等待 Adapter 原子应用完成的 Scene 事务。 */
+    replaceProjectionSceneAsync<T>(scene: ProjectionScene, apply: () => Promise<T>): Promise<T>;
+`,
+		],
+	],
+]);
+
+function projectLegacyDeclaration(path, content) {
+	let legacyContent = content;
+	for (const block of additiveDeclarationBlocks.get(path) ?? []) {
+		assert.equal(
+			legacyContent.includes(block),
+			true,
+			`${path} is missing its expected additive API block`,
+		);
+		legacyContent = legacyContent.replace(block, '');
+	}
+	return legacyContent;
+}
+
+test('legacy schema errors and Runtime declaration projections remain byte-for-byte compatible', async () => {
 	for (const [path, expectedHash] of legacyDeclarationHashes) {
-		const content = await readFile(path);
+		const content = projectLegacyDeclaration(path, await readFile(path, 'utf8'));
 		const actualHash = createHash('sha256').update(content).digest('hex');
 		assert.equal(actualHash, expectedHash, `${path} changed unexpectedly`);
 	}

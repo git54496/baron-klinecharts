@@ -1,7 +1,8 @@
 /** Web Runtime npm 包版本；ChartScene runtimeVersion 是独立的数据契约版本。 */
-export const WEB_RUNTIME_PACKAGE_VERSION = '0.5.1' as const;
+export const WEB_RUNTIME_PACKAGE_VERSION = '0.6.0' as const;
 
 export { SUPPORTED_OVERLAYS } from '@baron1996/klinecharts-adapter';
+export * from './cross-period/coordinator.js';
 export * from './drawing/capabilities.js';
 export * from './drawing/projection-service.js';
 export * from './drawing/runtime-capability-descriptor.js';

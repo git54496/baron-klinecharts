@@ -77,6 +77,8 @@ export interface DrawingSessionControllerOptions {
  */
 export class DrawingSessionController {
 	readonly #options: DrawingSessionControllerOptions;
+	/** 后续 Drawing 候选投影必须使用的当前已确认 Scene。 */
+	#scene: ProjectionScene;
 	#state: DrawingSessionState = 'ready';
 	#confirmed: EngineDrawingSnapshot[] = [];
 	#candidate: SessionCandidate | null = null;
@@ -87,6 +89,7 @@ export class DrawingSessionController {
 
 	public constructor(options: DrawingSessionControllerOptions) {
 		this.#options = options;
+		this.#scene = structuredClone(options.scene);
 		this.#unsubscribeEngine = options.engine.subscribeDrawingEvents(
 			(event) => this.#handleEngineEvent(event),
 		);
@@ -103,6 +106,12 @@ export class DrawingSessionController {
 
 	public get selectedId(): string | null {
 		return this.#selectedId;
+	}
+
+	/** 当前已确认的投影 Scene；仅返回深拷贝，协调层不能取得引擎对象。 */
+	public get projectionScene(): ProjectionScene {
+		this.#assertUsable();
+		return structuredClone(this.#scene);
 	}
 
 	public restoreConfirmed(drawings: readonly EngineDrawingSnapshot[]): void {
@@ -166,6 +175,87 @@ export class DrawingSessionController {
 			type: 'selection-changed',
 			id,
 		});
+	}
+
+	/**
+	 * 在同一个 Adapter 内原子替换 Scene 投影上下文。
+	 * 候选 Scene 先以 confirmed Drawing 全量验证，成功应用引擎后才提升为当前投影 Scene。
+	 */
+	public replaceProjectionScene<T>(
+		scene: ProjectionScene,
+		apply: () => T,
+	): T {
+		this.#assertReady();
+		const candidate = structuredClone(scene);
+		this.#options.projectionService.projectDocument({
+			scene: candidate,
+			drawings: this.#options.buildDocument(this.#confirmed),
+		});
+		this.#state = 'reprojecting';
+		let mutationsDisabled = false;
+		try {
+			this.#options.engine.setMutationsEnabled(false);
+			mutationsDisabled = true;
+			const result = apply();
+			this.#scene = candidate;
+			return result;
+		} finally {
+			if (mutationsDisabled) {
+				try {
+					this.#options.engine.setMutationsEnabled(true);
+				} catch (error) {
+					this.#enterTerminalError(
+						'DRAWING_PROJECTION_INVALID',
+						`Failed to restore Drawing mutations after Scene replacement: ${String(error)}`,
+					);
+					throw new DrawingSessionError(
+						'DRAWING_PROJECTION_INVALID',
+						'/scene',
+						'The Drawing engine could not leave the Scene replacement state.',
+					);
+				}
+			}
+			this.#state = 'ready';
+		}
+	}
+
+	/** 异步版本用于轴等需要等待 Adapter 原子应用完成的 Scene 事务。 */
+	public async replaceProjectionSceneAsync<T>(
+		scene: ProjectionScene,
+		apply: () => Promise<T>,
+	): Promise<T> {
+		this.#assertReady();
+		const candidate = structuredClone(scene);
+		this.#options.projectionService.projectDocument({
+			scene: candidate,
+			drawings: this.#options.buildDocument(this.#confirmed),
+		});
+		this.#state = 'reprojecting';
+		let mutationsDisabled = false;
+		try {
+			this.#options.engine.setMutationsEnabled(false);
+			mutationsDisabled = true;
+			const result = await apply();
+			this.#scene = candidate;
+			return result;
+		} finally {
+			if (mutationsDisabled) {
+				try {
+					this.#options.engine.setMutationsEnabled(true);
+				} catch (error) {
+					this.#enterTerminalError(
+						'DRAWING_PROJECTION_INVALID',
+						`Failed to restore Drawing mutations after Scene replacement: ${String(error)}`,
+					);
+					throw new DrawingSessionError(
+						'DRAWING_PROJECTION_INVALID',
+						'/scene',
+						'The Drawing engine could not leave the Scene replacement state.',
+					);
+				}
+			}
+			this.#state = 'ready';
+		}
 	}
 
 	public commitDrawingChange(requestId: string, canonicalHash: string): boolean {
@@ -343,7 +433,7 @@ export class DrawingSessionController {
 		);
 		try {
 			const projected = this.#options.projectionService.projectDocument({
-				scene: this.#options.scene,
+				scene: this.#scene,
 				drawings: candidateDocument,
 			});
 			if (input.after !== undefined && input.operation !== 'delete') {
