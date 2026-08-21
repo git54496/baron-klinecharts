@@ -8,7 +8,10 @@ import type {
 	EngineDrawingSnapshot,
 	EngineDrawingStartRequest,
 } from '@baron1996/klinecharts-adapter';
-import { DrawingProjectionService } from '../src/drawing/projection-service.js';
+import {
+	DrawingProjectionService,
+	type ProjectionScene,
+} from '../src/drawing/projection-service.js';
 import {
 	DrawingSessionController,
 	DrawingSessionError,
@@ -16,7 +19,7 @@ import {
 import type { WorkspaceRuntimeEvent } from '../src/drawing/workspace-events.js';
 
 const valueAxes = chartWorkspaceFixture.drawings.coordinateSystem.valueAxes;
-const scene = {
+const scene: ProjectionScene = {
 	kind: 'chart',
 	document: chartWorkspaceFixture.scene.document,
 } as never;
@@ -56,6 +59,7 @@ class MockEngine implements DrawingEnginePort {
 	public drawings = new Map<string, EngineDrawingSnapshot>();
 	public listener: ((event: EngineDrawingEvent) => void) | null = null;
 	public started: EngineDrawingStartRequest | null = null;
+	public mutationStates: boolean[] = [];
 
 	public restoreDrawings(drawings: readonly EngineDrawingSnapshot[]): void {
 		this.drawings = new Map(drawings.map((drawing) => [drawing.id, drawing]));
@@ -146,7 +150,9 @@ class MockEngine implements DrawingEnginePort {
 		return {};
 	}
 
-	public setMutationsEnabled(): void {}
+	public setMutationsEnabled(enabled: boolean): void {
+		this.mutationStates.push(enabled);
+	}
 
 	public subscribeDrawingEvents(
 		listener: (event: EngineDrawingEvent) => void,
@@ -303,5 +309,39 @@ describe('DrawingSessionController', () => {
 		engine.emitCreated('candidate', 12.6);
 		await flush(events);
 		expect(JSON.stringify(controller.confirmedDrawings)).toBe(before);
+	});
+
+	it('updates the projection Scene atomically while the engine replacement runs', async () => {
+		const { engine, controller } = buildController('immediate');
+		const nextScene = structuredClone(scene);
+		nextScene.document.period = { type: 'week', span: 1 };
+		const applied = controller.replaceProjectionScene(nextScene, () => {
+			expect(controller.state).toBe('reprojecting');
+			expect(() => controller.startCreate('horizontalStraightLine'))
+				.toThrowError(expect.objectContaining({ code: 'DRAWING_CHANGE_IN_PROGRESS' }));
+			return 'applied';
+		});
+
+		expect(applied).toBe('applied');
+		expect(controller.state).toBe('ready');
+		expect(engine.mutationStates).toEqual([false, true]);
+		expect(controller.projectionScene.document.period).toEqual({
+			type: 'week',
+			span: 1,
+		});
+	});
+
+	it('restores the old projection Scene when engine replacement fails', () => {
+		const { engine, controller } = buildController('immediate');
+		const before = controller.projectionScene;
+		const nextScene = structuredClone(scene);
+		nextScene.document.period = { type: 'month', span: 1 };
+
+		expect(() => controller.replaceProjectionScene(nextScene, () => {
+			throw new Error('replace failed');
+		})).toThrow('replace failed');
+		expect(controller.state).toBe('ready');
+		expect(controller.projectionScene).toEqual(before);
+		expect(engine.mutationStates).toEqual([false, true]);
 	});
 });

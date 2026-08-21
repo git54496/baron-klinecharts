@@ -1,5 +1,5 @@
 /** 场景协议包版本；Scene version 仍保持 1。 */
-export const SCENE_PACKAGE_VERSION = '0.5.1' as const;
+export const SCENE_PACKAGE_VERSION = '0.6.0' as const;
 
 export * from './canonical-json.js';
 export * from './canonicalize.js';

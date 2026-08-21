@@ -96,6 +96,8 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 	readonly #projectionService = new DrawingProjectionService();
 	readonly #registration: ReturnType<typeof getSceneRuntime>;
 	readonly #runtimeId: string;
+	/** 宿主确认策略在 Runtime 生命周期内不可切换。 */
+	readonly #commitMode: DrawableWorkspaceRuntimeOptions['commitMode'];
 	readonly #listeners = new Set<WorkspaceRuntimeListener>();
 	#sequence = 0;
 	#destroyed = false;
@@ -110,6 +112,7 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		this.#container = container;
 		this.#workspace = workspace;
 		this.#engine = engine;
+		this.#commitMode = options.commitMode;
 		this.#runtimeId = `drawable-workspace-${Math.random().toString(36).slice(2)}`;
 		this.#scene = workspace.scene.document as unknown as
 			| ChartScene
@@ -145,6 +148,16 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		const registration = getSceneRuntime(workspace.scene.kind);
 		const engine = await registration.createAdapter(container, workspace);
 		return new DrawableWorkspaceRuntime(container, workspace, engine, options);
+	}
+
+	/** 跨周期等宿主编排只能连接显式 host-confirmed Runtime。 */
+	public get commitMode(): DrawableWorkspaceRuntimeOptions['commitMode'] {
+		return this.#commitMode;
+	}
+
+	/** 只暴露公共会话状态，不暴露 Adapter 或 Chart。 */
+	public getDrawingSessionState(): DrawingSessionController['state'] {
+		return this.#session.state;
 	}
 
 	public startDrawing(
@@ -324,7 +337,13 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		const engine = this.#engine as unknown as {
 			setPriceScale(scale: 'linear' | 'logarithmic'): Promise<ChartScene>;
 		};
-		await engine.setPriceScale(scale);
+		await this.#session.replaceProjectionSceneAsync(
+			{
+				kind: 'chart',
+				document: candidate,
+			} as unknown as ProjectionScene,
+			() => engine.setPriceScale(scale),
+		);
 		this.#scene = candidate;
 		this.#emit({ type: 'value-axis-scale-changed', scale });
 		return structuredClone(candidate);
@@ -368,11 +387,16 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		) {
 			throw new Error('DRAWABLE_SCENE_KIND_UNSUPPORTED: cross-kind replacement is rejected.');
 		}
-		this.#assertSceneProjection(candidate);
 		const engine = this.#engine as unknown as {
 			replaceScene(value: ChartScene | TimeSeriesScene): ChartScene | TimeSeriesScene;
 		};
-		const applied = engine.replaceScene(candidate);
+		const applied = this.#session.replaceProjectionScene(
+			{
+				kind: this.#sceneKind(),
+				document: candidate,
+			} as unknown as ProjectionScene,
+			() => engine.replaceScene(candidate),
+		);
 		this.#scene = applied;
 		this.#emit({ type: 'scene-replaced', scene: { kind: this.#sceneKind(), document: applied } });
 		return structuredClone(applied);

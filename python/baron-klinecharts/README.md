@@ -3,7 +3,7 @@
 Python SDK for the Baron KLineCharts `ChartScene` format.
 
 ```bash
-pip install baron-klinecharts==0.5.1
+pip install baron-klinecharts==0.6.0
 python -m playwright install chromium
 ```
 

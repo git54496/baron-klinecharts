@@ -4,7 +4,7 @@ Browser editing runtime and standard annotation toolbar for deterministic KLineC
 ChartScene files.
 
 ```bash
-npm install --save-exact @baron1996/kline-scene-schema@0.5.1 @baron1996/klinecharts-runtime@0.5.1
+npm install --save-exact @baron1996/kline-scene-schema@0.6.0 @baron1996/klinecharts-runtime@0.6.0
 ```
 
 ```ts
@@ -45,3 +45,53 @@ Runtime `0.2.0` events are structured-cloneable pure data with
 `sceneVersion: 1` and `runtimeVersion: '0.2.0'`. Measurement scenes persist only
 their two data-coordinate endpoints, styles, and opaque metadata; displayed absolute
 and percentage changes are derived.
+
+## Cross-period Drawing orchestration
+
+Cross-period Drawing uses the existing `DrawableWorkspaceRuntime` in explicit
+`host-confirmed` mode. The coordinator binds a host-owned stable instrument key to
+the Workspace `scopeKey`, loads a complete replacement Scene through a host port,
+and commits a Drawing candidate only after the persistence receipt returns the exact
+Runtime canonical hash.
+
+```ts
+import {
+  createCrossPeriodDrawingCoordinator,
+  createDrawableWorkspaceRuntime,
+} from '@baron1996/klinecharts-runtime';
+
+const runtime = await createDrawableWorkspaceRuntime(container, loadedWorkspace, {
+  commitMode: 'host-confirmed',
+});
+
+const coordinator = createCrossPeriodDrawingCoordinator(
+  runtime,
+  {
+    instrumentKey: 'CN:600519',
+    scopeKey: loadedWorkspace.drawings.scopeKey,
+  },
+  {
+    initialRevision: loadedRevision,
+    async loadScene({ binding, period, currentWorkspace }) {
+      // The host assembles a complete Scene. Financial market data must come
+      // through fxxking-data.
+      return hostSceneLoader.load({ binding, period, currentWorkspace });
+    },
+    async persistCandidate(request) {
+      // owner, permissions, audit and database transactions stay in the host.
+      return drawingRepository.compareAndSet(request);
+    },
+  },
+);
+
+await coordinator.switchPeriod({ type: 'week', span: 1 });
+await coordinator.waitForIdle();
+
+coordinator.destroy();
+runtime.destroy();
+```
+
+The coordinator never derives `scopeKey` from `scene.symbol.ticker`, never accesses
+the KLineCharts `Chart`, and never converts legacy `ChartScene.overlays` into a
+Workspace. A Scene switch changes only `workspace.scene`; the confirmed
+`DrawingDocument` remains byte-identical.

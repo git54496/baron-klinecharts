@@ -289,6 +289,15 @@ describe('DrawableWorkspaceRuntime', () => {
 		expect(
 			(exported.scene as { document: ChartScene }).document.data[0].close,
 		).toBe(12.6);
+		expect(runtime.getDrawingSessionState()).toBe('ready');
+	});
+
+	it('exposes host-confirmed mode for cross-period orchestration', async () => {
+		const { runtime } = await makeRuntime(
+			chartWorkspaceFixture,
+			'host-confirmed',
+		);
+		expect(runtime.commitMode).toBe('host-confirmed');
 	});
 
 	it('rejects scale mutation and main series presentation on time-series', async () => {
