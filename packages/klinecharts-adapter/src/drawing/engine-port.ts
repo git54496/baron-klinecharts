@@ -1,4 +1,8 @@
-import type { Drawing } from '@baron1996/kline-scene-schema';
+import type {
+	ChartScene,
+	Drawing,
+	MarketData,
+} from '@baron1996/kline-scene-schema';
 
 export interface EngineDrawingTarget {
 	readonly paneRole: string;
@@ -59,6 +63,34 @@ export interface EnginePointProjection {
 export interface EnginePixelCoordinate {
 	readonly x: number;
 	readonly y: number;
+}
+
+/** 宿主加载更早行情所需的纯数据请求；不暴露 KLineCharts 的 forward 命名。 */
+export interface EngineHistoricalDataRequest {
+	readonly requestId: string;
+	readonly beforeTimestamp: number;
+	readonly period: ChartScene['period'];
+	readonly dataCount: number;
+}
+
+export interface EngineHistoricalDataCommitResult {
+	readonly scene: ChartScene;
+	readonly addedCount: number;
+	readonly hasMore: boolean;
+}
+
+/** Chart Adapter 可选实现的历史行情端口。 */
+export interface HistoricalDataEnginePort {
+	configureHistoricalDataLoading(hasMore: boolean): void;
+	subscribeHistoricalDataRequests(
+		listener: (request: EngineHistoricalDataRequest) => void,
+	): () => void;
+	commitHistoricalData(
+		requestId: string,
+		data: readonly MarketData[],
+		hasMore: boolean,
+	): EngineHistoricalDataCommitResult;
+	rejectHistoricalData(requestId: string): boolean;
 }
 
 /**

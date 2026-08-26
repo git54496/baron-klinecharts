@@ -6,6 +6,7 @@ import type {
 	ChartScene,
 	DrawableWorkspaceDocument,
 	Drawing,
+	MarketData,
 	TimeSeriesScene,
 } from '@baron1996/kline-scene-schema';
 import type {
@@ -13,6 +14,7 @@ import type {
 	EngineDrawingEvent,
 	EngineDrawingSnapshot,
 	EngineDrawingStartRequest,
+	EngineHistoricalDataRequest,
 } from '@baron1996/klinecharts-adapter';
 import { DrawingProjectionService } from '../src/drawing/projection-service.js';
 import { getSceneRuntime, registerSceneRuntime } from '../src/drawing/scene-runtime-factory.js';
@@ -29,6 +31,7 @@ class MockEngine implements DrawingEnginePort {
 	public appliedPresentation: string | null = null;
 	public appliedScale: string | null = null;
 	public replacedScene: unknown = null;
+	public historicalListener: ((request: EngineHistoricalDataRequest) => void) | null = null;
 
 	public restoreDrawings(drawings: readonly EngineDrawingSnapshot[]): void {
 		this.drawings = new Map(drawings.map((drawing) => [drawing.id, drawing]));
@@ -141,6 +144,41 @@ class MockEngine implements DrawingEnginePort {
 		return structuredClone(scene);
 	}
 
+	public configureHistoricalDataLoading(): void {}
+
+	public subscribeHistoricalDataRequests(
+		listener: (request: EngineHistoricalDataRequest) => void,
+	): () => void {
+		this.historicalListener = listener;
+		return () => {
+			this.historicalListener = null;
+		};
+	}
+
+	public commitHistoricalData(
+		requestId: string,
+		data: readonly MarketData[],
+		hasMore: boolean,
+	): { readonly scene: ChartScene; readonly addedCount: number; readonly hasMore: boolean } {
+		this.scene = {
+			...structuredClone(this.scene),
+			data: [...structuredClone(data), ...structuredClone(this.scene.data)],
+		} as ChartScene;
+		return {
+			scene: structuredClone(this.scene),
+			addedCount: data.length,
+			hasMore,
+		};
+	}
+
+	public rejectHistoricalData(): boolean {
+		return true;
+	}
+
+	public emitHistoricalRequest(request: EngineHistoricalDataRequest): void {
+		this.historicalListener?.(request);
+	}
+
 	public emitCreated(id: string): void {
 		this.drawings.set(id, {
 			id,
@@ -203,6 +241,7 @@ registerSceneRuntime({
 async function makeRuntime(
 	workspace: unknown,
 	commitMode: 'immediate' | 'host-confirmed' = 'immediate',
+	historicalDataLoading = false,
 ): Promise<{
 	readonly runtime: Awaited<ReturnType<typeof createDrawableWorkspaceRuntime>>;
 	readonly events: WorkspaceRuntimeEvent[];
@@ -212,6 +251,9 @@ async function makeRuntime(
 	const runtime = await createDrawableWorkspaceRuntime(container, workspace, {
 		commitMode,
 		onEvent: (event) => events.push(event),
+		...(historicalDataLoading
+			? { historicalDataLoading: { hasMore: true } }
+			: {}),
 	});
 	return { runtime, events };
 }
@@ -336,6 +378,48 @@ describe('DrawableWorkspaceRuntime', () => {
 			(exported.scene as { document: ChartScene }).document.data[0].close,
 		).toBe(12.6);
 		expect(runtime.getDrawingSessionState()).toBe('ready');
+	});
+
+	it('forwards historical requests and atomically prepends confirmed data', async () => {
+		const { runtime, events } = await makeRuntime(
+			chartWorkspaceFixture,
+			'immediate',
+			true,
+		);
+		const firstTimestamp = mockEngine!.scene.data[0]!.timestamp;
+		mockEngine!.emitHistoricalRequest({
+			requestId: 'historical-data-1',
+			beforeTimestamp: firstTimestamp,
+			period: structuredClone(mockEngine!.scene.period),
+			dataCount: mockEngine!.scene.data.length,
+		});
+		expect(events.at(-1)).toMatchObject({
+			type: 'historical-data-requested',
+			requestId: 'historical-data-1',
+			beforeTimestamp: firstTimestamp,
+		});
+
+		const result = runtime.commitHistoricalData(
+			'historical-data-1',
+			[{
+				timestamp: firstTimestamp - 86_400_000,
+				open: 12,
+				high: 12.3,
+				low: 11.9,
+				close: 12.2,
+				volume: 10,
+			}],
+			false,
+		);
+		expect(result.addedCount).toBe(1);
+		expect(result.scene.data[0]!.timestamp).toBe(firstTimestamp - 86_400_000);
+		expect(runtime.exportWorkspace().scene.document.data).toHaveLength(4);
+		expect(events.at(-1)).toMatchObject({
+			type: 'historical-data-appended',
+			addedCount: 1,
+			totalCount: 4,
+			hasMore: false,
+		});
 	});
 
 	it('exposes host-confirmed mode for cross-period orchestration', async () => {

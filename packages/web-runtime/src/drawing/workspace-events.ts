@@ -4,6 +4,7 @@ import type {
 	TimeSeriesScene,
 } from '@baron1996/kline-scene-schema';
 import type { EngineDrawingSnapshot } from '@baron1996/klinecharts-adapter';
+import type { EngineHistoricalDataRequest } from '@baron1996/klinecharts-adapter';
 import type { ActiveMainSeriesType } from '@baron1996/klinecharts-adapter';
 
 export const WORKSPACE_EVENT_PROTOCOL = '@baron1996/drawable-workspace-events' as const;
@@ -57,6 +58,19 @@ export type WorkspaceRuntimeEvent =
 	  })
 	| { readonly type: 'selection-changed'; readonly id: string | null }
 	| { readonly type: 'scene-replaced'; readonly scene: WorkspaceSceneSnapshot }
+	| ({ readonly type: 'historical-data-requested' } & EngineHistoricalDataRequest)
+	| {
+			readonly type: 'historical-data-appended';
+			readonly requestId: string;
+			readonly addedCount: number;
+			readonly totalCount: number;
+			readonly hasMore: boolean;
+	  }
+	| {
+			readonly type: 'historical-data-rejected';
+			readonly requestId: string;
+			readonly message: string;
+	  }
 	| { readonly type: 'value-axis-scale-changed'; readonly scale: 'linear' | 'logarithmic' }
 	| { readonly type: 'main-series-presentation-changed'; readonly activeType: ActiveMainSeriesType }
 	| {

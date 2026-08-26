@@ -2,6 +2,7 @@ import type {
 	ChartScene,
 	DrawableWorkspaceDocument,
 	Drawing,
+	MarketData,
 	SceneIndicator,
 	SceneOverlay,
 } from '@baron1996/kline-scene-schema';
@@ -42,8 +43,11 @@ import type {
 	EngineDrawingEvent,
 	EngineDrawingSnapshot,
 	EngineDrawingStartRequest,
+	EngineHistoricalDataCommitResult,
+	EngineHistoricalDataRequest,
 	EnginePixelCoordinate,
 	EnginePointProjection,
+	HistoricalDataEnginePort,
 } from './drawing/engine-port.js';
 import type { InteractionDimensions } from './drawing/interaction-normalization.js';
 import {
@@ -180,7 +184,7 @@ function isControlledInteractionOverlay(overlay: SceneOverlay): boolean {
  * ChartScene 与 KLineCharts 之间的唯一边界。
  * 引擎对象和内部 ID 永不从该类的公共接口泄露。
  */
-export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPresentationPort {
+export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDataEnginePort, MainSeriesPresentationPort {
 	/** KLineCharts 实例，仅在 Adapter 内部使用。 */
 	readonly #chart: Chart;
 	/** 引擎模块句柄，用于版本读取和精确销毁。 */
@@ -281,6 +285,19 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 	#workspaceSources = new Map<string, Drawing>();
 	/** 公共 Drawing 端口监听器。 */
 	readonly #portListeners = new Set<(event: EngineDrawingEvent) => void>();
+	/** 更早行情请求监听器；仅传递纯数据请求。 */
+	readonly #historicalDataListeners = new Set<(
+		request: EngineHistoricalDataRequest,
+	) => void>();
+	/** 历史行情加载开关及服务端是否仍可能存在更早数据。 */
+	#historicalDataLoading: { hasMore: boolean } | undefined;
+	/** 当前唯一待完成的历史行情请求，防止重复并发前插。 */
+	#pendingHistoricalData: {
+		readonly request: EngineHistoricalDataRequest;
+		readonly callback: import('klinecharts').DataLoaderGetBarsParams['callback'];
+	} | undefined;
+	/** 历史行情请求的单调序号。 */
+	#historicalDataSequence = 0;
 	/** 交互启用开关。 */
 	#mutationsEnabled = true;
 	/** 主序列回滚失败后的只能销毁终止态。 */
@@ -357,6 +374,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 	public static async createWorkspace(
 		container: HTMLElement,
 		value: unknown,
+		options?: { readonly historicalDataLoading?: { readonly hasMore: boolean } },
 	): Promise<KLineChartsSceneAdapter> {
 		const workspace = parseDrawableWorkspaceDocument(value);
 		if (workspace.scene.kind !== 'chart') {
@@ -385,6 +403,11 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 			applyViewport(handle.chart, scene.viewport);
 			container.style.backgroundColor = scene.chart.layout.backgroundColor;
 			adapter.#workspaceMode = true;
+			if (options?.historicalDataLoading !== undefined) {
+				adapter.configureHistoricalDataLoading(
+					options.historicalDataLoading.hasMore,
+				);
+			}
 			adapter.#restoreWorkspaceDrawings(
 				workspace.drawings.drawings.map((drawing) => snapshotOfDrawing(drawing)),
 			);
@@ -484,6 +507,52 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 		for (const listener of this.#portListeners) {
 			listener(structuredClone(event));
 		}
+	}
+
+	#historicalDataLoader(scene: ChartScene): import('klinecharts').DataLoader {
+		const snapshot = structuredClone(scene.data) as unknown as import('klinecharts').KLineData[];
+		return {
+			getBars: ({ type, timestamp, callback }): void => {
+				if (type === 'init') {
+					callback(structuredClone(snapshot), {
+						forward: this.#historicalDataLoading?.hasMore ?? false,
+						backward: false,
+					});
+					return;
+				}
+				if (
+					type !== 'forward' ||
+					this.#historicalDataLoading?.hasMore !== true ||
+					timestamp === null
+				) {
+					callback([], { forward: false, backward: false });
+					return;
+				}
+				if (this.#pendingHistoricalData !== undefined) {
+					callback([], { forward: true, backward: false });
+					return;
+				}
+				const request: EngineHistoricalDataRequest = {
+					requestId: `historical-data-${++this.#historicalDataSequence}`,
+					beforeTimestamp: timestamp,
+					period: structuredClone(this.#scene.period),
+					dataCount: this.#scene.data.length,
+				};
+				this.#pendingHistoricalData = { request, callback };
+				for (const listener of this.#historicalDataListeners) {
+					listener(structuredClone(request));
+				}
+			},
+		};
+	}
+
+	#settlePendingHistoricalData(hasMore: boolean): void {
+		const pending = this.#pendingHistoricalData;
+		if (pending === undefined) {
+			return;
+		}
+		this.#pendingHistoricalData = undefined;
+		pending.callback([], { forward: hasMore, backward: false });
 	}
 
 	#restoreWorkspaceDrawings(drawings: readonly EngineDrawingSnapshot[]): void {
@@ -1267,6 +1336,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 		}
 		const previous = this.#scene;
 		const previousBackground = this.#container.style.backgroundColor;
+		const previousHistoricalHasMore = this.#historicalDataLoading?.hasMore;
+		this.#settlePendingHistoricalData(false);
 		try {
 			this.#chart.setSymbol({
 				ticker: candidate.symbol.ticker,
@@ -1275,7 +1346,14 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 				...(candidate.symbol.name === undefined ? {} : { name: candidate.symbol.name }),
 			});
 			this.#chart.setPeriod(structuredClone(candidate.period));
-			this.#chart.setDataLoader(createStaticDataLoader(candidate.data));
+			if (this.#historicalDataLoading !== undefined) {
+				this.#historicalDataLoading = { hasMore: true };
+			}
+			this.#chart.setDataLoader(
+				this.#historicalDataLoading === undefined
+					? createStaticDataLoader(candidate.data)
+					: this.#historicalDataLoader(candidate),
+			);
 			this.#chart.resetData();
 			applyViewport(this.#chart, candidate.viewport);
 			this.#scene = candidate;
@@ -1291,7 +1369,17 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 					...(previous.symbol.name === undefined ? {} : { name: previous.symbol.name }),
 				});
 				this.#chart.setPeriod(structuredClone(previous.period));
-				this.#chart.setDataLoader(createStaticDataLoader(previous.data));
+				if (
+					this.#historicalDataLoading !== undefined &&
+					previousHistoricalHasMore !== undefined
+				) {
+					this.#historicalDataLoading = { hasMore: previousHistoricalHasMore };
+				}
+				this.#chart.setDataLoader(
+					this.#historicalDataLoading === undefined
+						? createStaticDataLoader(previous.data)
+						: this.#historicalDataLoader(previous),
+				);
 				this.#chart.resetData();
 				applyViewport(this.#chart, previous.viewport);
 				this.#container.style.backgroundColor = previousBackground;
@@ -1300,6 +1388,104 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 			}
 			throw error;
 		}
+	}
+
+	public configureHistoricalDataLoading(hasMore: boolean): void {
+		this.#assertActive();
+		if (!this.#workspaceMode) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/',
+				'Historical data loading requires the Workspace factory.',
+			);
+		}
+		this.#settlePendingHistoricalData(hasMore);
+		this.#historicalDataLoading = { hasMore };
+		this.#chart.setDataLoader(this.#historicalDataLoader(this.#scene));
+		this.#chart.resetData();
+		applyViewport(this.#chart, this.#scene.viewport);
+	}
+
+	public subscribeHistoricalDataRequests(
+		listener: (request: EngineHistoricalDataRequest) => void,
+	): () => void {
+		this.#assertActive();
+		this.#historicalDataListeners.add(listener);
+		if (this.#pendingHistoricalData !== undefined) {
+			listener(structuredClone(this.#pendingHistoricalData.request));
+		}
+		return () => {
+			this.#historicalDataListeners.delete(listener);
+		};
+	}
+
+	public commitHistoricalData(
+		requestId: string,
+		data: readonly MarketData[],
+		hasMore: boolean,
+	): EngineHistoricalDataCommitResult {
+		this.#assertActive();
+		const pending = this.#pendingHistoricalData;
+		if (pending === undefined || pending.request.requestId !== requestId) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/requestId',
+				`Historical data request is not pending: ${requestId}.`,
+			);
+		}
+		if (data.length === 0 && hasMore) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/data',
+				'An empty historical page cannot advertise more data.',
+			);
+		}
+		const page = structuredClone(data) as MarketData[];
+		const earliestTimestamp = this.#scene.data[0]!.timestamp;
+		for (let index = 0; index < page.length; index += 1) {
+			const current = page[index]!;
+			const previous = page[index - 1];
+			if (
+				current.timestamp >= earliestTimestamp ||
+				(previous !== undefined && current.timestamp <= previous.timestamp)
+			) {
+				throw new SceneError(
+					'INVALID_REFERENCE',
+					`/data/${index}/timestamp`,
+					'Historical data must be strictly ascending and earlier than the current first bar.',
+				);
+			}
+		}
+		const candidate = parseChartScene({
+			...structuredClone(this.#scene),
+			data: [...page, ...structuredClone(this.#scene.data)],
+		});
+		this.#pendingHistoricalData = undefined;
+		this.#historicalDataLoading = { hasMore };
+		this.#scene = candidate;
+		pending.callback(structuredClone(page) as unknown as import('klinecharts').KLineData[], {
+			forward: hasMore,
+			backward: false,
+		});
+		return {
+			scene: structuredClone(candidate),
+			addedCount: page.length,
+			hasMore,
+		};
+	}
+
+	public rejectHistoricalData(requestId: string): boolean {
+		this.#assertActive();
+		const pending = this.#pendingHistoricalData;
+		if (pending === undefined || pending.request.requestId !== requestId) {
+			return false;
+		}
+		this.#pendingHistoricalData = undefined;
+		pending.callback([], {
+			forward: this.#historicalDataLoading?.hasMore ?? false,
+			backward: false,
+		});
+		return true;
 	}
 
 	public get sceneKind(): 'chart' | 'time-series' {
@@ -1994,6 +2180,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, MainSeriesPre
 		this.#crosshairListeners.clear();
 		this.#listeners.clear();
 		this.#portListeners.clear();
+		this.#historicalDataListeners.clear();
+		this.#settlePendingHistoricalData(false);
 		this.#workspaceSources.clear();
 		this.#workspaceOverlays = [];
 		this.#engine.dispose(this.#container);

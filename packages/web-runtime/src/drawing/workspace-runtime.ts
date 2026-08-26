@@ -3,6 +3,7 @@ import type {
 	DrawableWorkspaceDocument,
 	Drawing,
 	DrawingDocument,
+	MarketData,
 	TimeSeriesScene,
 } from '@baron1996/kline-scene-schema';
 import {
@@ -15,6 +16,8 @@ import type {
 	ActiveMainSeriesType,
 	DrawingEnginePort,
 	EngineDrawingSnapshot,
+	EngineHistoricalDataCommitResult,
+	HistoricalDataEnginePort,
 	MainSeriesPresentation,
 } from '@baron1996/klinecharts-adapter';
 import {
@@ -24,6 +27,7 @@ import {
 
 import type {
 	DrawingRuntimeCapability,
+	HistoricalDataRuntimeCapability,
 	RuntimeAuxiliaryCapability,
 } from './capabilities.js';
 import {
@@ -51,10 +55,11 @@ export interface DrawableWorkspaceRuntimeOptions {
 	readonly commitMode: 'immediate' | 'host-confirmed';
 	readonly onEvent?: WorkspaceRuntimeListener;
 	readonly hostActions?: readonly HostActionDescriptor[];
+	readonly historicalDataLoading?: { readonly hasMore: boolean };
 }
 
 export interface DrawableWorkspaceRuntimeHandle
-	extends DrawingRuntimeCapability, RuntimeAuxiliaryCapability {}
+	extends DrawingRuntimeCapability, HistoricalDataRuntimeCapability, RuntimeAuxiliaryCapability {}
 
 function drawingToSnapshot(drawing: Drawing): EngineDrawingSnapshot {
 	return {
@@ -107,6 +112,8 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 	/** 宿主确认策略在 Runtime 生命周期内不可切换。 */
 	readonly #commitMode: DrawableWorkspaceRuntimeOptions['commitMode'];
 	readonly #listeners = new Set<WorkspaceRuntimeListener>();
+	/** 释放历史行情请求订阅，避免 Runtime 销毁后宿主收到旧请求。 */
+	readonly #unsubscribeHistoricalData: (() => void) | undefined;
 	#sequence = 0;
 	#destroyed = false;
 	#scene: ChartScene | TimeSeriesScene;
@@ -145,6 +152,12 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		if (options.onEvent !== undefined) {
 			this.#listeners.add(options.onEvent);
 		}
+		const historicalDataPort = this.#historicalDataPort();
+		this.#unsubscribeHistoricalData = options.historicalDataLoading === undefined
+			? undefined
+			: historicalDataPort?.subscribeHistoricalDataRequests((request) => {
+					this.#emit({ type: 'historical-data-requested', ...request });
+				});
 	}
 
 	public static async create(
@@ -153,8 +166,18 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		options: DrawableWorkspaceRuntimeOptions,
 	): Promise<DrawableWorkspaceRuntime> {
 		const workspace = parseDrawableWorkspaceDocument(value);
+		if (
+			options.historicalDataLoading !== undefined &&
+			workspace.scene.kind !== 'chart'
+		) {
+			throw new Error('HISTORICAL_DATA_UNSUPPORTED: only chart Workspaces support historical data loading.');
+		}
 		const registration = getSceneRuntime(workspace.scene.kind);
-		const engine = await registration.createAdapter(container, workspace);
+		const engine = await registration.createAdapter(container, workspace, {
+			...(options.historicalDataLoading === undefined
+				? {}
+				: { historicalDataLoading: options.historicalDataLoading }),
+		});
 		return new DrawableWorkspaceRuntime(container, workspace, engine, options);
 	}
 
@@ -412,6 +435,45 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		return structuredClone(applied);
 	}
 
+	public commitHistoricalData(
+		requestId: string,
+		data: readonly MarketData[],
+		hasMore: boolean,
+	): EngineHistoricalDataCommitResult {
+		this.#assertUsable();
+		const port = this.#requireHistoricalDataPort();
+		const current = parseChartScene(this.#scene);
+		const candidate = parseChartScene({
+			...structuredClone(current),
+			data: [...structuredClone(data), ...structuredClone(current.data)],
+		});
+		const result = this.#session.replaceProjectionScene(
+			{ kind: 'chart', document: candidate },
+			() => port.commitHistoricalData(requestId, data, hasMore),
+		);
+		this.#scene = result.scene;
+		this.#emit({
+			type: 'historical-data-appended',
+			requestId,
+			addedCount: result.addedCount,
+			totalCount: result.scene.data.length,
+			hasMore: result.hasMore,
+		});
+		return {
+			...result,
+			scene: structuredClone(result.scene),
+		};
+	}
+
+	public rejectHistoricalData(requestId: string, message: string): boolean {
+		this.#assertUsable();
+		const rejected = this.#requireHistoricalDataPort().rejectHistoricalData(requestId);
+		if (rejected) {
+			this.#emit({ type: 'historical-data-rejected', requestId, message });
+		}
+		return rejected;
+	}
+
 	public commitDrawingChange(requestId: string, canonicalHash: string): boolean {
 		return this.#session.commitDrawingChange(requestId, canonicalHash);
 	}
@@ -436,6 +498,7 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 			return;
 		}
 		this.#destroyed = true;
+		this.#unsubscribeHistoricalData?.();
 		this.#session.destroy();
 		this.#engine.dispose();
 		this.#listeners.clear();
@@ -484,6 +547,25 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 
 	#sceneKind(): 'chart' | 'time-series' {
 		return 'panes' in this.#scene ? 'chart' : 'time-series';
+	}
+
+	#historicalDataPort(): HistoricalDataEnginePort | undefined {
+		const candidate = this.#engine as DrawingEnginePort & Partial<HistoricalDataEnginePort>;
+		return (
+			typeof candidate.subscribeHistoricalDataRequests === 'function' &&
+			typeof candidate.commitHistoricalData === 'function' &&
+			typeof candidate.rejectHistoricalData === 'function'
+		)
+			? candidate as DrawingEnginePort & HistoricalDataEnginePort
+			: undefined;
+	}
+
+	#requireHistoricalDataPort(): HistoricalDataEnginePort {
+		const port = this.#historicalDataPort();
+		if (port === undefined) {
+			throw new Error('HISTORICAL_DATA_UNSUPPORTED: the current Scene Adapter has no historical data port.');
+		}
+		return port;
 	}
 
 	#emit(event: WorkspaceRuntimeEvent): void {

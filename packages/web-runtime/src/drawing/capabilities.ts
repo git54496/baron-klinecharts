@@ -1,8 +1,10 @@
 import type {
 	ChartScene,
 	Drawing,
+	MarketData,
 } from '@baron1996/kline-scene-schema';
 import type {
+	EngineHistoricalDataCommitResult,
 	EngineDrawingSnapshot,
 	EnginePixelCoordinate,
 	MainSeriesPresentation,
@@ -53,4 +55,14 @@ export interface RuntimeAuxiliaryCapability {
 		presentation: MainSeriesPresentation,
 	): { readonly activeType: string };
 	requestHostAction(actionId: string, drawingId?: string | null): void;
+}
+
+/** 由宿主接管网络请求的更早行情能力。 */
+export interface HistoricalDataRuntimeCapability {
+	commitHistoricalData(
+		requestId: string,
+		data: readonly MarketData[],
+		hasMore: boolean,
+	): EngineHistoricalDataCommitResult;
+	rejectHistoricalData(requestId: string, message: string): boolean;
 }

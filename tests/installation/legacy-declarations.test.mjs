@@ -53,6 +53,17 @@ const additiveDeclarationBlocks = new Map([
 	[
 		'packages/web-runtime/dist/drawing/workspace-runtime.d.ts',
 		[
+			' MarketData,',
+			' EngineHistoricalDataCommitResult,',
+			' HistoricalDataRuntimeCapability,',
+			', HistoricalDataRuntimeCapability',
+			`    readonly historicalDataLoading?: {
+        readonly hasMore: boolean;
+    };
+`,
+			`    commitHistoricalData(requestId: string, data: readonly MarketData[], hasMore: boolean): EngineHistoricalDataCommitResult;
+    rejectHistoricalData(requestId: string, message: string): boolean;
+`,
 			"import { DrawingSessionController } from './session-controller.js';\n",
 			`    /** 跨周期等宿主编排只能连接显式 host-confirmed Runtime。 */
     get commitMode(): DrawableWorkspaceRuntimeOptions['commitMode'];
@@ -84,8 +95,35 @@ const additiveDeclarationBlocks = new Map([
 	[
 		'packages/web-runtime/dist/drawing/capabilities.d.ts',
 		[
+			', MarketData',
+			'EngineHistoricalDataCommitResult, ',
+			`/** 由宿主接管网络请求的更早行情能力。 */
+export interface HistoricalDataRuntimeCapability {
+    commitHistoricalData(requestId: string, data: readonly MarketData[], hasMore: boolean): EngineHistoricalDataCommitResult;
+    rejectHistoricalData(requestId: string, message: string): boolean;
+}
+`,
 			'        readonly groupId?: string;\n',
 			"        readonly metadata?: NonNullable<Drawing['metadata']>;\n",
+		],
+	],
+	[
+		'packages/web-runtime/dist/drawing/workspace-events.d.ts',
+		[
+			"import type { EngineHistoricalDataRequest } from '@baron1996/klinecharts-adapter';\n",
+			` | ({
+    readonly type: 'historical-data-requested';
+} & EngineHistoricalDataRequest) | {
+    readonly type: 'historical-data-appended';
+    readonly requestId: string;
+    readonly addedCount: number;
+    readonly totalCount: number;
+    readonly hasMore: boolean;
+} | {
+    readonly type: 'historical-data-rejected';
+    readonly requestId: string;
+    readonly message: string;
+}`,
 		],
 	],
 ]);

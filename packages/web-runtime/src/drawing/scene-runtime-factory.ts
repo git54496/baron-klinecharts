@@ -19,12 +19,17 @@ export interface SceneRuntimeRegistration {
 	createAdapter(
 		container: HTMLElement,
 		workspace: DrawableWorkspaceDocument,
+		options?: SceneRuntimeAdapterOptions,
 	): Promise<DrawingEnginePort>;
 	createPolicy(): DrawingProjectionPolicy;
 	readonly defaultTarget: {
 		readonly paneRole: string;
 		readonly yAxisRole: 'primary';
 	};
+}
+
+export interface SceneRuntimeAdapterOptions {
+	readonly historicalDataLoading?: { readonly hasMore: boolean };
 }
 
 const registrations = new Map<string, SceneRuntimeRegistration>();
@@ -48,8 +53,8 @@ export function getSceneRuntime(
 registerSceneRuntime({
 	sceneKind: 'chart',
 	parseScene: (value) => parseChartScene(value),
-	createAdapter: (container, workspace) =>
-		KLineChartsSceneAdapter.createWorkspace(container, workspace),
+	createAdapter: (container, workspace, options) =>
+		KLineChartsSceneAdapter.createWorkspace(container, workspace, options),
 	createPolicy: () => new KLineDrawingProjectionPolicy(),
 	defaultTarget: { paneRole: 'candle', yAxisRole: 'primary' },
 });

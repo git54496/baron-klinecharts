@@ -19,10 +19,11 @@ async function installRuntime(
 	page: Page,
 	workspace: unknown,
 	commitMode: 'immediate' | 'host-confirmed' = 'immediate',
+	historicalDataLoading = false,
 ): Promise<void> {
 	await page.goto('/test/fixture.html');
 	await page.evaluate(
-		async ({ workspace, commitMode }) => {
+		async ({ workspace, commitMode, historicalDataLoading }) => {
 			const { createDrawableWorkspaceRuntime } = await import('/src/index.ts');
 			const container = document.querySelector<HTMLElement>('#chart')!;
 			const events: Array<{
@@ -33,11 +34,14 @@ async function installRuntime(
 			const runtime = await createDrawableWorkspaceRuntime(container, workspace, {
 				commitMode,
 				onEvent: (event) => events.push(event),
+				...(historicalDataLoading
+					? { historicalDataLoading: { hasMore: true } }
+					: {}),
 			});
 			(window as unknown as Record<string, unknown>).__runtime = runtime;
 			(window as unknown as Record<string, unknown>).__events = events;
 		},
-		{ workspace, commitMode },
+		{ workspace, commitMode, historicalDataLoading },
 	);
 }
 
@@ -327,6 +331,69 @@ test('@browser Workspace Runtime replaces the Scene atomically', async ({ page }
 	}, chartWorkspace);
 	expect(result.close).toBe(12.6);
 	expect(result.replaced).toBe(true);
+});
+
+test('@browser Workspace Runtime prepends an earlier page through the native loader', async ({ page }) => {
+	await installRuntime(page, chartWorkspace, 'immediate', true);
+	await expect.poll(() => page.evaluate(() => {
+		const events = (window as unknown as {
+			__events: Array<{ readonly type: string }>;
+		}).__events;
+		return events.some((event) => event.type === 'historical-data-requested');
+	})).toBe(true);
+	const result = await page.evaluate(() => {
+		const runtime = (window as unknown as {
+			__runtime: {
+				commitHistoricalData(
+					requestId: string,
+					data: readonly unknown[],
+					hasMore: boolean,
+				): { readonly addedCount: number };
+				exportWorkspace(): typeof chartWorkspace;
+			};
+			__events: Array<{
+				readonly type: string;
+				readonly requestId?: string;
+				readonly beforeTimestamp?: number;
+			}>;
+		}).__runtime;
+		const events = (window as unknown as {
+			__events: Array<{
+				readonly type: string;
+				readonly requestId?: string;
+				readonly beforeTimestamp?: number;
+			}>;
+		}).__events;
+		const request = events.find((event) => event.type === 'historical-data-requested')!;
+		const timestamp = request.beforeTimestamp! - 86_400_000;
+		const committed = runtime.commitHistoricalData(
+			request.requestId!,
+			[{
+				timestamp,
+				open: 12,
+				high: 12.3,
+				low: 11.9,
+				close: 12.2,
+				volume: 10,
+			}],
+			false,
+		);
+		const workspace = runtime.exportWorkspace();
+		return {
+			addedCount: committed.addedCount,
+			dataCount: workspace.scene.document.data.length,
+			firstTimestamp: workspace.scene.document.data[0].timestamp,
+			timestamp,
+			appended: events.some((event) => event.type === 'historical-data-appended'),
+		};
+	});
+	expect(result).toEqual({
+		addedCount: 1,
+		dataCount: 4,
+		firstTimestamp: result.timestamp,
+		timestamp: result.timestamp,
+		appended: true,
+	});
 });
 
 test('@browser time-series Workspace replaces period in the same Adapter', async ({ page }) => {
