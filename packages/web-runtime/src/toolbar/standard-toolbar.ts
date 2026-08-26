@@ -38,6 +38,41 @@ interface ToolbarTooltip {
 	readonly destroy: () => void;
 }
 
+interface HostActionControl {
+	readonly button: HTMLButtonElement;
+	readonly error: HTMLSpanElement;
+}
+
+function applyHostActionState(
+	control: HostActionControl,
+	state: {
+		readonly pressed?: boolean;
+		readonly disabled?: boolean;
+		readonly pending?: boolean;
+		readonly errorMessage?: string | null;
+	},
+): void {
+	if (state.pressed !== undefined) {
+		control.button.setAttribute('aria-pressed', String(state.pressed));
+	}
+	if (state.disabled !== undefined) {
+		control.button.disabled = state.disabled;
+	}
+	if (state.pending !== undefined) {
+		control.button.setAttribute('aria-busy', String(state.pending));
+	}
+	if ('errorMessage' in state) {
+		const message = state.errorMessage?.trim() ?? '';
+		control.error.textContent = message;
+		control.error.hidden = message.length === 0;
+		if (message.length === 0) {
+			control.button.removeAttribute('aria-errormessage');
+		} else {
+			control.button.setAttribute('aria-errormessage', control.error.id);
+		}
+	}
+}
+
 /** 将 HTML color 控件的 #RRGGBB 边界值归一化为 Scene v1 唯一的 rgba 表示。 */
 function htmlHexColorToSceneRgba(value: string): string {
 	const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(value);
@@ -245,6 +280,15 @@ export function createStandardToolbar(
 	const descriptor = runtime.getRuntimeCapabilityDescriptor(
 		options.hostActions === undefined ? {} : { hostActions: options.hostActions },
 	);
+	const hostActionIds = new Set<string>();
+	for (const hostAction of descriptor.hostActions) {
+		if (hostActionIds.has(hostAction.actionId)) {
+			throw new TypeError(
+				`STANDARD_TOOLBAR_DUPLICATE_HOST_ACTION: ${hostAction.actionId}`,
+			);
+		}
+		hostActionIds.add(hostAction.actionId);
+	}
 	const defaultFileName = options.downloadFileName
 		?? descriptor.exportArtifact.defaultFileName;
 	const toolbarId = nextToolbarId++;
@@ -268,6 +312,7 @@ export function createStandardToolbar(
 	);
 	const cleanupCallbacks: Array<() => void> = [];
 	const overlayButtons: HTMLButtonElement[] = [];
+	const hostActionControls = new Map<string, HostActionControl>();
 	const textInput = document.createElement('input');
 	textInput.type = 'text';
 	textInput.className = 'baron-kline-toolbar__text-input';
@@ -563,12 +608,25 @@ export function createStandardToolbar(
 				button.dataset.hostAction = hostAction.actionId;
 				button.textContent = hostAction.label;
 				button.setAttribute('aria-label', hostAction.label);
+				button.setAttribute('aria-pressed', String(hostAction.pressed ?? false));
+				button.setAttribute('aria-busy', String(hostAction.pending ?? false));
+				button.disabled = hostAction.disabled ?? false;
+				const error = document.createElement('span');
+				error.id = `baron-kline-toolbar-host-action-error-${toolbarId}-${hostActionControls.size}`;
+				error.className = 'baron-kline-toolbar__host-action-error';
+				error.setAttribute('role', 'alert');
+				error.setAttribute('aria-live', 'assertive');
+				const control = { button, error };
+				hostActionControls.set(hostAction.actionId, control);
+				applyHostActionState(control, {
+					errorMessage: hostAction.errorMessage ?? null,
+				});
 				const action = (): void => runtime.requestHostAction(
 					hostAction.actionId,
 					runtime.getSelectedDrawingId() ?? null,
 				);
 				button.addEventListener('click', action);
-				groupElement.append(button);
+				groupElement.append(button, error);
 				cleanupCallbacks.push(() => button.removeEventListener('click', action));
 			}
 		} else {
@@ -621,6 +679,16 @@ export function createStandardToolbar(
 	let unregisterRuntime = (): void => {};
 	const toolbar: StandardToolbar = {
 		element: root,
+		setHostActionState(actionId, state): void {
+			if (destroyed) {
+				throw new Error('STANDARD_TOOLBAR_DESTROYED');
+			}
+			const control = hostActionControls.get(actionId);
+			if (control === undefined) {
+				throw new TypeError(`STANDARD_TOOLBAR_UNKNOWN_HOST_ACTION: ${actionId}`);
+			}
+			applyHostActionState(control, state);
+		},
 		destroy(): void {
 			if (destroyed) {
 				return;

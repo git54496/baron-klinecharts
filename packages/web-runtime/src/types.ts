@@ -107,5 +107,14 @@ export interface StandardToolbarOptions {
 
 export interface StandardToolbar {
 	readonly element: HTMLElement;
+	setHostActionState(
+		actionId: string,
+		state: {
+			readonly pressed?: boolean;
+			readonly disabled?: boolean;
+			readonly pending?: boolean;
+			readonly errorMessage?: string | null;
+		},
+	): void;
 	destroy(): void;
 }

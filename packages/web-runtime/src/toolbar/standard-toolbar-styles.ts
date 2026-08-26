@@ -88,6 +88,19 @@ export const STANDARD_TOOLBAR_STYLES = String.raw`
 	font-size: 11px;
 }
 
+.baron-kline-toolbar__host-action-error {
+	flex: 0 0 auto;
+	max-width: 260px;
+	padding: 0 6px;
+	color: rgba(194, 57, 52, 1);
+	font-size: 11px;
+	line-height: 1.35;
+}
+
+.baron-kline-toolbar__host-action-error[hidden] {
+	display: none;
+}
+
 .baron-kline-toolbar__button {
 	position: relative;
 	display: grid;
@@ -111,6 +124,29 @@ export const STANDARD_TOOLBAR_STYLES = String.raw`
 	color: rgba(41, 98, 255, 1);
 	background: rgba(41, 98, 255, 0.1);
 	transform: translateY(-1px);
+}
+
+.baron-kline-toolbar__button:disabled {
+	cursor: not-allowed;
+	opacity: 0.5;
+	transform: none;
+}
+
+.baron-kline-toolbar__button[aria-busy="true"]::after {
+	width: 10px;
+	height: 10px;
+	margin-left: 5px;
+	content: "";
+	border: 1.5px solid currentcolor;
+	border-right-color: transparent;
+	border-radius: 50%;
+	animation: baron-kline-toolbar-spin 700ms linear infinite;
+}
+
+@keyframes baron-kline-toolbar-spin {
+	to {
+		transform: rotate(360deg);
+	}
 }
 
 .baron-kline-toolbar__button:focus-visible {

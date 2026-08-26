@@ -236,6 +236,114 @@ test('@browser M2 toolbar exposes measurement, scale, style, delete request, and
 	]));
 });
 
+test('@browser host actions are controlled and expose pending failure rollback', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const result = await page.evaluate(async (scene) => {
+		const { createKLineSceneRuntime, createStandardToolbar } = await import('/src/index.ts');
+		const runtime = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			scene,
+		);
+		const toolbar = createStandardToolbar(
+			document.querySelector<HTMLElement>('#toolbar')!,
+			runtime,
+			{
+				hostActions: [
+					{ actionId: 'price-adjustment.none', label: '不复权', pressed: true },
+					{ actionId: 'price-adjustment.forward', label: '前复权' },
+				],
+			},
+		);
+		const none = toolbar.element.querySelector<HTMLButtonElement>(
+			'[data-host-action="price-adjustment.none"]',
+		)!;
+		const forward = toolbar.element.querySelector<HTMLButtonElement>(
+			'[data-host-action="price-adjustment.forward"]',
+		)!;
+		const initial = {
+			nonePressed: none.getAttribute('aria-pressed'),
+			forwardPressed: forward.getAttribute('aria-pressed'),
+		};
+
+		toolbar.setHostActionState('price-adjustment.none', { disabled: true });
+		toolbar.setHostActionState('price-adjustment.forward', {
+			disabled: true,
+			pending: true,
+			errorMessage: null,
+		});
+		const pending = {
+			nonePressed: none.getAttribute('aria-pressed'),
+			forwardPressed: forward.getAttribute('aria-pressed'),
+			forwardBusy: forward.getAttribute('aria-busy'),
+			noneDisabled: none.disabled,
+			forwardDisabled: forward.disabled,
+		};
+
+		toolbar.setHostActionState('price-adjustment.none', {
+			pressed: true,
+			disabled: false,
+		});
+		toolbar.setHostActionState('price-adjustment.forward', {
+			pressed: false,
+			disabled: false,
+			pending: false,
+			errorMessage: '前复权数据加载失败，已恢复不复权',
+		});
+		const errorId = forward.getAttribute('aria-errormessage');
+		const error = errorId === null
+			? null
+			: toolbar.element.querySelector<HTMLElement>(`#${errorId}`);
+		const failed = {
+			nonePressed: none.getAttribute('aria-pressed'),
+			forwardPressed: forward.getAttribute('aria-pressed'),
+			forwardBusy: forward.getAttribute('aria-busy'),
+			noneDisabled: none.disabled,
+			forwardDisabled: forward.disabled,
+			errorText: error?.textContent ?? null,
+			errorRole: error?.getAttribute('role') ?? null,
+			errorLive: error?.getAttribute('aria-live') ?? null,
+			errorHidden: error?.hidden ?? null,
+		};
+
+		toolbar.setHostActionState('price-adjustment.forward', {
+			errorMessage: null,
+		});
+		const cleared = {
+			errorReference: forward.getAttribute('aria-errormessage'),
+			errorHidden: error?.hidden ?? null,
+		};
+		runtime.destroy();
+		return { initial, pending, failed, cleared };
+	}, m2Scene);
+
+	expect(result.initial).toEqual({
+		nonePressed: 'true',
+		forwardPressed: 'false',
+	});
+	expect(result.pending).toEqual({
+		nonePressed: 'true',
+		forwardPressed: 'false',
+		forwardBusy: 'true',
+		noneDisabled: true,
+		forwardDisabled: true,
+	});
+	expect(result.failed).toEqual({
+		nonePressed: 'true',
+		forwardPressed: 'false',
+		forwardBusy: 'false',
+		noneDisabled: false,
+		forwardDisabled: false,
+		errorText: '前复权数据加载失败，已恢复不复权',
+		errorRole: 'alert',
+		errorLive: 'assertive',
+		errorHidden: false,
+	});
+	expect(result.cleared).toEqual({
+		errorReference: null,
+		errorHidden: true,
+	});
+});
+
 test('@browser toolbar Tooltip supports hover, focus, viewport clamping, and narrow scrolling', async ({ page }) => {
 	await page.setViewportSize({ width: 420, height: 760 });
 	await page.goto('/test/fixture.html');

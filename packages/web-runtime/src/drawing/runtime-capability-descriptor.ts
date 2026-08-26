@@ -24,6 +24,10 @@ export interface MainSeriesPresentationCapability {
 export interface HostActionDescriptor {
 	readonly actionId: string;
 	readonly label: string;
+	readonly pressed?: boolean;
+	readonly disabled?: boolean;
+	readonly pending?: boolean;
+	readonly errorMessage?: string;
 }
 
 export interface RuntimeCapabilityDescriptor {
