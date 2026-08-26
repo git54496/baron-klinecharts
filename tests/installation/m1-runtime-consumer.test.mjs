@@ -28,7 +28,7 @@ const publicPackages = [
 const publicPackageVersions = new Map([
 	['@baron1996/kline-scene-schema', '0.6.0'],
 	['@baron1996/klinecharts-adapter', '0.6.0'],
-	['@baron1996/klinecharts-runtime', '0.7.1'],
+	['@baron1996/klinecharts-runtime', '0.7.2'],
 	['@baron1996/klinecharts-cli', '0.6.0'],
 ]);
 
@@ -232,7 +232,7 @@ test('four public tarballs support the M1 and M2 Runtime journeys through packag
 			"const runtime = await import('@baron1996/klinecharts-runtime');",
 			"if (schema.SCENE_PACKAGE_VERSION !== '0.6.0') throw new Error('Schema root export failed.');",
 			"if (adapter.ADAPTER_PACKAGE_VERSION !== '0.6.0') throw new Error('Adapter root export failed.');",
-			"if (runtime.WEB_RUNTIME_PACKAGE_VERSION !== '0.7.1') throw new Error('Runtime root export failed.');",
+			"if (runtime.WEB_RUNTIME_PACKAGE_VERSION !== '0.7.2') throw new Error('Runtime root export failed.');",
 			'const adapterMethods = Object.getOwnPropertyNames(adapter.KLineChartsSceneAdapter.prototype);',
 			"if (adapterMethods.includes('getChart') || adapterMethods.includes('getEngine')) throw new Error('Adapter exposes its internal Chart.');",
 			'const timeSeriesAdapterMethods = Object.getOwnPropertyNames(adapter.TimeSeriesChartsAdapter.prototype);',

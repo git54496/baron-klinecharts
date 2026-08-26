@@ -60,9 +60,13 @@ function drawingToSnapshot(drawing: Drawing): EngineDrawingSnapshot {
 	return {
 		id: drawing.id,
 		type: drawing.type,
+		...(drawing.groupId === undefined ? {} : { groupId: drawing.groupId }),
 		target: structuredClone(drawing.target) as EngineDrawingSnapshot['target'],
 		geometry: structuredClone(drawing.geometry),
 		styles: structuredClone(drawing.styles),
+		...(drawing.metadata === undefined
+			? {}
+			: { metadata: structuredClone(drawing.metadata) }),
 		locked: drawing.locked,
 		visible: drawing.visible,
 		zLevel: drawing.zLevel,
@@ -74,9 +78,13 @@ function snapshotToDrawing(snapshot: EngineDrawingSnapshot): Drawing {
 	return {
 		id: snapshot.id,
 		type: snapshot.type,
+		...(snapshot.groupId === undefined ? {} : { groupId: snapshot.groupId }),
 		target: structuredClone(snapshot.target),
 		geometry: structuredClone(snapshot.geometry),
 		styles: structuredClone(snapshot.styles),
+		...(snapshot.metadata === undefined
+			? {}
+			: { metadata: structuredClone(snapshot.metadata) }),
 		locked: snapshot.locked,
 		visible: snapshot.visible,
 		zLevel: snapshot.zLevel,
@@ -165,7 +173,9 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		options?: {
 			readonly text?: string;
 			readonly id?: string;
+			readonly groupId?: string;
 			readonly styles?: Drawing['styles'];
+			readonly metadata?: NonNullable<Drawing['metadata']>;
 		},
 	): string {
 		return this.#session.startCreate(type, options);
@@ -442,7 +452,7 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 			scopeKey: workspace.drawings.scopeKey,
 			coordinateSystem: structuredClone(workspace.drawings.coordinateSystem),
 			drawings: drawings.map((snapshot) => snapshotToDrawing(snapshot)),
-			metadata: {},
+			metadata: structuredClone(workspace.drawings.metadata),
 		});
 	}
 

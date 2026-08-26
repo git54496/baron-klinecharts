@@ -59,11 +59,15 @@ const additiveDeclarationBlocks = new Map([
     /** 只暴露公共会话状态，不暴露 Adapter 或 Chart。 */
     getDrawingSessionState(): DrawingSessionController['state'];
 `,
+			'        readonly groupId?: string;\n',
+			"        readonly metadata?: NonNullable<Drawing['metadata']>;\n",
 		],
 	],
 	[
 		'packages/web-runtime/dist/drawing/session-controller.d.ts',
 		[
+			'        readonly groupId?: string;\n',
+			"        readonly metadata?: NonNullable<EngineDrawingSnapshot['metadata']>;\n",
 			`    /** 当前已确认的投影 Scene；仅返回深拷贝，协调层不能取得引擎对象。 */
     get projectionScene(): ProjectionScene;
 `,
@@ -75,6 +79,13 @@ const additiveDeclarationBlocks = new Map([
     /** 异步版本用于轴等需要等待 Adapter 原子应用完成的 Scene 事务。 */
     replaceProjectionSceneAsync<T>(scene: ProjectionScene, apply: () => Promise<T>): Promise<T>;
 `,
+		],
+	],
+	[
+		'packages/web-runtime/dist/drawing/capabilities.d.ts',
+		[
+			'        readonly groupId?: string;\n',
+			"        readonly metadata?: NonNullable<Drawing['metadata']>;\n",
 		],
 	],
 ]);

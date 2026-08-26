@@ -17,9 +17,17 @@ export function overlayToDrawingSnapshot(
 	return {
 		id: overlay.id,
 		type: overlay.type,
+		...(overlay.groupId === undefined ? {} : { groupId: overlay.groupId }),
 		target: { paneRole: 'candle', yAxisRole: 'primary' },
 		geometry,
 		styles: structuredClone(overlay.styles),
+		...(overlay.metadata === undefined
+			? {}
+			: {
+					metadata: structuredClone(overlay.metadata) as NonNullable<
+						EngineDrawingSnapshot['metadata']
+					>,
+				}),
 		locked: overlay.locked,
 		visible: overlay.visible,
 		zLevel: overlay.zLevel,

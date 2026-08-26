@@ -130,7 +130,9 @@ export class DrawingSessionController {
 		options?: {
 			readonly text?: string;
 			readonly id?: string;
+			readonly groupId?: string;
 			readonly styles?: EngineDrawingSnapshot['styles'];
+			readonly metadata?: NonNullable<EngineDrawingSnapshot['metadata']>;
 		},
 	): string {
 		this.#assertReady();
@@ -139,8 +141,10 @@ export class DrawingSessionController {
 			return this.#options.engine.startDrawing({
 				id: options?.id ?? `drawing-${++this.#requestSequence}`,
 				type: type as EngineDrawingSnapshot['type'],
+				...(options?.groupId === undefined ? {} : { groupId: options.groupId }),
 				target: structuredClone(this.#options.target),
 				styles: options?.styles ?? defaultStyles(),
+				metadata: structuredClone(options?.metadata ?? {}),
 				...(options?.text === undefined ? {} : { text: options.text }),
 			});
 		} catch (error) {

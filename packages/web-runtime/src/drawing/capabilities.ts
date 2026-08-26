@@ -20,7 +20,9 @@ export interface DrawingRuntimeCapability {
 		options?: {
 			readonly text?: string;
 			readonly id?: string;
+			readonly groupId?: string;
 			readonly styles?: Drawing['styles'];
+			readonly metadata?: NonNullable<Drawing['metadata']>;
 		},
 	): string;
 	listDrawings(): readonly EngineDrawingSnapshot[];

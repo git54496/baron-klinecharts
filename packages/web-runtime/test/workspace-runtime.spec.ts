@@ -278,6 +278,52 @@ describe('DrawableWorkspaceRuntime', () => {
 		expect(runtime.listDrawings()).toHaveLength(23);
 	});
 
+	it('preserves opaque document and Drawing metadata in a candidate', async () => {
+		const workspace = structuredClone(chartWorkspaceFixture) as unknown as {
+			drawings: {
+				metadata: Record<string, unknown>;
+				drawings: Array<Record<string, unknown>>;
+			};
+		};
+		workspace.drawings.metadata = {
+			adjustment: 'none',
+			host: { revision: 7 },
+		};
+		workspace.drawings.drawings[0]!.groupId = 'host-group-a';
+		workspace.drawings.drawings[0]!.metadata = {
+			kind: 'host.daily-mark',
+			tradingDate: '2026-08-26',
+		};
+		const { runtime, events } = await makeRuntime(workspace, 'host-confirmed');
+
+		mockEngine!.emitCreated('drawing-new');
+		const candidate = await waitForEvent(events, 'drawing-candidate');
+		expect(candidate?.type).toBe('drawing-candidate');
+		if (candidate?.type !== 'drawing-candidate') {
+			return;
+		}
+		expect(candidate.candidateDocument.metadata).toEqual({
+			adjustment: 'none',
+			host: { revision: 7 },
+		});
+		expect(candidate.candidateDocument.drawings[0]).toMatchObject({
+			groupId: 'host-group-a',
+			metadata: {
+				kind: 'host.daily-mark',
+				tradingDate: '2026-08-26',
+			},
+		});
+		expect(candidate.candidateDocument.drawings.at(-1)?.metadata).toBeUndefined();
+
+		expect(runtime.commitDrawingChange(
+			candidate.requestId,
+			candidate.canonicalHash,
+		)).toBe(true);
+		expect(runtime.exportDrawingDocument().metadata).toEqual(
+			workspace.drawings.metadata,
+		);
+	});
+
 	it('replaces the Scene in place and emits scene-replaced', async () => {
 		const { runtime, events } = await makeRuntime(chartWorkspaceFixture);
 		const next = structuredClone(chartWorkspaceFixture.scene.document);

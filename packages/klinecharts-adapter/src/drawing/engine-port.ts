@@ -9,9 +9,11 @@ export interface EngineDrawingTarget {
 export interface EngineDrawingSnapshot {
 	readonly id: string;
 	readonly type: Drawing['type'];
+	readonly groupId?: string;
 	readonly target: EngineDrawingTarget;
 	readonly geometry: Drawing['geometry'];
 	readonly styles: Drawing['styles'];
+	readonly metadata?: NonNullable<Drawing['metadata']>;
 	readonly text?: string;
 	readonly locked: boolean;
 	readonly visible: boolean;
@@ -22,8 +24,10 @@ export interface EngineDrawingSnapshot {
 export interface EngineDrawingStartRequest {
 	readonly id: string;
 	readonly type: Drawing['type'];
+	readonly groupId?: string;
 	readonly target: EngineDrawingTarget;
 	readonly styles: Drawing['styles'];
+	readonly metadata?: NonNullable<Drawing['metadata']>;
 	readonly text?: string;
 }
 

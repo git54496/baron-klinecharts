@@ -153,6 +153,74 @@ test('@browser Workspace Runtime host-confirmed commit and reject', async ({ pag
 	expect(after).toBe(23);
 });
 
+for (const [sceneKind, sourceWorkspace] of [
+	['chart', chartWorkspace],
+	['time-series', timeSeriesWorkspace],
+] as const) {
+	test(`@browser ${sceneKind} Workspace candidate preserves opaque metadata`, async ({ page }) => {
+		const workspace = structuredClone(sourceWorkspace);
+		workspace.drawings.metadata = {
+			adjustment: 'none',
+			host: { revision: 7 },
+		};
+		workspace.drawings.drawings[0].groupId = 'host-group-a';
+		workspace.drawings.drawings[0].metadata = {
+			kind: 'host.daily-mark',
+			tradingDate: '2026-08-26',
+		};
+		await installRuntime(page, workspace, 'host-confirmed');
+		await page.evaluate(() => {
+			const runtime = (window as unknown as {
+				__runtime: {
+					listDrawings(): Array<{
+						readonly id: string;
+						readonly styles: {
+							line: { size: number };
+						};
+					}>;
+					updateDrawingStyles(id: string, styles: unknown): unknown;
+				};
+			}).__runtime;
+			const drawing = runtime.listDrawings()[0]!;
+			const styles = structuredClone(drawing.styles);
+			styles.line.size = 2;
+			runtime.updateDrawingStyles(drawing.id, styles);
+		});
+		await expect.poll(() => page.evaluate(() => {
+			const events = (window as unknown as {
+				__events: Array<{ readonly type: string }>;
+			}).__events;
+			return events.some((event) => event.type === 'drawing-candidate');
+		})).toBe(true);
+		const candidate = await page.evaluate(() => {
+			const events = (window as unknown as {
+				__events: Array<{
+					readonly type: string;
+					readonly candidateDocument?: {
+						readonly metadata: unknown;
+						readonly drawings: Array<{
+							readonly groupId?: string;
+							readonly metadata?: unknown;
+						}>;
+					};
+				}>;
+			}).__events;
+			return events.find((event) => event.type === 'drawing-candidate');
+		});
+		expect(candidate?.candidateDocument?.metadata).toEqual({
+			adjustment: 'none',
+			host: { revision: 7 },
+		});
+		expect(candidate?.candidateDocument?.drawings[0]).toMatchObject({
+			groupId: 'host-group-a',
+			metadata: {
+				kind: 'host.daily-mark',
+				tradingDate: '2026-08-26',
+			},
+		});
+	});
+}
+
 test('@browser cross-period coordinator persists then switches Scene without changing Drawings', async ({ page }) => {
 	await installRuntime(page, chartWorkspace, 'host-confirmed');
 	await page.evaluate(async () => {

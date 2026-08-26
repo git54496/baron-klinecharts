@@ -2006,9 +2006,13 @@ function snapshotOfDrawing(drawing: Drawing): EngineDrawingSnapshot {
 	return {
 		id: drawing.id,
 		type: drawing.type,
+		...(drawing.groupId === undefined ? {} : { groupId: drawing.groupId }),
 		target: structuredClone(drawing.target) as EngineDrawingSnapshot['target'],
 		geometry: structuredClone(drawing.geometry),
 		styles: structuredClone(drawing.styles),
+		...(drawing.metadata === undefined
+			? {}
+			: { metadata: structuredClone(drawing.metadata) }),
 		locked: drawing.locked,
 		visible: drawing.visible,
 		zLevel: drawing.zLevel,
@@ -2022,9 +2026,13 @@ function drawingFromSnapshot(
 	return {
 		id: snapshot.id,
 		type: snapshot.type,
+		...(snapshot.groupId === undefined ? {} : { groupId: snapshot.groupId }),
 		target: structuredClone(snapshot.target),
 		geometry: structuredClone(snapshot.geometry),
 		styles: structuredClone(snapshot.styles),
+		...(snapshot.metadata === undefined
+			? {}
+			: { metadata: structuredClone(snapshot.metadata) }),
 		visible: snapshot.visible,
 		locked: snapshot.locked,
 		zLevel: snapshot.zLevel,
@@ -2100,9 +2108,11 @@ function placeholderDrawing(
 	return {
 		id: request.id,
 		type: request.type,
+		...(request.groupId === undefined ? {} : { groupId: request.groupId }),
 		target: structuredClone(request.target),
 		geometry: placeholderGeometry(request.type),
 		styles: structuredClone(request.styles),
+		metadata: structuredClone(request.metadata ?? {}),
 		visible: true,
 		locked: false,
 		zLevel: 0,
