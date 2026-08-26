@@ -8,7 +8,7 @@ const npmManifests = [
 	{
 		path: 'package.json',
 		name: '@baron1996/klinecharts-scene-workspace',
-		version: '0.6.0',
+		version: '0.7.0',
 		directory: undefined,
 		public: false,
 	},
@@ -29,7 +29,7 @@ const npmManifests = [
 	{
 		path: 'packages/web-runtime/package.json',
 		name: '@baron1996/klinecharts-runtime',
-		version: '0.6.0',
+		version: '0.7.0',
 		directory: 'packages/web-runtime',
 		public: true,
 	},

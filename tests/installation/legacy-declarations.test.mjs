@@ -29,6 +29,28 @@ const legacyDeclarationHashes = new Map([
 
 const additiveDeclarationBlocks = new Map([
 	[
+		'packages/web-runtime/dist/types.d.ts',
+		[
+			`    setHostActionState(actionId: string, state: {
+        readonly pressed?: boolean;
+        readonly disabled?: boolean;
+        readonly pending?: boolean;
+        readonly errorMessage?: string | null;
+    }): void;
+`,
+		],
+	],
+	[
+		'packages/web-runtime/dist/drawing/runtime-capability-descriptor.d.ts',
+		[
+			`    readonly pressed?: boolean;
+    readonly disabled?: boolean;
+    readonly pending?: boolean;
+    readonly errorMessage?: string;
+`,
+		],
+	],
+	[
 		'packages/web-runtime/dist/drawing/workspace-runtime.d.ts',
 		[
 			"import { DrawingSessionController } from './session-controller.js';\n",

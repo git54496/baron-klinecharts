@@ -4,6 +4,6 @@ import { WEB_RUNTIME_PACKAGE_VERSION } from '../src/index.js';
 
 describe('web runtime package', () => {
 	it('exposes the fixed package version', () => {
-		expect(WEB_RUNTIME_PACKAGE_VERSION).toBe('0.6.0');
+		expect(WEB_RUNTIME_PACKAGE_VERSION).toBe('0.7.0');
 	});
 });
