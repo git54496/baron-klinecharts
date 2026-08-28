@@ -7,7 +7,7 @@ const legacyDeclarationHashes = new Map([
 	['packages/scene-schema/dist/errors.d.ts', '102e0124ea9e8d45d71dbec07f55cada70f63842b23cd7e339f2eabf89569151'],
 	['packages/scene-schema/dist/generated/chart-scene.d.ts', '68303834f858df0d740b9c04484857245da1104061e559e0c7b75a29375c2459'],
 	['packages/scene-schema/dist/validator.d.ts', 'ba77dc8b426bd71317e462109894e6202a7952a560b80e37e688567760e80ec6'],
-	['packages/web-runtime/dist/types.d.ts', '6e9c698a2401be3c21fb30386ef50689a5c278f0e230804c6b8aeb271d674069'],
+	['packages/web-runtime/dist/types.d.ts', 'a1be0b50158c9ff5ee2d0c2140f985796bf97895dab942e12d555d142665c93e'],
 	['packages/web-runtime/dist/runtime.d.ts', '5f40c533df19461824bbba5b6fc88b463fc29fa5eeb08753cd5ad9e602a62e47'],
 	['packages/scene-schema/dist/generated/drawable-workspace.d.ts', 'd0363b019a68f214aeb6712c1259ccef2811baccc947db514914c0bb7935acfb'],
 	['packages/scene-schema/dist/generated/drawing-document.d.ts', '002b379b55dcc5c97efdd100ee69e3f714d6886aaed69409c33108d7d6de0fc1'],
@@ -31,12 +31,31 @@ const additiveDeclarationBlocks = new Map([
 	[
 		'packages/web-runtime/dist/types.d.ts',
 		[
+			`export interface DrawingFloatingToolbarOptions {
+    readonly deleteBehavior?: 'direct' | 'request';
+    readonly draggable?: boolean;
+}
+export interface DrawingFloatingToolbar {
+    readonly element: HTMLElement;
+    resetPosition(): void;
+    destroy(): void;
+}
+`,
 			`    setHostActionState(actionId: string, state: {
         readonly pressed?: boolean;
         readonly disabled?: boolean;
         readonly pending?: boolean;
         readonly errorMessage?: string | null;
     }): void;
+`,
+		],
+	],
+	[
+		'packages/web-runtime/dist/runtime.d.ts',
+		[
+			'    updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot;\n',
+			`    getDrawingMutationState(): 'ready';
+    subscribeDrawingChanges(listener: () => void): () => void;
 `,
 		],
 	],
@@ -65,6 +84,10 @@ const additiveDeclarationBlocks = new Map([
     rejectHistoricalData(requestId: string, message: string): boolean;
 `,
 			"import { DrawingSessionController } from './session-controller.js';\n",
+			'    updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot;\n',
+			`    getDrawingMutationState(): 'ready' | 'busy';
+    subscribeDrawingChanges(listener: () => void): () => void;
+`,
 			`    /** 跨周期等宿主编排只能连接显式 host-confirmed Runtime。 */
     get commitMode(): DrawableWorkspaceRuntimeOptions['commitMode'];
     /** 只暴露公共会话状态，不暴露 Adapter 或 Chart。 */
@@ -79,6 +102,7 @@ const additiveDeclarationBlocks = new Map([
 		[
 			'        readonly groupId?: string;\n',
 			"        readonly metadata?: NonNullable<EngineDrawingSnapshot['metadata']>;\n",
+			'    updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot;\n',
 			`    /** 当前已确认的投影 Scene；仅返回深拷贝，协调层不能取得引擎对象。 */
     get projectionScene(): ProjectionScene;
 `,
@@ -102,6 +126,10 @@ export interface HistoricalDataRuntimeCapability {
     commitHistoricalData(requestId: string, data: readonly MarketData[], hasMore: boolean): EngineHistoricalDataCommitResult;
     rejectHistoricalData(requestId: string, message: string): boolean;
 }
+`,
+			'    updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot;\n',
+			`    getDrawingMutationState(): 'ready' | 'busy';
+    subscribeDrawingChanges(listener: () => void): () => void;
 `,
 			'        readonly groupId?: string;\n',
 			"        readonly metadata?: NonNullable<Drawing['metadata']>;\n",
