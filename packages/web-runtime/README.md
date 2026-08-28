@@ -9,11 +9,17 @@ npm install --save-exact @baron1996/kline-scene-schema@0.6.0 @baron1996/klinecha
 
 ```ts
 import { parseChartScene } from '@baron1996/kline-scene-schema';
-import { createKLineSceneRuntime } from '@baron1996/klinecharts-runtime';
+import {
+  createDrawingFloatingToolbar,
+  createKLineSceneRuntime,
+  createStandardToolbar,
+} from '@baron1996/klinecharts-runtime';
 
 // chartSceneInput is a complete embedded ChartScene JSON value from the host.
 const scene = parseChartScene(chartSceneInput);
 let runtime = await createKLineSceneRuntime(container, scene);
+const standardToolbar = createStandardToolbar(toolbarContainer, runtime);
+const drawingToolbar = createDrawingFloatingToolbar(container, runtime);
 
 await runtime.setPriceScale('linear');
 runtime.startOverlayDrawing('priceMeasurement');
@@ -32,6 +38,8 @@ const drawingCompleted = new Promise<void>((resolve) => {
 await drawingCompleted;
 const exportedScene = runtime.exportScene();
 const serializedScene = JSON.stringify(exportedScene);
+drawingToolbar.destroy();
+standardToolbar.destroy();
 runtime.destroy();
 
 runtime = await createKLineSceneRuntime(
@@ -39,6 +47,12 @@ runtime = await createKLineSceneRuntime(
   JSON.parse(serializedScene),
 );
 ```
+
+`createStandardToolbar` owns chart-level controls such as price scale and main-series
+presentation. Selecting a Drawing shows `createDrawingFloatingToolbar`, which owns
+line style, width, color, text, lock/unlock, and explicit deletion. The floating
+toolbar can be dragged within the chart's visible bounds. Baron does not replace or
+cancel the browser context menu; right-click never deletes a Drawing.
 
 The runtime does not provide undo or redo and does not fetch market data.
 Runtime `0.2.0` events are structured-cloneable pure data with

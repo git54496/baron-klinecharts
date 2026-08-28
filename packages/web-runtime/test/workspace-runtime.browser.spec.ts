@@ -506,13 +506,21 @@ test('@browser Workspace Runtime time-series rejects presentation and scale muta
 
 test('@browser Workspace Runtime destroys idempotently', async ({ page }) => {
 	await installRuntime(page, chartWorkspace);
-	const result = await page.evaluate(() => {
+	const result = await page.evaluate(async () => {
+		const { createDrawingFloatingToolbar, createStandardToolbar } = await import('/src/index.ts');
 		const runtime = (window as unknown as {
 			__runtime: {
 				destroy(): void;
 				listDrawings(): unknown;
+				selectDrawing(id: string | null): void;
 			};
 		}).__runtime;
+		const chart = document.querySelector<HTMLElement>('#chart')!;
+		const toolbarHost = document.createElement('div');
+		document.body.prepend(toolbarHost);
+		createStandardToolbar(toolbarHost, runtime as never);
+		createDrawingFloatingToolbar(chart, runtime as never);
+		runtime.selectDrawing('drawing-horizontalStraightLine-1');
 		runtime.destroy();
 		runtime.destroy();
 		let destroyedError = '';
@@ -521,7 +529,13 @@ test('@browser Workspace Runtime destroys idempotently', async ({ page }) => {
 		} catch (error) {
 			destroyedError = (error as Error).message;
 		}
-		return destroyedError;
+		return {
+			destroyedError,
+			standardToolbarCount: document.querySelectorAll('.baron-kline-toolbar').length,
+			floatingToolbarCount: document.querySelectorAll('.baron-drawing-toolbar').length,
+		};
 	});
-	expect(result).toContain('destroy-only');
+	expect(result.destroyedError).toContain('destroy-only');
+	expect(result.standardToolbarCount).toBe(0);
+	expect(result.floatingToolbarCount).toBe(0);
 });

@@ -240,6 +240,7 @@ for (const kind of ['chart', 'time-series'] as const) {
 							getDrawing(id: string): unknown;
 							updateDrawingStyles(id: string, styles: unknown): unknown;
 							updateDrawingText(id: string, text: string): unknown;
+							updateDrawingLocked(id: string, locked: boolean): { readonly locked: boolean };
 							removeDrawing(id: string): boolean;
 							subscribeDrawingEvents(
 								listener: (event: { readonly type: string; readonly id: string }) => void,
@@ -268,6 +269,8 @@ for (const kind of ['chart', 'time-series'] as const) {
 						readonly styles: unknown;
 					}).styles;
 					adapter.updateDrawingStyles(first.id, styles);
+					const locked = adapter.updateDrawingLocked(first.id, true).locked;
+					adapter.updateDrawingLocked(first.id, false);
 					const textId = types.find(
 						(type) => type === 'simpleTag' || type === 'text' || type === 'callout',
 					);
@@ -290,6 +293,7 @@ for (const kind of ['chart', 'time-series'] as const) {
 						listedCount: listed.length,
 						removed,
 						textUpdated,
+						locked,
 						events,
 						projected,
 						unprojected,
@@ -299,6 +303,7 @@ for (const kind of ['chart', 'time-series'] as const) {
 			);
 			expect(result.listedCount).toBe(22);
 			expect(result.removed).toBe(true);
+			expect(result.locked).toBe(true);
 			expect(result.events).toContain('removed:port-horizontalRayLine-0');
 			expect(result.projected.x).toBeGreaterThan(0);
 			expect(result.projected.y).toBeGreaterThan(0);
@@ -306,6 +311,67 @@ for (const kind of ['chart', 'time-series'] as const) {
 				expect(result.unprojected.timestamp).toBe(1784822400000);
 			}
 			expect(Math.abs(result.unprojected.value! - 12.55)).toBeLessThan(0.05);
+		});
+
+		test('@browser right-click keeps the Drawing and leaves contextmenu uncancelled', async ({ page }) => {
+			await installWorkspace(page, kind);
+			const paneRole = kind === 'chart' ? 'candle' : 'time-series';
+			const point = await page.evaluate(({ paneRole }) => {
+				const adapter = (window as unknown as {
+					__adapter: {
+						restoreDrawings(drawings: unknown[]): void;
+						hitTestDrawing(point: { readonly x: number; readonly y: number }): string | null;
+					};
+				}).__adapter;
+				adapter.restoreDrawings(
+					(window as unknown as {
+						__baronSnapshots(types: string[], paneRole: string): unknown[];
+					}).__baronSnapshots(['horizontalStraightLine'], paneRole),
+				);
+				for (let y = 10; y <= 580; y += 2) {
+					for (let x = 80; x <= 900; x += 8) {
+						if (adapter.hitTestDrawing({ x, y }) !== null) {
+							return { x, y };
+						}
+					}
+				}
+				return null;
+			}, { paneRole });
+			expect(point).not.toBeNull();
+			const canvas = page.locator(
+				kind === 'chart' ? '#chart canvas' : '#chart-time-series canvas',
+			).nth(1);
+			const contextMenuAllowed = await canvas.evaluate((element, input) => {
+				const rect = document.querySelector<HTMLElement>(input.targetId)!.getBoundingClientRect();
+				const init = {
+					bubbles: true,
+					cancelable: true,
+					clientX: rect.left + input.hitPoint.x,
+					clientY: rect.top + input.hitPoint.y,
+					button: 2,
+				};
+				element.dispatchEvent(new MouseEvent('mousedown', init));
+				return element.dispatchEvent(new MouseEvent('contextmenu', init));
+			}, {
+				hitPoint: point!,
+				targetId: kind === 'chart' ? '#chart' : '#chart-time-series',
+			});
+			expect(contextMenuAllowed).toBe(true);
+			const container = page.locator(
+				kind === 'chart' ? '#chart' : '#chart-time-series',
+			);
+			await container.scrollIntoViewIfNeeded();
+			const containerBox = await container.boundingBox();
+			expect(containerBox).not.toBeNull();
+			await page.mouse.click(
+				containerBox!.x + point!.x,
+				containerBox!.y + point!.y,
+				{ button: 'right' },
+			);
+			const drawingCount = await page.evaluate(() => (window as unknown as {
+				__adapter: { listDrawings(): readonly unknown[] };
+			}).__adapter.listDrawings().length);
+			expect(drawingCount).toBe(1);
 		});
 
 		test('@browser starts and completes every Drawing type through engine interaction', async ({ page }) => {

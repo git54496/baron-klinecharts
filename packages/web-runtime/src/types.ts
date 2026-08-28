@@ -96,13 +96,19 @@ export interface StartOverlayDrawingOptions {
 
 export interface StandardToolbarOptions {
 	readonly downloadFileName?: string;
-	readonly deleteBehavior?: 'direct' | 'request';
 	readonly hostActions?: readonly HostActionDescriptor[];
 	readonly mainSeriesPresentationControl?: 'hidden' | 'enabled';
-	/** 编辑控件（价格轴/线型/线宽/线色/主序列）的放置位置：常驻工具栏（默认）或图表右键上下文菜单。 */
-	readonly editControlsPlacement?: 'toolbar' | 'context-menu';
-	/** editControlsPlacement 为 context-menu 时，右键监听的图表容器。 */
-	readonly contextMenuTarget?: HTMLElement;
+}
+
+export interface DrawingFloatingToolbarOptions {
+	readonly deleteBehavior?: 'direct' | 'request';
+	readonly draggable?: boolean;
+}
+
+export interface DrawingFloatingToolbar {
+	readonly element: HTMLElement;
+	resetPosition(): void;
+	destroy(): void;
 }
 
 export interface StandardToolbar {

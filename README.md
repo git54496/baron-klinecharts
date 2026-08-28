@@ -116,18 +116,21 @@ Web Runtime 的最小生命周期：
 
 ```ts
 import {
-  createKLineSceneRuntime,
+	createDrawingFloatingToolbar,
+	createKLineSceneRuntime,
   createStandardToolbar,
 } from '@baron1996/klinecharts-runtime';
 
 const runtime = await createKLineSceneRuntime(container, scene);
 const toolbar = createStandardToolbar(toolbarContainer, runtime);
+const drawingToolbar = createDrawingFloatingToolbar(container, runtime);
 
 await runtime.setPriceScale('logarithmic');
 runtime.startOverlayDrawing('priceMeasurement');
 
 const exportedScene = runtime.exportScene();
 
+drawingToolbar.destroy();
 toolbar.destroy();
 runtime.destroy();
 ```

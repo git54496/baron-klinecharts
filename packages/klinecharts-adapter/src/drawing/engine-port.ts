@@ -108,6 +108,7 @@ export interface DrawingEnginePort {
 		styles: Drawing['styles'],
 	): EngineDrawingSnapshot;
 	updateDrawingText(id: string, text: string): EngineDrawingSnapshot;
+	updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot;
 	restoreDrawing(snapshot: EngineDrawingSnapshot): void;
 	removeDrawing(id: string): boolean;
 	selectDrawing(id: string | null): void;

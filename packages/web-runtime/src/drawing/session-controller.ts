@@ -83,6 +83,8 @@ export class DrawingSessionController {
 	#confirmed: EngineDrawingSnapshot[] = [];
 	#candidate: SessionCandidate | null = null;
 	#selectedId: string | null = null;
+	/** 尚未完成首次创建提交的 Drawing；用于把引擎侧取消恢复为 ready。 */
+	#interactingDrawingId: string | null = null;
 	#requestSequence = 0;
 	#suppressEngineEvents = false;
 	readonly #unsubscribeEngine: () => void;
@@ -137,9 +139,11 @@ export class DrawingSessionController {
 	): string {
 		this.#assertReady();
 		this.#state = 'interacting';
+		const id = options?.id ?? `drawing-${++this.#requestSequence}`;
+		this.#interactingDrawingId = id;
 		try {
-			return this.#options.engine.startDrawing({
-				id: options?.id ?? `drawing-${++this.#requestSequence}`,
+			const startedId = this.#options.engine.startDrawing({
+				id,
 				type: type as EngineDrawingSnapshot['type'],
 				...(options?.groupId === undefined ? {} : { groupId: options.groupId }),
 				target: structuredClone(this.#options.target),
@@ -147,7 +151,12 @@ export class DrawingSessionController {
 				metadata: structuredClone(options?.metadata ?? {}),
 				...(options?.text === undefined ? {} : { text: options.text }),
 			});
+			if (this.#state === 'interacting') {
+				this.#interactingDrawingId = startedId;
+			}
+			return startedId;
 		} catch (error) {
+			this.#interactingDrawingId = null;
 			this.#state = 'ready';
 			throw error;
 		}
@@ -164,6 +173,11 @@ export class DrawingSessionController {
 	public updateDrawingText(id: string, text: string): EngineDrawingSnapshot {
 		this.#assertReady();
 		return this.#options.engine.updateDrawingText(id, text);
+	}
+
+	public updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot {
+		this.#assertReady();
+		return this.#options.engine.updateDrawingLocked(id, locked);
 	}
 
 	public removeDrawing(id: string): boolean {
@@ -342,6 +356,7 @@ export class DrawingSessionController {
 		}
 		this.#state = 'destroyed';
 		this.#candidate = null;
+		this.#interactingDrawingId = null;
 		this.#confirmed = [];
 		this.#unsubscribeEngine();
 	}
@@ -359,6 +374,9 @@ export class DrawingSessionController {
 				if (event.drawing === undefined) {
 					return;
 				}
+				if (event.type === 'created' && event.id === this.#interactingDrawingId) {
+					this.#interactingDrawingId = null;
+				}
 				void this.#onMutation({
 					operation: event.type === 'created' ? 'create' : 'update',
 					...(this.#confirmed.find((drawing) => drawing.id === event.id) === undefined
@@ -368,6 +386,9 @@ export class DrawingSessionController {
 							}),
 					after: event.drawing,
 				}).catch((error: unknown) => {
+					if (this.#state === 'interacting') {
+						this.#state = 'ready';
+					}
 					this.#options.emit({
 						type: 'workspace-error',
 						code: error instanceof DrawingSessionError
@@ -381,6 +402,16 @@ export class DrawingSessionController {
 				return;
 			}
 			if (event.type === 'removed') {
+				if (event.id === this.#interactingDrawingId) {
+					this.#interactingDrawingId = null;
+					this.#candidate = null;
+					this.#state = 'ready';
+					if (this.#selectedId === event.id) {
+						this.#selectedId = null;
+						this.#options.emit({ type: 'selection-changed', id: null });
+					}
+					return;
+				}
 				const before = this.#confirmed.find((drawing) => drawing.id === event.id);
 				if (before === undefined) {
 					return;
@@ -408,6 +439,10 @@ export class DrawingSessionController {
 			}
 		} catch (error) {
 			if (error instanceof DrawingSessionError) {
+				if (this.#state === 'interacting') {
+					this.#state = 'ready';
+					this.#interactingDrawingId = null;
+				}
 				this.#options.emit({
 					type: 'workspace-error',
 					code: error.code,
@@ -455,6 +490,9 @@ export class DrawingSessionController {
 		} catch (error) {
 			if (error instanceof DrawingSessionError) {
 				this.#restoreBefore(input.before, input.after);
+				if (input.operation === 'create' && this.#state === 'interacting') {
+					this.#state = 'ready';
+				}
 				this.#options.emit({
 					type: 'workspace-error',
 					code: error.code,
@@ -545,6 +583,7 @@ export class DrawingSessionController {
 	#enterTerminalError(code: string, message: string): void {
 		this.#state = 'terminal-error';
 		this.#candidate = null;
+		this.#interactingDrawingId = null;
 		this.#options.emit({ type: 'workspace-error', code, message });
 	}
 

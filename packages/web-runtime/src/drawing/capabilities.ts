@@ -34,11 +34,14 @@ export interface DrawingRuntimeCapability {
 		styles: Drawing['styles'],
 	): EngineDrawingSnapshot;
 	updateDrawingText(id: string, text: string): EngineDrawingSnapshot;
+	updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot;
 	removeDrawing(id: string): boolean;
 	requestDrawingDelete(id: string): void;
 	selectDrawing(id: string | null): void;
 	getSelectedDrawingId(): string | undefined;
 	hitTestDrawing(point: EnginePixelCoordinate): string | null;
+	getDrawingMutationState(): 'ready' | 'busy';
+	subscribeDrawingChanges(listener: () => void): () => void;
 }
 
 export interface RuntimeAuxiliaryCapability {

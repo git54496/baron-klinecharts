@@ -120,6 +120,8 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 	#unsubscribeCrosshair: (() => void) | null = null;
 	/** 当前选中标注的稳定 ID。 */
 	#selectedOverlayId: string | null = null;
+	/** 供对象级编辑器订阅 Drawing 变化，不暴露 Adapter 事件。 */
+	readonly #drawingChangeListeners = new Set<() => void>();
 	/** 确定性标注 ID 递增序号。 */
 	#overlaySequence = 0;
 	/** 确定性指标 ID 递增序号。 */
@@ -158,6 +160,11 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 				this.#selectedOverlayId = null;
 			}
 			this.#events.emit(toRuntimeEvent(event));
+			if (event.type.startsWith('overlay-')) {
+				for (const listener of this.#drawingChangeListeners) {
+					listener();
+				}
+			}
 		});
 		this.#unsubscribeCrosshair = adapter.subscribeCrosshair((snapshot) => {
 			this.#events.emit({
@@ -397,6 +404,21 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 		);
 	}
 
+	public updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot {
+		const overlay = this.getOverlay(id);
+		if (overlay === undefined) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				`/overlays/${id}`,
+				`Overlay ${id} does not exist.`,
+			);
+		}
+		return overlayToDrawingSnapshot(
+			this.updateOverlay({ ...overlay, locked }),
+			this.getScene().period,
+		);
+	}
+
 	public removeDrawing(id: string): boolean {
 		return this.removeOverlay(id);
 	}
@@ -415,6 +437,19 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 
 	public hitTestDrawing(point: EnginePixelCoordinate): string | null {
 		return this.#adapter.hitTestOverlay(point)?.overlayId ?? null;
+	}
+
+	public getDrawingMutationState(): 'ready' {
+		this.#assertActive();
+		return 'ready';
+	}
+
+	public subscribeDrawingChanges(listener: () => void): () => void {
+		this.#assertActive();
+		this.#drawingChangeListeners.add(listener);
+		return () => {
+			this.#drawingChangeListeners.delete(listener);
+		};
 	}
 
 	public exportArtifact(fileName = this.#defaultFileName): {
@@ -613,6 +648,7 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 		this.#adapter.dispose();
 		this.#unsubscribeAdapter();
 		this.#events.clear();
+		this.#drawingChangeListeners.clear();
 	}
 }
 

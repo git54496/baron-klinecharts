@@ -171,6 +171,14 @@ const ICON_SPECS = {
 			attributes: { d: 'M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3' },
 		},
 	],
+	lock: [
+		{ name: 'path', attributes: { d: 'M5 11m0 2a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z' } },
+		{ name: 'path', attributes: { d: 'M8 11v-4a4 4 0 0 1 8 0v4' } },
+	],
+	lockOpen: [
+		{ name: 'path', attributes: { d: 'M5 11m0 2a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z' } },
+		{ name: 'path', attributes: { d: 'M8 11v-4a4 4 0 0 1 7.8 -1' } },
+	],
 	clearAll: [
 		{ name: 'path', attributes: { d: 'M4 7l16 0' } },
 		{ name: 'path', attributes: { d: 'M10 11l4 4' } },

@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 		<meta
 			name="description"
-			content="使用 TimeSeriesScene Workspace 验证统一画图能力：22 工具与右键样式菜单。"
+			content="使用 TimeSeriesScene Workspace 验证统一画图能力：22 工具与 Drawing 浮动设置栏。"
 		>
 		<title>Baron KLineCharts 时间序列 Workspace 验证页</title>
 		<link rel="icon" href="data:,">
@@ -18,7 +18,7 @@
 					<h1>时间序列统一画图工作区</h1>
 					<p class="description">
 						时间序列 Workspace 同样提供 22 种 Drawing 与标准工具栏；没有主序列/价格轴
-						切换（公共数值轴、线性轴），样式控件在“图表空白处右键”菜单中。
+						切换（公共数值轴、线性轴），选中 Drawing 后通过浮动工具栏编辑样式。
 					</p>
 				</div>
 				<p class="status" data-example-status data-state="loading" aria-live="polite">
@@ -31,7 +31,7 @@
 			</section>
 			<p class="hint">
 				验证路径：选择任意工具在图表上创建（例如“线段”点击两点）→ 在图表空白处
-				右键，通过“坐标与样式”菜单修改线型/线宽/线色 → 点击工具栏“导出场景”
+				选中 Drawing，通过浮动工具栏修改线型/线宽/线色 → 点击工具栏“导出场景”
 				下载 Workspace JSON，其中 <code>scene.kind</code> 为 <code>time-series</code>；
 				“清空全部标注”可一键删除所有 Drawing（锁定的除外）。
 			</p>

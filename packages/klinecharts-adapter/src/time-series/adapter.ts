@@ -661,6 +661,9 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 		drawing = false,
 	): EngineOverlayCallbacks {
 		return {
+			onRightClick: ({ preventDefault }) => {
+				preventDefault?.();
+			},
 			onDrawEnd: ({ overlay }) => {
 				if (
 					drawing &&
@@ -1087,6 +1090,8 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 	};
 
 	#installInteractionListeners(): void {
+		this.#container.addEventListener('mousedown', this.#handleRightMouseDown, true);
+		this.#container.addEventListener('contextmenu', this.#handleContextMenu, true);
 		this.#container.addEventListener('pointerdown', this.#handlePointerDown, true);
 		this.#container.addEventListener('pointermove', this.#handlePointerMove, true);
 		this.#container.addEventListener('pointerup', this.#handlePointerUp, true);
@@ -1096,6 +1101,8 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 	}
 
 	#removeInteractionListeners(): void {
+		this.#container.removeEventListener('mousedown', this.#handleRightMouseDown, true);
+		this.#container.removeEventListener('contextmenu', this.#handleContextMenu, true);
 		this.#container.removeEventListener('pointerdown', this.#handlePointerDown, true);
 		this.#container.removeEventListener('pointermove', this.#handlePointerMove, true);
 		this.#container.removeEventListener('pointerup', this.#handlePointerUp, true);
@@ -1103,6 +1110,16 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 		window.removeEventListener('keydown', this.#handleKeyDown);
 		window.removeEventListener('blur', this.#handleWindowBlur);
 	}
+
+	readonly #handleRightMouseDown = (event: MouseEvent): void => {
+		if (event.button === 2) {
+			event.stopPropagation();
+		}
+	};
+
+	readonly #handleContextMenu = (event: MouseEvent): void => {
+		event.stopPropagation();
+	};
 
 	readonly #handleKeyDown = (event: KeyboardEvent): void => {
 		if (event.key === 'Escape') {
@@ -1205,6 +1222,11 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 			styles: structuredClone(styles),
 		} as unknown as Drawing;
 		this.#workspaceSources.set(id, updated);
+		this.#drawings = this.#drawings.map((candidate) =>
+			candidate.id === id
+				? drawingToSceneOverlay(updated, TIME_SERIES_PANE_ID)
+				: candidate,
+		);
 		this.#emitPort({
 			type: 'updated',
 			id,
@@ -1232,6 +1254,11 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 			text,
 		);
 		this.#workspaceSources.set(id, updated);
+		this.#drawings = this.#drawings.map((candidate) =>
+			candidate.id === id
+				? drawingToSceneOverlay(updated, TIME_SERIES_PANE_ID)
+				: candidate,
+		);
 		this.#emitPort({
 			type: 'updated',
 			id,
@@ -1239,6 +1266,39 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 			editDimensions: { horizontal: false, vertical: false },
 		});
 		return timeSeriesSnapshotOfDrawing(updated);
+	}
+
+	public updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot {
+		this.#assertActive();
+		const source = this.#workspaceSources.get(id);
+		if (source === undefined) {
+			throw new TimeSeriesSceneError(
+				'TIME_SERIES_SCENE_SCHEMA_INVALID',
+				`/drawings/${id}`,
+				`Drawing ${id} does not exist.`,
+			);
+		}
+		if (!this.#chart.overrideOverlay({ id, lock: locked })) {
+			throw adapterError(`KLineCharts failed to update Drawing ${id} lock state.`);
+		}
+		const updated = {
+			...structuredClone(source),
+			locked,
+		} as unknown as Drawing;
+		this.#workspaceSources.set(id, updated);
+		this.#drawings = this.#drawings.map((candidate) =>
+			candidate.id === id
+				? drawingToSceneOverlay(updated, TIME_SERIES_PANE_ID)
+				: candidate,
+		);
+		const snapshot = timeSeriesSnapshotOfDrawing(updated);
+		this.#emitPort({
+			type: 'updated',
+			id,
+			drawing: snapshot,
+			editDimensions: { horizontal: false, vertical: false },
+		});
+		return snapshot;
 	}
 
 	public removeDrawing(id: string): boolean {
@@ -1464,6 +1524,7 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 			return;
 		}
 		this.#disposed = true;
+		this.#removeInteractionListeners();
 		this.#chart.unsubscribeAction('onCrosshairChange', this.#handleCrosshair);
 		this.#interactiveRoot.removeEventListener(
 			'pointerleave',

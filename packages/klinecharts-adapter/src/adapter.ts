@@ -703,6 +703,11 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		drawing = false,
 	): EngineOverlayCallbacks {
 		return {
+			onRightClick: ({ preventDefault }) => {
+				// KLineCharts 默认把右键命中 Overlay 解释为删除。Baron 的删除只能
+				// 由显式对象级操作触发，因此在引擎回调层阻止该默认行为。
+				preventDefault?.();
+			},
 			onDrawEnd: ({ overlay }) => {
 				if (
 					drawing &&
@@ -788,6 +793,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	}
 
 	#installInteractionListeners(): void {
+		this.#container.addEventListener('mousedown', this.#handleRightMouseDown, true);
+		this.#container.addEventListener('contextmenu', this.#handleContextMenu, true);
 		this.#container.addEventListener('pointerdown', this.#handlePointerDown, true);
 		this.#container.addEventListener('pointermove', this.#handlePointerMove, true);
 		this.#container.addEventListener('pointerup', this.#handlePointerUp, true);
@@ -797,6 +804,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	}
 
 	#removeInteractionListeners(): void {
+		this.#container.removeEventListener('mousedown', this.#handleRightMouseDown, true);
+		this.#container.removeEventListener('contextmenu', this.#handleContextMenu, true);
 		this.#container.removeEventListener('pointerdown', this.#handlePointerDown, true);
 		this.#container.removeEventListener('pointermove', this.#handlePointerMove, true);
 		this.#container.removeEventListener('pointerup', this.#handlePointerUp, true);
@@ -804,6 +813,18 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		window.removeEventListener('keydown', this.#handleKeyDown);
 		window.removeEventListener('blur', this.#handleWindowBlur);
 	}
+
+	readonly #handleRightMouseDown = (event: MouseEvent): void => {
+		if (event.button === 2) {
+			// 阻止事件到达 KLineCharts；不 preventDefault，保留浏览器原生右键菜单。
+			event.stopPropagation();
+		}
+	};
+
+	readonly #handleContextMenu = (event: MouseEvent): void => {
+		// KLineCharts 会 preventDefault。捕获阶段截断传播，但 Baron 本身不拦截菜单。
+		event.stopPropagation();
+	};
 
 	#pointerCoordinate(event: PointerEvent): PixelCoordinate {
 		const rect = this.#container.getBoundingClientRect();
@@ -1589,6 +1610,11 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			styles: structuredClone(styles),
 		};
 		this.#workspaceSources.set(id, updated);
+		this.#workspaceOverlays = this.#workspaceOverlays.map((candidate) =>
+			candidate.id === id
+				? drawingToSceneOverlay(updated, candidate.paneId)
+				: candidate,
+		);
 		this.#emitPort({
 			type: 'updated',
 			id,
@@ -1619,6 +1645,11 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		}
 		const updated = withDrawingText(structuredClone(source), text);
 		this.#workspaceSources.set(id, updated);
+		this.#workspaceOverlays = this.#workspaceOverlays.map((candidate) =>
+			candidate.id === id
+				? drawingToSceneOverlay(updated, candidate.paneId)
+				: candidate,
+		);
 		this.#emitPort({
 			type: 'updated',
 			id,
@@ -1626,6 +1657,44 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			editDimensions: { horizontal: false, vertical: false },
 		});
 		return snapshotOfDrawing(updated);
+	}
+
+	public updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot {
+		this.#assertActive();
+		this.#assertNotTerminated();
+		const source = this.#workspaceSources.get(id);
+		if (source === undefined) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				`/drawings/${id}`,
+				`Drawing ${id} does not exist.`,
+			);
+		}
+		if (!this.#chart.overrideOverlay({ id, lock: locked })) {
+			throw new SceneError(
+				'RUNTIME_INIT_FAILED',
+				`/drawings/${id}/locked`,
+				`KLineCharts failed to update Drawing ${id} lock state.`,
+			);
+		}
+		const updated = {
+			...structuredClone(source),
+			locked,
+		} as unknown as Drawing;
+		this.#workspaceSources.set(id, updated);
+		this.#workspaceOverlays = this.#workspaceOverlays.map((candidate) =>
+			candidate.id === id
+				? drawingToSceneOverlay(updated, candidate.paneId)
+				: candidate,
+		);
+		const snapshot = snapshotOfDrawing(updated);
+		this.#emitPort({
+			type: 'updated',
+			id,
+			drawing: snapshot,
+			editDimensions: { horizontal: false, vertical: false },
+		});
+		return snapshot;
 	}
 
 	public removeDrawing(id: string): boolean {

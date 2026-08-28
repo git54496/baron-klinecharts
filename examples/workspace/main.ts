@@ -1,4 +1,5 @@
 import {
+	createDrawingFloatingToolbar,
 	createDrawableWorkspaceRuntime,
 	createStandardToolbar,
 	type WorkspaceRuntimeEvent,
@@ -22,11 +23,9 @@ try {
 		onEvent: (event) => events.push(event),
 	});
 	const toolbar = createStandardToolbar(toolbarRoot, runtime, {
-		mainSeriesPresentationControl: 'enabled',
 		downloadFileName: 'baron-workspace.json',
-		editControlsPlacement: 'context-menu',
-		contextMenuTarget: chart,
 	});
+	const drawingToolbar = createDrawingFloatingToolbar(chart, runtime);
 	status.dataset.state = 'ready';
 	status.textContent = `已加载 ${workspace.drawings.drawings.length} 条 Drawing · 22 种工具可用`;
 
@@ -42,6 +41,7 @@ try {
 	};
 
 	window.addEventListener('beforeunload', () => {
+		drawingToolbar.destroy();
 		toolbar.destroy();
 		runtime.destroy();
 	}, { once: true });

@@ -14,4 +14,5 @@ export * from './runtime.js';
 export * from './time-series-runtime.js';
 export * from './time-series-types.js';
 export * from './toolbar/standard-toolbar.js';
+export * from './toolbar/drawing-floating-toolbar.js';
 export * from './types.js';

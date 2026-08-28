@@ -76,6 +76,14 @@ class MockEngine implements DrawingEnginePort {
 		return after;
 	}
 
+	public updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot {
+		const before = this.drawings.get(id)!;
+		const after = { ...structuredClone(before), locked };
+		this.drawings.set(id, after);
+		this.listener?.({ type: 'updated', id, drawing: after });
+		return after;
+	}
+
 	public restoreDrawing(snapshot: EngineDrawingSnapshot): void {
 		this.drawings.set(snapshot.id, structuredClone(snapshot));
 	}

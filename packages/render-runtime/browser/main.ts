@@ -1,5 +1,6 @@
 import '@fontsource-variable/noto-sans-sc';
 import {
+	createDrawingFloatingToolbar,
 	createKLineSceneRuntime,
 	createDrawableWorkspaceRuntime,
 	createStandardToolbar,
@@ -89,17 +90,23 @@ const ready = (async () => {
 	if (parsed.schema === '@baron1996/kline-scene') {
 		sceneRuntime = await createKLineSceneRuntime(renderRoot, scene);
 		const toolbar = createStandardToolbar(toolbarRoot, sceneRuntime);
-		destroyToolbar = () => toolbar.destroy();
+		const drawingToolbar = createDrawingFloatingToolbar(renderRoot, sceneRuntime);
+		destroyToolbar = () => {
+			drawingToolbar.destroy();
+			toolbar.destroy();
+		};
 	} else if (parsed.schema === '@baron1996/time-series-scene') {
 		sceneRuntime = await createTimeSeriesRuntime(renderRoot, scene);
 	} else if (isWorkspace) {
 		workspaceRuntime = await createDrawableWorkspaceRuntime(renderRoot, scene, {
 			commitMode: 'immediate',
 		});
-		const toolbar = createStandardToolbar(toolbarRoot, workspaceRuntime, {
-			mainSeriesPresentationControl: 'enabled',
-		});
-		destroyToolbar = () => toolbar.destroy();
+		const toolbar = createStandardToolbar(toolbarRoot, workspaceRuntime);
+		const drawingToolbar = createDrawingFloatingToolbar(renderRoot, workspaceRuntime);
+		destroyToolbar = () => {
+			drawingToolbar.destroy();
+			toolbar.destroy();
+		};
 	} else {
 		throw new Error('Standalone HTML contains an unsupported Scene schema.');
 	}

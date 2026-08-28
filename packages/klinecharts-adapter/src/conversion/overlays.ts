@@ -37,6 +37,7 @@ export interface OverlayDrawingSource extends OverlaySourceSnapshot {
 
 export interface EngineOverlayCallbacks {
 	readonly onDrawEnd?: NonNullable<OverlayCreate['onDrawEnd']>;
+	readonly onRightClick?: NonNullable<OverlayCreate['onRightClick']>;
 	readonly onPressedMoveStart?: NonNullable<OverlayCreate['onPressedMoveStart']>;
 	readonly onPressedMoving?: NonNullable<OverlayCreate['onPressedMoving']>;
 	readonly onPressedMoveEnd?: NonNullable<OverlayCreate['onPressedMoveEnd']>;

@@ -77,7 +77,7 @@ test('@browser toolbar renders the approved icon groups in normal flow', async (
 			...toolbar.element.querySelectorAll<HTMLButtonElement>('[data-overlay-type]'),
 		];
 		const actionButtons = [
-			...toolbar.element.querySelectorAll<HTMLButtonElement>('[data-action="delete"], [data-action="export"]'),
+			...toolbar.element.querySelectorAll<HTMLButtonElement>('[data-action="clear-all"], [data-action="export"]'),
 		];
 		overlayButtons[7]!.click();
 		const toolbarRect = toolbar.element.getBoundingClientRect();
@@ -137,7 +137,7 @@ test('@browser toolbar renders the approved icon groups in normal flow', async (
 		'注释框',
 		'文本',
 	]);
-	expect(result.actions).toEqual(['删除选中标注', '导出场景']);
+	expect(result.actions).toEqual(['清空全部标注', '导出场景']);
 	expect(result.groups).toEqual([
 		'水平线',
 		'垂直线',
@@ -160,13 +160,18 @@ test('@browser toolbar renders the approved icon groups in normal flow', async (
 	expect(result.hasViewport).toBe(true);
 });
 
-test('@browser M2 toolbar exposes measurement, scale, style, delete request, and opaque host actions', async ({ page }) => {
+test('@browser M2 standard and Drawing toolbars expose their separate capabilities', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	const result = await page.evaluate(async (scene) => {
-		const { createKLineSceneRuntime, createStandardToolbar } = await import('/src/index.ts');
+		const {
+			createDrawingFloatingToolbar,
+			createKLineSceneRuntime,
+			createStandardToolbar,
+		} = await import('/src/index.ts');
 		const events: Array<Record<string, unknown>> = [];
+		const chart = document.querySelector<HTMLElement>('#chart')!;
 		const runtime = await createKLineSceneRuntime(
-			document.querySelector<HTMLElement>('#chart')!,
+			chart,
 			scene,
 			{ onEvent: (event) => events.push(event) },
 		);
@@ -174,10 +179,12 @@ test('@browser M2 toolbar exposes measurement, scale, style, delete request, and
 			document.querySelector<HTMLElement>('#toolbar')!,
 			runtime,
 			{
-				deleteBehavior: 'request',
 				hostActions: [{ actionId: 'host.review', label: '交给宿主' }],
 			},
 		);
+		const drawingToolbar = createDrawingFloatingToolbar(chart, runtime, {
+			deleteBehavior: 'request',
+		});
 		const measurementButton = toolbar.element.querySelector<HTMLButtonElement>(
 			'[data-overlay-type="priceMeasurement"]',
 		)!;
@@ -192,12 +199,12 @@ test('@browser M2 toolbar exposes measurement, scale, style, delete request, and
 		scale.dispatchEvent(new Event('change'));
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		const selectedId = 'm2-aapl-measurement-300-330';
-		runtime.getSelectedOverlayId = () => selectedId;
-		const color = toolbar.element.querySelector<HTMLInputElement>('[data-action="line-color"]')!;
+		runtime.selectDrawing(selectedId);
+		const color = drawingToolbar.element.querySelector<HTMLInputElement>('[data-action="line-color"]')!;
 		color.value = '#ff0000';
 		color.dispatchEvent(new Event('change'));
 		const selectedAfterStyleChange = runtime.getSelectedOverlayId();
-		toolbar.element.querySelector<HTMLButtonElement>('[data-action="delete"]')!.click();
+		drawingToolbar.element.querySelector<HTMLButtonElement>('[data-action="delete"]')!.click();
 		toolbar.element.querySelector<HTMLButtonElement>('[data-host-action="host.review"]')!.click();
 		const exported = runtime.exportScene();
 		const overlay = runtime.getOverlay(selectedId)!;
@@ -389,39 +396,18 @@ test('@browser toolbar Tooltip supports hover, focus, viewport clamping, and nar
 	await expect(tooltip.locator('code')).toHaveText('verticalSegment');
 });
 
-test('@browser toolbar deletes only an unlocked selected Overlay and revokes export URLs', async ({ page }) => {
+test('@browser standard toolbar owns export and has no selected-Drawing delete action', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	const result = await page.evaluate(async (scene) => {
 		const {
 			createKLineSceneRuntime,
 			createStandardToolbar,
-			DEFAULT_OVERLAY_STYLES,
 		} = await import('/src/index.ts');
 		const runtime = await createKLineSceneRuntime(
 			document.querySelector<HTMLElement>('#chart')!,
 			scene,
 		);
-		const removed: string[] = [];
 		const urls: string[] = [];
-		runtime.getSelectedOverlayId = () => 'overlay-selected';
-		runtime.getOverlay = () => ({
-			id: 'overlay-selected',
-			type: 'segment',
-			paneId: 'pane-candle',
-			visible: true,
-			locked: false,
-			zLevel: 0,
-			mode: 'normal',
-			styles: DEFAULT_OVERLAY_STYLES,
-			points: [
-				{ timestamp: 1784736000000, value: 12.4 },
-				{ timestamp: 1784822400000, value: 12.7 },
-			],
-		});
-		runtime.removeOverlay = ((id: string) => {
-			removed.push(id);
-			return true;
-		}) as typeof runtime.removeOverlay;
 		URL.createObjectURL = () => {
 			urls.push('created');
 			return 'blob:test';
@@ -436,17 +422,17 @@ test('@browser toolbar deletes only an unlocked selected Overlay and revokes exp
 			document.querySelector<HTMLElement>('#toolbar')!,
 			runtime,
 		);
-		toolbar.element.querySelector<HTMLButtonElement>('[data-action="delete"]')!.click();
+		const hasDelete = toolbar.element.querySelector('[data-action="delete"]') !== null;
 		toolbar.element.querySelector<HTMLButtonElement>('[data-action="export"]')!.click();
 		runtime.destroy();
-		return { removed, urls };
+		return { hasDelete, urls };
 	}, minimalScene);
 
-	expect(result.removed).toEqual(['overlay-selected']);
+	expect(result.hasDelete).toBe(false);
 	expect(result.urls).toEqual(['created', 'clicked', 'revoked']);
 });
 
-test('@browser toolbar hides main series control by default and shows it only when enabled', async ({ page }) => {
+test('@browser toolbar shows main series control by default and hides it explicitly', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	const result = await page.evaluate(async (scene) => {
 		const { createKLineSceneRuntime, createStandardToolbar } = await import('/src/index.ts');
@@ -458,24 +444,24 @@ test('@browser toolbar hides main series control by default and shows it only wh
 			document.querySelector<HTMLElement>('#toolbar')!,
 			runtime,
 		);
-		const hiddenByDefault = toolbar.element.querySelector('[data-action="main-series"]') === null;
-		toolbar.destroy();
-		const enabledToolbar = createStandardToolbar(
+		const shownByDefault = toolbar.element.querySelector('[data-action="main-series"]') !== null;
+		const hiddenToolbar = createStandardToolbar(
 			document.querySelector<HTMLElement>('#toolbar')!,
 			runtime,
-			{ mainSeriesPresentationControl: 'enabled' },
+			{ mainSeriesPresentationControl: 'hidden' },
 		);
-		const control = enabledToolbar.element.querySelector<HTMLSelectElement>(
+		const control = toolbar.element.querySelector<HTMLSelectElement>(
 			'[data-action="main-series"]',
 		);
 		const options = control === null
 			? []
 			: [...control.options].map((option) => option.value);
+		const hiddenExplicitly = hiddenToolbar.element.querySelector('[data-action="main-series"]') === null;
 		runtime.destroy();
-		return { hiddenByDefault, hasControl: control !== null, options };
+		return { shownByDefault, hiddenExplicitly, options };
 	}, minimalScene);
-	expect(result.hiddenByDefault).toBe(true);
-	expect(result.hasControl).toBe(true);
+	expect(result.shownByDefault).toBe(true);
+	expect(result.hiddenExplicitly).toBe(true);
 	expect(result.options).toEqual([
 		'candle_solid',
 		'candle_stroke',
@@ -594,10 +580,11 @@ test('@browser time-series Workspace toolbar keeps 22 tools without main series 
 	expect(result.scaleHidden).toBe(true);
 });
 
-test('@browser context-menu placement moves edit controls into chart right-click menu', async ({ page }) => {
+test('@browser chart controls stay in the main toolbar and Drawing controls use a draggable floating toolbar', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	await page.evaluate(async (workspace) => {
 		const {
+			createDrawingFloatingToolbar,
 			createDrawableWorkspaceRuntime,
 			createStandardToolbar,
 		} = await import('/src/index.ts');
@@ -607,16 +594,16 @@ test('@browser context-menu placement moves edit controls into chart right-click
 			workspace,
 			{ commitMode: 'immediate' },
 		);
-		createStandardToolbar(
+		const standardToolbar = createStandardToolbar(
 			document.querySelector<HTMLElement>('#toolbar')!,
 			runtime,
-			{
-				mainSeriesPresentationControl: 'enabled',
-				editControlsPlacement: 'context-menu',
-				contextMenuTarget: container,
-			},
 		);
-		(window as unknown as { __runtime: typeof runtime }).__runtime = runtime;
+		const drawingToolbar = createDrawingFloatingToolbar(container, runtime);
+		(window as unknown as {
+			__runtime: typeof runtime;
+			__standardToolbar: typeof standardToolbar;
+			__drawingToolbar: typeof drawingToolbar;
+		}).__runtime = runtime;
 	}, chartWorkspaceFixture);
 	// 清空已有 Drawing，避免右键命中干扰。
 	await page.evaluate(() => {
@@ -633,15 +620,16 @@ test('@browser context-menu placement moves edit controls into chart right-click
 		}).__runtime.listDrawings().length,
 	)).toBe(0);
 
-	// 常驻工具栏保留 22 工具与删除/导出，但不再有编辑控件。
+	// 常驻工具栏保留 Drawing 创建工具、图表级控件和全局操作。
 	expect(await page.locator('#toolbar [data-overlay-type]').count()).toBe(22);
-	expect(await page.locator('#toolbar [data-action="delete"]').count()).toBe(1);
+	expect(await page.locator('#toolbar [data-action="delete"]').count()).toBe(0);
 	expect(await page.locator('#toolbar [data-action="export"]').count()).toBe(1);
-	for (const action of [
-		'price-scale', 'line-style', 'line-size', 'line-color', 'main-series',
-	]) {
+	expect(await page.locator('#toolbar [data-action="price-scale"]').count()).toBe(1);
+	expect(await page.locator('#toolbar [data-action="main-series"]').count()).toBe(1);
+	for (const action of ['line-style', 'line-width', 'line-color']) {
 		expect(await page.locator(`#toolbar [data-action="${action}"]`).count()).toBe(0);
 	}
+	await expect(page.locator('.baron-drawing-toolbar')).toBeHidden();
 
 	// 创建一条水平线；线会吸附到最近 bar 值，实际像素 y 可能与点击位置不同。
 	await page.locator('[data-overlay-type="horizontalStraightLine"]').click();
@@ -652,23 +640,61 @@ test('@browser context-menu placement moves edit controls into chart right-click
 			__runtime: { listDrawings(): readonly unknown[] };
 		}).__runtime.listDrawings().length,
 	)).toBe(1);
-
-	// 图表空白处右键 -> 菜单显示并包含 5 个编辑控件。
-	await canvas.click({ position: { x: 900, y: 400 }, button: 'right' });
-	await expect(page.locator('.baron-kline-context-menu--visible')).toBeVisible();
+	const drawingId = await page.evaluate(() => (window as unknown as {
+		__runtime: { listDrawings(): readonly { readonly id: string }[] };
+	}).__runtime.listDrawings()[0]!.id);
+	await page.evaluate((id) => (window as unknown as {
+		__runtime: { selectDrawing(id: string): void };
+	}).__runtime.selectDrawing(id), drawingId);
+	await expect(page.locator('.baron-drawing-toolbar')).toBeVisible();
 	for (const action of [
-		'price-scale', 'line-style', 'line-size', 'line-color', 'main-series',
+		'line-style', 'line-width', 'line-color', 'toggle-lock', 'delete',
 	]) {
-		expect(
-			await page
-				.locator(`.baron-kline-context-menu [data-action="${action}"]`)
-				.count(),
-		).toBe(1);
+		expect(await page.locator(`.baron-drawing-toolbar [data-action="${action}"]`).count())
+			.toBe(1);
 	}
 
-	// 右键命中 Drawing 本身 -> 菜单不弹出。
-	await page.mouse.click(0, 0);
-	await expect(page.locator('.baron-kline-context-menu--visible')).toBeHidden();
+	// 对象级样式只修改当前 Drawing。
+	await page.locator('.baron-drawing-toolbar [data-action="line-style"]').selectOption('dashed');
+	await expect.poll(() => page.evaluate((id) => (window as unknown as {
+		__runtime: { getDrawing(id: string): { styles: { line: { style: string } } } };
+	}).__runtime.getDrawing(id).styles.line.style, drawingId)).toBe('dashed');
+	await page.locator('.baron-drawing-toolbar [data-action="line-width"]').selectOption('2');
+	await expect.poll(() => page.evaluate((id) => (window as unknown as {
+		__runtime: { getDrawing(id: string): { styles: { line: { size: number } } } };
+	}).__runtime.getDrawing(id).styles.line.size, drawingId)).toBe(2);
+	await page.locator('.baron-drawing-toolbar [data-action="line-color"]').evaluate(
+		(input: HTMLInputElement) => {
+			input.value = '#ff0000';
+			input.dispatchEvent(new Event('change', { bubbles: true }));
+		},
+	);
+	await expect.poll(() => page.evaluate((id) => {
+		const drawing = (window as unknown as {
+			__runtime: { getDrawing(id: string): { styles: { line: { style: string; size: number; color: string } } } };
+		}).__runtime.getDrawing(id);
+		return drawing.styles.line;
+	}, drawingId)).toEqual({
+		style: 'dashed',
+		size: 2,
+		color: 'rgba(255, 0, 0, 1)',
+	});
+
+	// 浮动工具栏位置可以拖动，并限制在图表可见区域。
+	const beforeDrag = await page.locator('.baron-drawing-toolbar').boundingBox();
+	const grip = page.locator('.baron-drawing-toolbar [data-action="drag"]');
+	const gripBox = await grip.boundingBox();
+	expect(beforeDrag).not.toBeNull();
+	expect(gripBox).not.toBeNull();
+	await page.mouse.move(gripBox!.x + gripBox!.width / 2, gripBox!.y + gripBox!.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(gripBox!.x + 150, gripBox!.y + 110, { steps: 4 });
+	await page.mouse.up();
+	const afterDrag = await page.locator('.baron-drawing-toolbar').boundingBox();
+	expect(afterDrag!.x).not.toBe(beforeDrag!.x);
+	expect(afterDrag!.y).not.toBe(beforeDrag!.y);
+
+	// 右键命中 Drawing 不删除，并且 Baron 不取消 contextmenu 默认行为。
 	const hitPoint = await page.evaluate(() => {
 		const runtime = (window as unknown as {
 			__runtime: {
@@ -685,15 +711,26 @@ test('@browser context-menu placement moves edit controls into chart right-click
 		return null;
 	});
 	expect(hitPoint).not.toBeNull();
-	await canvas.click({ position: hitPoint as { x: number; y: number }, button: 'right' });
-	await expect(page.locator('.baron-kline-context-menu--visible')).toBeHidden();
+	const contextMenuAllowed = await canvas.evaluate((element, point) => {
+		const rect = document.querySelector<HTMLElement>('#chart')!.getBoundingClientRect();
+		const init = {
+			bubbles: true,
+			cancelable: true,
+			clientX: rect.left + point.x,
+			clientY: rect.top + point.y,
+			button: 2,
+		};
+		element.dispatchEvent(new MouseEvent('mousedown', init));
+		return element.dispatchEvent(new MouseEvent('contextmenu', init));
+	}, hitPoint as { x: number; y: number });
+	expect(contextMenuAllowed).toBe(true);
+	await expect.poll(() => page.evaluate(
+		() => (window as unknown as { __runtime: { listDrawings(): readonly unknown[] } })
+			.__runtime.listDrawings().length,
+	)).toBe(1);
 
-	// 再次在空白处右键，通过菜单切换主序列到收盘价折线。
-	await canvas.click({ position: { x: 900, y: 400 }, button: 'right' });
-	await expect(page.locator('.baron-kline-context-menu--visible')).toBeVisible();
-	await page
-		.locator('.baron-kline-context-menu [data-action="main-series"]')
-		.selectOption('area');
+	// 图表级主序列继续由常驻工具栏控制。
+	await page.locator('#toolbar [data-action="main-series"]').selectOption('area');
 	await expect.poll(() => page.evaluate(
 		() => (window as unknown as {
 			__runtime: {
@@ -701,6 +738,17 @@ test('@browser context-menu placement moves edit controls into chart right-click
 			};
 		}).__runtime.exportWorkspace().scene.document.chart.candle.type,
 	)).toBe('area');
+
+	// 锁定后样式和删除禁用；解锁后可显式删除。
+	await page.locator('.baron-drawing-toolbar [data-action="toggle-lock"]').click();
+	await expect(page.locator('.baron-drawing-toolbar [data-action="delete"]')).toBeDisabled();
+	await page.locator('.baron-drawing-toolbar [data-action="toggle-lock"]').click();
+	await page.locator('.baron-drawing-toolbar [data-action="delete"]').click();
+	await expect.poll(() => page.evaluate(
+		() => (window as unknown as { __runtime: { listDrawings(): readonly unknown[] } })
+			.__runtime.listDrawings().length,
+	)).toBe(0);
+	await expect(page.locator('.baron-drawing-toolbar')).toBeHidden();
 });
 
 test('@browser clear-all removes every unlocked Drawing and keeps locked ones', async ({ page }) => {
@@ -751,6 +799,7 @@ test('@browser M1 toolbar creates, selects, exports, and deletes a horizontal li
 	await page.goto('/test/fixture.html');
 	await page.evaluate(async (scene) => {
 		const {
+			createDrawingFloatingToolbar,
 			createKLineSceneRuntime,
 			createStandardToolbar,
 		} = await import('/src/index.ts');
@@ -762,6 +811,10 @@ test('@browser M1 toolbar creates, selects, exports, and deletes a horizontal li
 			document.querySelector<HTMLElement>('#toolbar')!,
 			runtime,
 			{ downloadFileName: 'm1-scene.json' },
+		);
+		createDrawingFloatingToolbar(
+			document.querySelector<HTMLElement>('#chart')!,
+			runtime,
 		);
 		Object.assign(window, { __baronM1ToolbarRuntime: runtime });
 	}, m1Scene);
@@ -816,7 +869,7 @@ test('@browser M1 toolbar creates, selects, exports, and deletes a horizontal li
 	}));
 	expect(Number.isFinite(exported.overlays[1]!.anchor?.value)).toBe(true);
 
-	await page.locator('[data-action="delete"]').click();
+	await page.locator('.baron-drawing-toolbar [data-action="delete"]').click();
 	await expect.poll(() => page.evaluate(() => (
 		window as unknown as {
 			__baronM1ToolbarRuntime: {

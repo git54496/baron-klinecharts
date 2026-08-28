@@ -119,6 +119,14 @@ class MockEngine implements DrawingEnginePort {
 		return after;
 	}
 
+	public updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot {
+		const before = this.drawings.get(id)!;
+		const after = { ...structuredClone(before), locked };
+		this.drawings.set(id, after);
+		this.listener?.({ type: 'updated', id, drawing: after });
+		return after;
+	}
+
 	public restoreDrawing(snapshotValue: EngineDrawingSnapshot): void {
 		this.drawings.set(snapshotValue.id, structuredClone(snapshotValue));
 	}
@@ -169,6 +177,11 @@ class MockEngine implements DrawingEnginePort {
 		const drawing = snapshot(id, value);
 		this.drawings.set(id, drawing);
 		this.listener?.({ type: 'created', id, drawing });
+	}
+
+	public emitRemoved(id: string): void {
+		this.drawings.delete(id);
+		this.listener?.({ type: 'removed', id });
 	}
 }
 
@@ -233,6 +246,15 @@ async function flush(
 }
 
 describe('DrawingSessionController', () => {
+	it('returns to ready when an in-progress Drawing is cancelled by the engine', () => {
+		const { engine, controller } = buildController('immediate');
+		const id = controller.startCreate('horizontalStraightLine');
+		expect(controller.state).toBe('interacting');
+		engine.emitRemoved(id);
+		expect(controller.state).toBe('ready');
+		expect(() => controller.startCreate('horizontalStraightLine')).not.toThrow();
+	});
+
 	it('commits immediately in immediate mode without mutating confirmed on progress', async () => {
 		const { engine, controller, events } = buildController('immediate');
 		engine.emitCreated('drawing-a', 12.55);

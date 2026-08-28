@@ -23,7 +23,7 @@ export interface ToolbarToolPresentation {
 }
 
 export interface ToolbarActionPresentation {
-	readonly action: 'delete' | 'clear-all' | 'export';
+	readonly action: 'clear-all' | 'export';
 	readonly label: string;
 	readonly group: 'action';
 	readonly icon: ToolbarIconName;
@@ -158,12 +158,6 @@ export const OVERLAY_TOOL_PRESENTATIONS: Readonly<
 };
 
 export const TOOLBAR_ACTIONS = [
-	{
-		action: 'delete',
-		label: '删除选中标注',
-		group: 'action',
-		icon: 'trash',
-	},
 	{
 		action: 'clear-all',
 		label: '清空全部标注',

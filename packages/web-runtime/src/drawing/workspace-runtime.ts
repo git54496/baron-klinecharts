@@ -25,6 +25,7 @@ import {
 	STANDARD_CLOSE_LINE_PRESENTATION,
 } from '@baron1996/klinecharts-adapter';
 
+import { runRuntimeTeardowns } from '../lifecycle.js';
 import type {
 	DrawingRuntimeCapability,
 	HistoricalDataRuntimeCapability,
@@ -112,6 +113,7 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 	/** 宿主确认策略在 Runtime 生命周期内不可切换。 */
 	readonly #commitMode: DrawableWorkspaceRuntimeOptions['commitMode'];
 	readonly #listeners = new Set<WorkspaceRuntimeListener>();
+	readonly #drawingChangeListeners = new Set<() => void>();
 	/** 释放历史行情请求订阅，避免 Runtime 销毁后宿主收到旧请求。 */
 	readonly #unsubscribeHistoricalData: (() => void) | undefined;
 	#sequence = 0;
@@ -223,6 +225,10 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		return this.#session.updateDrawingText(id, text);
 	}
 
+	public updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot {
+		return this.#session.updateDrawingLocked(id, locked);
+	}
+
 	public removeDrawing(id: string): boolean {
 		return this.#session.removeDrawing(id);
 	}
@@ -241,6 +247,17 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 
 	public hitTestDrawing(point: { readonly x: number; readonly y: number }): string | null {
 		return this.#engine.hitTestDrawing(point);
+	}
+
+	public getDrawingMutationState(): 'ready' | 'busy' {
+		return this.#session.state === 'ready' ? 'ready' : 'busy';
+	}
+
+	public subscribeDrawingChanges(listener: () => void): () => void {
+		this.#drawingChangeListeners.add(listener);
+		return () => {
+			this.#drawingChangeListeners.delete(listener);
+		};
 	}
 
 	public subscribe(listener: WorkspaceRuntimeListener): () => void {
@@ -498,10 +515,12 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 			return;
 		}
 		this.#destroyed = true;
+		runRuntimeTeardowns(this);
 		this.#unsubscribeHistoricalData?.();
 		this.#session.destroy();
 		this.#engine.dispose();
 		this.#listeners.clear();
+		this.#drawingChangeListeners.clear();
 		this.#emit({ type: 'destroyed' });
 	}
 
@@ -581,6 +600,13 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 				listener(structuredClone(envelope));
 			} catch {
 				// 单个监听器抛错不改变状态、不阻断其他监听器。
+			}
+		}
+		for (const listener of this.#drawingChangeListeners) {
+			try {
+				listener();
+			} catch {
+				// 编辑器监听失败不影响 Runtime 状态。
 			}
 		}
 	}

@@ -73,18 +73,6 @@ function applyHostActionState(
 	}
 }
 
-/** 将 HTML color 控件的 #RRGGBB 边界值归一化为 Scene v1 唯一的 rgba 表示。 */
-function htmlHexColorToSceneRgba(value: string): string {
-	const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(value);
-	if (match === null) {
-		throw new TypeError(`Invalid HTML color value: ${value}`);
-	}
-	const red = Number.parseInt(match[1]!, 16);
-	const green = Number.parseInt(match[2]!, 16);
-	const blue = Number.parseInt(match[3]!, 16);
-	return `rgba(${red}, ${green}, ${blue}, 1)`;
-}
-
 type StandardDrawingRuntime = DrawingRuntimeCapability & RuntimeAuxiliaryCapability;
 
 function downloadArtifact(
@@ -254,23 +242,6 @@ function createSelectControl(
 	return { label, select };
 }
 
-function createInputControl(
-	labelText: string,
-	action: string,
-	type: 'color' | 'number',
-): { readonly label: HTMLLabelElement; readonly input: HTMLInputElement } {
-	const label = document.createElement('label');
-	label.className = 'baron-kline-toolbar__control';
-	const text = document.createElement('span');
-	text.textContent = labelText;
-	const input = document.createElement('input');
-	input.type = type;
-	input.dataset.action = action;
-	input.setAttribute('aria-label', labelText);
-	label.append(text, input);
-	return { label, input };
-}
-
 /** 创建不含撤销/重做的标准离线编辑工具栏。 */
 export function createStandardToolbar(
 	container: HTMLElement,
@@ -333,11 +304,6 @@ export function createStandardToolbar(
 		option.textContent = scale === 'linear' ? '线性' : '对数';
 		scaleControl.select.append(option);
 	}
-	const lineStyleControl = createSelectControl('线型', 'line-style', [
-		{ value: 'solid', label: '实线' },
-		{ value: 'dashed', label: '虚线' },
-		{ value: 'dotted', label: '点线' },
-	]);
 	const mainSeries = descriptor.mainSeriesPresentation;
 	const mainSeriesOptions = mainSeries === null
 		? []
@@ -356,94 +322,23 @@ export function createStandardToolbar(
 	if (mainSeries !== null && mainSeriesControl !== null) {
 		mainSeriesControl.select.value = mainSeries.activeType;
 	}
-	const lineSizeControl = createInputControl('线宽', 'line-size', 'number');
-	lineSizeControl.input.min = '0.5';
-	lineSizeControl.input.max = '10';
-	lineSizeControl.input.step = '0.5';
-	lineSizeControl.input.value = '1';
-	const lineColorControl = createInputControl('线色', 'line-color', 'color');
-	lineColorControl.input.value = '#2962ff';
 	scaleControl.select.value = descriptor.valueAxis.activeScale;
 
-	const applySelectedLineStyle = (change: {
-		readonly color?: string;
-		readonly size?: number;
-		readonly style?: 'solid' | 'dashed' | 'dotted';
-	}): void => {
-		const id = runtime.getSelectedDrawingId();
-		const overlay = id === undefined ? undefined : runtime.getDrawing(id);
-		if (id === undefined || overlay === undefined) {
-			return;
-		}
-		runtime.updateDrawingStyles(id, {
-			...structuredClone(overlay.styles),
-			line: {
-				...structuredClone(overlay.styles.line),
-				...change,
-			},
-		});
-	};
 	const handleScaleChange = async (): Promise<void> => {
 		await runtime.setValueAxisScale(scaleControl.select.value as 'linear' | 'logarithmic');
 	};
-	const handleLineStyleChange = (): void => {
-		applySelectedLineStyle({
-			style: lineStyleControl.select.value as 'solid' | 'dashed' | 'dotted',
-		});
-	};
-	const handleLineSizeChange = (): void => {
-		applySelectedLineStyle({ size: lineSizeControl.input.valueAsNumber });
-	};
-	const handleLineColorChange = (): void => {
-		applySelectedLineStyle({ color: htmlHexColorToSceneRgba(lineColorControl.input.value) });
-	};
-	const handleTextChange = (): void => {
-		const id = runtime.getSelectedDrawingId();
-		const drawing = id === undefined ? undefined : runtime.getDrawing(id);
-		if (
-			id === undefined ||
-			drawing === undefined ||
-			!(
-				drawing.type === 'simpleTag' ||
-				drawing.type === 'simpleAnnotation' ||
-				drawing.type === 'callout' ||
-				drawing.type === 'text'
-			)
-		) {
-			return;
-		}
-		runtime.updateDrawingText(id, textInput.value);
-	};
 	scaleControl.select.addEventListener('change', handleScaleChange);
-	lineStyleControl.select.addEventListener('change', handleLineStyleChange);
-	lineSizeControl.input.addEventListener('change', handleLineSizeChange);
-	lineColorControl.input.addEventListener('change', handleLineColorChange);
-	textInput.addEventListener('change', handleTextChange);
 	cleanupCallbacks.push(
 		() => scaleControl.select.removeEventListener('change', handleScaleChange),
-		() => lineStyleControl.select.removeEventListener('change', handleLineStyleChange),
-		() => lineSizeControl.input.removeEventListener('change', handleLineSizeChange),
-		() => lineColorControl.input.removeEventListener('change', handleLineColorChange),
-		() => textInput.removeEventListener('change', handleTextChange),
 	);
 
-	const useContextMenu = options.editControlsPlacement === 'context-menu';
-	if (useContextMenu && options.contextMenuTarget === undefined) {
-		throw new TypeError(
-			'STANDARD_TOOLBAR_CONTEXT_MENU_TARGET_REQUIRED: ' +
-			'editControlsPlacement "context-menu" requires contextMenuTarget.',
-		);
+	const editLabels: HTMLLabelElement[] = [];
+	if (descriptor.valueAxis.mutable) {
+		editLabels.push(scaleControl.label);
 	}
-	const contextMenuTarget = options.contextMenuTarget;
-	const editLabels: HTMLLabelElement[] = [
-		scaleControl.label,
-		lineStyleControl.label,
-		lineSizeControl.label,
-		lineColorControl.label,
-	];
 	if (
 		mainSeriesControl !== null &&
-		options.mainSeriesPresentationControl === 'enabled'
+		options.mainSeriesPresentationControl !== 'hidden'
 	) {
 		editLabels.push(mainSeriesControl.label);
 	}
@@ -451,7 +346,7 @@ export function createStandardToolbar(
 	if (
 		mainSeries !== null &&
 		mainSeriesControl !== null &&
-		options.mainSeriesPresentationControl === 'enabled'
+		options.mainSeriesPresentationControl !== 'hidden'
 	) {
 		const handleMainSeriesChange = (): void => {
 			const presentation = mainSeries?.presentations.find(
@@ -474,80 +369,10 @@ export function createStandardToolbar(
 			),
 		);
 	}
-	if (useContextMenu && contextMenuTarget !== undefined) {
-		const menu = document.createElement('div');
-		menu.className = 'baron-kline-context-menu';
-		menu.setAttribute('role', 'group');
-		menu.setAttribute('aria-label', '坐标与样式');
-		menu.hidden = true;
-		menu.append(...editLabels);
-		document.body.append(menu);
-
-		const hideContextMenu = (): void => {
-			menu.hidden = true;
-			menu.classList.remove('baron-kline-context-menu--visible');
-		};
-		const handleContextMenu = (event: MouseEvent): void => {
-			const rect = contextMenuTarget.getBoundingClientRect();
-			const point = {
-				x: event.clientX - rect.left,
-				y: event.clientY - rect.top,
-			};
-			// 只有图表空白处右键才弹出编辑菜单；命中 Drawing 时不接管。
-			if (runtime.hitTestDrawing(point) !== null) {
-				return;
-			}
-			event.preventDefault();
-			menu.hidden = false;
-			menu.classList.add('baron-kline-context-menu--visible');
-			const gap = 8;
-			menu.style.left = `${Math.max(
-				0,
-				Math.min(
-					event.clientX,
-					window.innerWidth - menu.offsetWidth - gap,
-				),
-			)}px`;
-			menu.style.top = `${Math.max(
-				0,
-				Math.min(
-					event.clientY,
-					window.innerHeight - menu.offsetHeight - gap,
-				),
-			)}px`;
-		};
-		const handlePointerDown = (event: PointerEvent): void => {
-			if (!menu.contains(event.target as Node)) {
-				hideContextMenu();
-			}
-		};
-		const handleKeyDown = (event: KeyboardEvent): void => {
-			if (event.key === 'Escape') {
-				hideContextMenu();
-			}
-		};
-		contextMenuTarget.addEventListener('contextmenu', handleContextMenu);
-		document.addEventListener('pointerdown', handlePointerDown);
-		window.addEventListener('keydown', handleKeyDown);
-		window.addEventListener('resize', hideContextMenu);
-		window.addEventListener('scroll', hideContextMenu, true);
-		cleanupCallbacks.push(() => {
-			contextMenuTarget.removeEventListener('contextmenu', handleContextMenu);
-			document.removeEventListener('pointerdown', handlePointerDown);
-			window.removeEventListener('keydown', handleKeyDown);
-			window.removeEventListener('resize', hideContextMenu);
-			window.removeEventListener('scroll', hideContextMenu, true);
-			menu.remove();
-		});
-	}
-
 	const drawableTypes = (descriptor.drawingTypes.length === 0
 		? SUPPORTED_OVERLAYS
 		: descriptor.drawingTypes) as readonly SupportedOverlayType[];
 	for (const group of TOOLBAR_GROUPS) {
-		if (group.id === 'edit' && useContextMenu) {
-			continue;
-		}
 		const groupElement = document.createElement('div');
 		groupElement.className = 'baron-kline-toolbar__group';
 		groupElement.dataset.toolbarGroup = group.id;
@@ -558,22 +383,7 @@ export function createStandardToolbar(
 			groupElement.append(...editLabels);
 		} else if (group.id === 'action') {
 			for (const presentation of TOOLBAR_ACTIONS) {
-				const action = presentation.action === 'delete'
-					? (): void => {
-							const id = runtime.getSelectedDrawingId();
-							if (id === undefined) {
-								return;
-							}
-							const overlay = runtime.getDrawing(id);
-							if (overlay !== undefined && !overlay.locked) {
-								if ((options.deleteBehavior ?? 'direct') === 'request') {
-									runtime.requestDrawingDelete(id);
-								} else {
-									runtime.removeDrawing(id);
-								}
-							}
-						}
-					: presentation.action === 'clear-all'
+				const action = presentation.action === 'clear-all'
 						? (): void => {
 								// 清空全部 Drawing；锁定的 Drawing 保持既有“不接受 mutation”契约。
 								for (const drawing of runtime.listDrawings()) {
