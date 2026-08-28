@@ -168,9 +168,12 @@ test('@browser time-series Workspace HTML keeps 22 tools without main series con
 		await page.evaluate(() => window.__BARON_DRAWABLE_WORKSPACE__.ready);
 		expect(await page.locator('[data-overlay-type]').count()).toBe(22);
 		expect(await page.locator('[data-action="main-series"]').count()).toBe(0);
-		const scaleHidden = await page
-			.locator('[data-action="price-scale"]')
-			.evaluate((element) => (element as HTMLSelectElement).hidden);
+		const scaleHidden = await page.evaluate(() => {
+			const scale = document.querySelector<HTMLSelectElement>(
+				'[data-action="price-scale"]',
+			);
+			return scale === null || scale.hidden;
+		});
 		expect(scaleHidden).toBe(true);
 		const exported = await page.evaluate(
 			() => window.__BARON_DRAWABLE_WORKSPACE__.exportWorkspace(),
