@@ -19,12 +19,14 @@ export async function createSourceRuntime(
 	await page.goto('/packages/web-runtime/test/fixture.html');
 	await page.evaluate(async ({ value, toolbar }) => {
 		const {
+			createDrawingFloatingToolbar,
 			createKLineSceneRuntime,
 			createStandardToolbar,
 		} = await import('/packages/web-runtime/src/index.ts');
 		const events: unknown[] = [];
+		const chart = document.querySelector<HTMLElement>('#chart')!;
 		const runtime = await createKLineSceneRuntime(
-			document.querySelector<HTMLElement>('#chart')!,
+			chart,
 			value,
 			{ onEvent: (event) => events.push(event) },
 		);
@@ -33,6 +35,7 @@ export async function createSourceRuntime(
 				document.querySelector<HTMLElement>('#toolbar')!,
 				runtime,
 			);
+			createDrawingFloatingToolbar(chart, runtime);
 		}
 		Object.assign(window, {
 			__baronTestRuntime: runtime,

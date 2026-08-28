@@ -61,7 +61,7 @@ test('desktop mouse creates, selects, drags, updates, and deletes an Overlay', a
 	).__baronTestEvents.filter((event) => event.type === 'overlay-updated').length))
 		.toBeGreaterThan(updatesBeforeDrag);
 
-	await page.locator('[data-action="delete"]').click();
+	await page.locator('.baron-drawing-toolbar [data-action="delete"]').click();
 	await expect.poll(() => page.evaluate(() => (
 		window as unknown as {
 			__baronTestRuntime: { listOverlays(): readonly unknown[] };

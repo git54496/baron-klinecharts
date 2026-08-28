@@ -36,7 +36,7 @@ tests                          跨语言、浏览器、视觉与安装门禁
 安装 Web Runtime：
 
 ```bash
-npm install --save-exact @baron1996/klinecharts-runtime@0.9.0
+npm install --save-exact @baron1996/klinecharts-runtime@0.9.1
 ```
 
 安装 CLI：
@@ -104,7 +104,7 @@ Workspace 示例一致。
 - 禁止把本仓库路径加入其他工程或 Agent 的可写 workspace。
 
 消费方必须安装明确版本并提交自己的 lockfile，例如
-`@baron1996/klinecharts-runtime@0.9.0` 和 `baron-klinecharts==0.6.0`。升级只能
+`@baron1996/klinecharts-runtime@0.9.1` 和 `baron-klinecharts==0.6.0`。升级只能
 通过本仓库发布新版本后，由消费方主动修改依赖版本完成；不得直接修改本仓库来
 适配某个业务工程。
 
@@ -183,7 +183,7 @@ CI 分别使用 `tests/rendering/baselines/github-macos-15` 和
 
 ## 发布
 
-当前发布版本为 `0.9.0`。本次发布 Adapter 与 Web Runtime `0.9.0`；Scene Schema、
+当前发布版本为 `0.9.1`。本次发布 Adapter 与 Web Runtime `0.9.1`；Scene Schema、
 CLI、Python 和私有 Render Runtime 继续保持 `0.6.0`，所有内部依赖使用精确版本。
 该版本取消自定义右键菜单并保留浏览器原生菜单，将价格轴与主序列留在标准工具栏；
 新增可拖动的 Drawing 浮动工具栏，提供对象级线型、线宽、线色、文字、锁定和删除，
