@@ -5,7 +5,7 @@
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 
-type SvgNodeName = 'circle' | 'path';
+type SvgNodeName = 'circle' | 'path' | 'rect';
 
 interface SvgNodeSpec {
 	readonly name: SvgNodeName;
@@ -88,11 +88,20 @@ const ICON_SPECS = {
 		{ name: 'path', attributes: { d: 'M5 4l14 17' } },
 	],
 	measurement: [
-		{ name: 'path', attributes: { d: 'M4 19l15 -15' } },
-		{ name: 'circle', attributes: { cx: '4', cy: '19', r: '2' } },
-		{ name: 'circle', attributes: { cx: '19', cy: '4', r: '2' } },
-		{ name: 'path', attributes: { d: 'M7 8h9' } },
-		{ name: 'path', attributes: { d: 'M12 5v6' } },
+		{
+			name: 'rect',
+			attributes: {
+				x: '4',
+				y: '5',
+				width: '16',
+				height: '14',
+				rx: '1.5',
+				'stroke-dasharray': '2 2',
+			},
+		},
+		{ name: 'path', attributes: { d: 'M12 8v8' } },
+		{ name: 'path', attributes: { d: 'M9.5 10.5L12 8l2.5 2.5' } },
+		{ name: 'path', attributes: { d: 'M9.5 13.5L12 16l2.5 -2.5' } },
 	],
 	brush: [
 		{ name: 'path', attributes: { d: 'M3 21v-4a4 4 0 1 1 4 4h-4' } },

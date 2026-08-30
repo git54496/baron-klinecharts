@@ -1,4 +1,5 @@
 import {
+	createDrawingFloatingToolbar,
 	createKLineSceneRuntime,
 	createStandardToolbar,
 } from '@baron1996/klinecharts-runtime';
@@ -18,10 +19,12 @@ try {
 	const toolbar = createStandardToolbar(toolbarRoot, runtime, {
 		downloadFileName: 'baron-mock-scene.json',
 	});
+	const drawingToolbar = createDrawingFloatingToolbar(chart, runtime);
 	status.dataset.state = 'ready';
 	status.textContent = `已加载 ${scene.symbol.ticker} · ${scene.data.length} 根日 K`;
 
 	window.addEventListener('beforeunload', () => {
+		drawingToolbar.destroy();
 		toolbar.destroy();
 		runtime.destroy();
 	}, { once: true });

@@ -83,6 +83,9 @@ test('@browser toolbar renders the approved icon groups in normal flow', async (
 		const toolbarRect = toolbar.element.getBoundingClientRect();
 		const chartRect = chartRoot.getBoundingClientRect();
 		const firstIcon = overlayButtons[0]!.querySelector('svg');
+		const measurementIcon = toolbar.element.querySelector<SVGElement>(
+			'[data-overlay-type="priceMeasurement"] svg',
+		);
 		const viewport = toolbar.element.querySelector<HTMLElement>('.baron-kline-toolbar__viewport');
 		const data = {
 			labels: overlayButtons.map((button) => button.getAttribute('aria-label')),
@@ -102,6 +105,16 @@ test('@browser toolbar renders the approved icon groups in normal flow', async (
 				: {
 						width: getComputedStyle(firstIcon).width,
 						height: getComputedStyle(firstIcon).height,
+					},
+			measurementIcon: measurementIcon === null
+				? undefined
+				: {
+						nodes: [...measurementIcon.children].map((node) => node.nodeName.toLowerCase()),
+						bounds: measurementIcon.querySelector('rect')?.getAttributeNames()
+							.reduce<Record<string, string | null>>((attributes, name) => {
+								attributes[name] = measurementIcon.querySelector('rect')?.getAttribute(name) ?? null;
+								return attributes;
+							}, {}),
 					},
 			pressed: overlayButtons.map((button) => button.getAttribute('aria-pressed')),
 			hasTextInput: toolbar.element.querySelector('[data-action="overlay-text"]') !== null,
@@ -153,6 +166,17 @@ test('@browser toolbar renders the approved icon groups in normal flow', async (
 	expect(result.strokeWidth).toBe('2');
 	expect(result.buttonSize).toEqual({ width: '34px', height: '34px' });
 	expect(result.iconSize).toEqual({ width: '19px', height: '19px' });
+	expect(result.measurementIcon).toEqual({
+		nodes: ['rect', 'path', 'path', 'path'],
+		bounds: {
+			x: '4',
+			y: '5',
+			width: '16',
+			height: '14',
+			rx: '1.5',
+			'stroke-dasharray': '2 2',
+		},
+	});
 	expect(result.pressed[7]).toBe('true');
 	expect(result.pressed.filter((value) => value === 'true')).toHaveLength(1);
 	expect(result.hasTextInput).toBe(true);
