@@ -68,10 +68,14 @@ function assertRuntimeIdentity(scene: ChartScene, actualEngineVersion: string): 
 export async function createEngine(
 	container: HTMLElement,
 	scene: ChartScene,
+	options?: { readonly displayTimezone?: string },
 ): Promise<EngineHandle> {
 	const engine = await import('klinecharts');
 	assertRuntimeIdentity(scene, engine.version());
-	const chart = engine.init(container, toKLineChartsOptions(scene.chart));
+	const chart = engine.init(
+		container,
+		toKLineChartsOptions(scene.chart, options?.displayTimezone),
+	);
 	if (chart === null) {
 		throw new SceneError(
 			'RUNTIME_INIT_FAILED',

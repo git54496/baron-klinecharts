@@ -9,7 +9,11 @@ import type {
 	Styles,
 } from 'klinecharts';
 
-function formatDate({ dateTimeFormat, timestamp }: FormatDateParams, template: ChartConfig['dateFormat']): string {
+function formatDate(
+	{ dateTimeFormat, timestamp, type }: FormatDateParams,
+	template: ChartConfig['dateFormat'],
+	displayTimezone?: string,
+): string {
 	const parts = new Map(
 		dateTimeFormat
 			.formatToParts(timestamp)
@@ -17,14 +21,14 @@ function formatDate({ dateTimeFormat, timestamp }: FormatDateParams, template: C
 			.map((part) => [part.type, part.value]),
 	);
 	const date = `${parts.get('year')}-${parts.get('month')}-${parts.get('day')}`;
-	if (template === 'yyyy-MM-dd') {
-		return date;
-	}
-	const time = `${parts.get('hour')}:${parts.get('minute')}`;
-	if (template === 'yyyy-MM-dd HH:mm') {
-		return `${date} ${time}`;
-	}
-	return `${date} ${time}:${parts.get('second')}`;
+	const value = template === 'yyyy-MM-dd'
+		? date
+		: template === 'yyyy-MM-dd HH:mm'
+			? `${date} ${parts.get('hour')}:${parts.get('minute')}`
+			: `${date} ${parts.get('hour')}:${parts.get('minute')}:${parts.get('second')}`;
+	return type === 'tooltip' && displayTimezone !== undefined
+		? `${value} ${displayTimezone}`
+		: value;
 }
 
 function compact(value: string | number, divisor: number, suffix: string): string {
@@ -151,13 +155,17 @@ function timeSeriesChartStyles(
 }
 
 /** 将纯数据 ChartConfig 转换为受控的 KLineCharts 初始化选项。 */
-export function toKLineChartsOptions(chart: ChartConfig): Options {
+export function toKLineChartsOptions(
+	chart: ChartConfig,
+	displayTimezone?: string,
+): Options {
 	return {
 		locale: chart.locale,
-		timezone: chart.timezone,
+		timezone: displayTimezone ?? chart.timezone,
 		styles: chartStyles(chart),
 		formatter: {
-			formatDate: (params) => formatDate(params, chart.dateFormat),
+			formatDate: (params) =>
+				formatDate(params, chart.dateFormat, displayTimezone),
 			formatBigNumber: (value) => formatLargeNumber(value, chart.largeNumberFormat),
 		},
 		thousandsSeparator: {
@@ -189,13 +197,15 @@ export function toKLineChartsOptions(chart: ChartConfig): Options {
 /** 将 TimeSeriesChartConfig 转换为隐藏 Candle 的受控初始化选项。 */
 export function toKLineChartsTimeSeriesOptions(
 	chart: TimeSeriesChartConfig,
+	displayTimezone?: string,
 ): Options {
 	return {
 		locale: chart.locale,
-		timezone: chart.timezone,
+		timezone: displayTimezone ?? chart.timezone,
 		styles: timeSeriesChartStyles(chart),
 		formatter: {
-			formatDate: (params) => formatDate(params, chart.dateFormat),
+			formatDate: (params) =>
+				formatDate(params, chart.dateFormat, displayTimezone),
 			formatBigNumber: (value) =>
 				formatLargeNumber(value, chart.largeNumberFormat),
 		},

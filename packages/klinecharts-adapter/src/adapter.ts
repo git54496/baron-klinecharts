@@ -374,7 +374,10 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	public static async createWorkspace(
 		container: HTMLElement,
 		value: unknown,
-		options?: { readonly historicalDataLoading?: { readonly hasMore: boolean } },
+		options?: {
+			readonly historicalDataLoading?: { readonly hasMore: boolean };
+			readonly displayTimezone?: string;
+		},
 	): Promise<KLineChartsSceneAdapter> {
 		const workspace = parseDrawableWorkspaceDocument(value);
 		if (workspace.scene.kind !== 'chart') {
@@ -389,7 +392,11 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		let handle: EngineHandle | undefined;
 		let adapter: KLineChartsSceneAdapter | undefined;
 		try {
-			handle = await createEngine(container, scene);
+			handle = await createEngine(container, scene, {
+				...(options?.displayTimezone === undefined
+					? {}
+					: { displayTimezone: options.displayTimezone }),
+			});
 			registerProjectOverlays(handle.module.registerOverlay);
 			const idMap = createEngineIdMap(scene, handle.chart);
 			applyPanes(scene, handle.chart, idMap);

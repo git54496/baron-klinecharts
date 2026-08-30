@@ -76,6 +76,7 @@ import {
 
 const runtime = await createDrawableWorkspaceRuntime(container, loadedWorkspace, {
   commitMode: 'host-confirmed',
+  displayTimezone: 'UTC',
 });
 
 const coordinator = createCrossPeriodDrawingCoordinator(
@@ -104,6 +105,11 @@ await coordinator.waitForIdle();
 coordinator.destroy();
 runtime.destroy();
 ```
+
+`displayTimezone` is a presentation-only IANA timezone override. It changes the
+KLineCharts time axis and adds the active timezone to tooltip dates, but it is not
+written into the Workspace and does not change candle timestamps, period rules,
+Drawing projection, or host alerts. Omit it to use the Scene chart timezone.
 
 The coordinator never derives `scopeKey` from `scene.symbol.ticker`, never accesses
 the KLineCharts `Chart`, and never converts legacy `ChartScene.overlays` into a

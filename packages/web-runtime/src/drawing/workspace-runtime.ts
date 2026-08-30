@@ -57,6 +57,8 @@ export interface DrawableWorkspaceRuntimeOptions {
 	readonly onEvent?: WorkspaceRuntimeListener;
 	readonly hostActions?: readonly HostActionDescriptor[];
 	readonly historicalDataLoading?: { readonly hasMore: boolean };
+	/** 仅用于 UI 展示；不会写入 Workspace，也不会改变投影与会话时区。 */
+	readonly displayTimezone?: string;
 }
 
 export interface DrawableWorkspaceRuntimeHandle
@@ -179,6 +181,9 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 			...(options.historicalDataLoading === undefined
 				? {}
 				: { historicalDataLoading: options.historicalDataLoading }),
+			...(options.displayTimezone === undefined
+				? {}
+				: { displayTimezone: options.displayTimezone }),
 		});
 		return new DrawableWorkspaceRuntime(container, workspace, engine, options);
 	}

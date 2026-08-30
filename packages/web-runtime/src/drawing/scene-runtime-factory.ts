@@ -30,6 +30,8 @@ export interface SceneRuntimeRegistration {
 
 export interface SceneRuntimeAdapterOptions {
 	readonly historicalDataLoading?: { readonly hasMore: boolean };
+	/** 仅改变时间文本与坐标轴的展示时区，不改变 Scene/Drawings 的业务时区。 */
+	readonly displayTimezone?: string;
 }
 
 const registrations = new Map<string, SceneRuntimeRegistration>();
@@ -62,8 +64,8 @@ registerSceneRuntime({
 registerSceneRuntime({
 	sceneKind: 'time-series',
 	parseScene: (value) => parseTimeSeriesScene(value),
-	createAdapter: (container, workspace) =>
-		TimeSeriesChartsAdapter.createWorkspace(container, workspace),
+	createAdapter: (container, workspace, options) =>
+		TimeSeriesChartsAdapter.createWorkspace(container, workspace, options),
 	createPolicy: () => new TimeSeriesDrawingProjectionPolicy(),
 	defaultTarget: { paneRole: 'time-series', yAxisRole: 'primary' },
 });

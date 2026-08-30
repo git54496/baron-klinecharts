@@ -359,6 +359,7 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 	public static async createWorkspace(
 		container: HTMLElement,
 		value: unknown,
+		options?: { readonly displayTimezone?: string },
 	): Promise<TimeSeriesChartsAdapter> {
 		const workspace = parseDrawableWorkspaceDocument(value);
 		if (workspace.scene.kind !== 'time-series') {
@@ -376,7 +377,13 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 			if (engine.version() !== scene.runtime.engineVersion) {
 				throw adapterError('KLineCharts engine version does not match the Scene.');
 			}
-			chart = engine.init(container, toKLineChartsTimeSeriesOptions(scene.chart));
+			chart = engine.init(
+				container,
+				toKLineChartsTimeSeriesOptions(
+					scene.chart,
+					options?.displayTimezone,
+				),
+			);
 			if (chart === null) {
 				throw adapterError('KLineCharts returned null while initializing.');
 			}

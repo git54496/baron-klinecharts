@@ -17,7 +17,11 @@ import type {
 	EngineHistoricalDataRequest,
 } from '@baron1996/klinecharts-adapter';
 import { DrawingProjectionService } from '../src/drawing/projection-service.js';
-import { getSceneRuntime, registerSceneRuntime } from '../src/drawing/scene-runtime-factory.js';
+import {
+	getSceneRuntime,
+	registerSceneRuntime,
+	type SceneRuntimeAdapterOptions,
+} from '../src/drawing/scene-runtime-factory.js';
 import { createDrawableWorkspaceRuntime } from '../src/drawing/workspace-runtime.js';
 import type { WorkspaceRuntimeEvent } from '../src/drawing/workspace-events.js';
 
@@ -220,11 +224,13 @@ class MockEngine implements DrawingEnginePort {
 
 let mockEngine: MockEngine | null = null;
 let timeSeriesMockEngine: MockEngine | null = null;
+let mockAdapterOptions: SceneRuntimeAdapterOptions | undefined;
 
 registerSceneRuntime({
 	sceneKind: 'chart',
 	parseScene: (value) => JSON.parse(JSON.stringify(value)) as never,
-	createAdapter: async () => {
+	createAdapter: async (_container, _workspace, options) => {
+		mockAdapterOptions = options;
 		mockEngine = new MockEngine();
 		return mockEngine;
 	},
@@ -295,6 +301,25 @@ async function waitForDrawing(
 }
 
 describe('DrawableWorkspaceRuntime', () => {
+	it('forwards display timezone only as an adapter option', async () => {
+		const container = {} as HTMLElement;
+		const runtime = await createDrawableWorkspaceRuntime(
+			container,
+			chartWorkspaceFixture,
+			{ commitMode: 'immediate', displayTimezone: 'UTC' },
+		);
+
+		expect(mockAdapterOptions?.displayTimezone).toBe('UTC');
+		const exported = runtime.exportWorkspace();
+		expect(exported.scene.document.chart.timezone).toBe(
+			chartWorkspaceFixture.scene.document.chart.timezone,
+		);
+		expect(exported.drawings.coordinateSystem.timezone).toBe(
+			chartWorkspaceFixture.drawings.coordinateSystem.timezone,
+		);
+		runtime.destroy();
+	});
+
 	it('restores confirmed drawings and exports a canonical Workspace', async () => {
 		const { runtime } = await makeRuntime(chartWorkspaceFixture);
 		expect(runtime.listDrawings()).toHaveLength(22);
