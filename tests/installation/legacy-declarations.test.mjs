@@ -80,6 +80,9 @@ export interface DrawingFloatingToolbar {
         readonly hasMore: boolean;
     };
 `,
+			`    /** 仅用于 UI 展示；不会写入 Workspace，也不会改变投影与会话时区。 */
+    readonly displayTimezone?: string;
+`,
 			`    commitHistoricalData(requestId: string, data: readonly MarketData[], hasMore: boolean): EngineHistoricalDataCommitResult;
     rejectHistoricalData(requestId: string, message: string): boolean;
 `,
