@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+	DEFAULT_OVERLAY_TOUCH_HIT_TOLERANCE,
 	hitTestOverlayGeometries,
 	OVERLAY_ANCHOR_HIT_THRESHOLD_CSS_PX,
 	OVERLAY_BODY_HIT_THRESHOLD_CSS_PX,
@@ -18,6 +19,7 @@ function geometry(
 		locked: false,
 		anchors: [{ x: 20, y: 20 }, { x: 80, y: 20 }],
 		bodySegments: [[{ x: 20, y: 20 }, { x: 80, y: 20 }]],
+		bodyRectangles: [],
 		...options,
 	};
 }
@@ -41,6 +43,46 @@ describe('M2 controlled Overlay hit testing', () => {
 			{ x: 20 + OVERLAY_ANCHOR_HIT_THRESHOLD_CSS_PX + 1, y: 20 },
 			[geometry('anchor', { bodySegments: [] })],
 		)).toBeNull();
+	});
+
+	it('uses a 44 CSS px touch band and 48 CSS px touch anchors', () => {
+		expect(hitTestOverlayGeometries(
+			{ x: 50, y: 20 + DEFAULT_OVERLAY_TOUCH_HIT_TOLERANCE.body },
+			[geometry('touch-body', { anchors: [] })],
+			DEFAULT_OVERLAY_TOUCH_HIT_TOLERANCE,
+		)).toMatchObject({ overlayId: 'touch-body', target: 'body' });
+		expect(hitTestOverlayGeometries(
+			{ x: 50, y: 20 + DEFAULT_OVERLAY_TOUCH_HIT_TOLERANCE.body + 1 },
+			[geometry('touch-body', { anchors: [] })],
+			DEFAULT_OVERLAY_TOUCH_HIT_TOLERANCE,
+		)).toBeNull();
+
+		expect(hitTestOverlayGeometries(
+			{ x: 20 + DEFAULT_OVERLAY_TOUCH_HIT_TOLERANCE.anchor, y: 20 },
+			[geometry('touch-anchor')],
+			DEFAULT_OVERLAY_TOUCH_HIT_TOLERANCE,
+		)).toMatchObject({ overlayId: 'touch-anchor', target: 'anchor' });
+	});
+
+	it('hits annotation rectangles and prefers the nearest body candidate', () => {
+		const hit = hitTestOverlayGeometries(
+			{ x: 52, y: 50 },
+			[
+				geometry('far-higher', {
+					anchors: [],
+					bodySegments: [],
+					bodyRectangles: [{ left: 60, top: 40, right: 90, bottom: 70 }],
+					zLevel: 100,
+				}),
+				geometry('near-lower', {
+					anchors: [],
+					bodySegments: [],
+					bodyRectangles: [{ left: 50, top: 40, right: 55, bottom: 70 }],
+					zLevel: 0,
+				}),
+			],
+		);
+		expect(hit).toMatchObject({ overlayId: 'near-lower', target: 'body' });
 	});
 
 	it('prioritizes anchor globally, then zLevel and later Scene order', () => {

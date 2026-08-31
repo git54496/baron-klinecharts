@@ -4,7 +4,7 @@ Browser editing runtime and standard annotation toolbar for deterministic KLineC
 ChartScene files.
 
 ```bash
-npm install --save-exact @baron1996/kline-scene-schema@0.6.0 @baron1996/klinecharts-runtime@0.9.4
+npm install --save-exact @baron1996/kline-scene-schema@0.6.0 @baron1996/klinecharts-runtime@0.9.5
 ```
 
 ```ts
@@ -77,6 +77,14 @@ import {
 const runtime = await createDrawableWorkspaceRuntime(container, loadedWorkspace, {
   commitMode: 'host-confirmed',
   displayTimezone: 'UTC',
+  drawingInteraction: {
+    touch: 'precision-cursor',
+    exclusiveSelection: true,
+    hitTolerance: {
+      mouse: { body: 12, anchor: 14 },
+      touch: { body: 22, anchor: 24 },
+    },
+  },
 });
 
 const coordinator = createCrossPeriodDrawingCoordinator(
@@ -110,6 +118,20 @@ runtime.destroy();
 KLineCharts time axis and adds the active timezone to tooltip dates, but it is not
 written into the Workspace and does not change candle timestamps, period rules,
 Drawing projection, or host alerts. Omit it to use the Scene chart timezone.
+
+`drawingInteraction.touch: 'precision-cursor'` enables the mobile precision flow for
+`segment`: moving a touch positions an offset virtual crosshair, while a stationary
+tap confirms each endpoint. The mode is selected from the actual touch pointer type,
+so mouse input keeps KLineCharts' native two-click behavior even when the option is
+enabled. The guide UI and interaction state are transient and are never written into
+the Workspace. Omit the option (or use `touch: 'native'`) for native touch behavior.
+
+`drawingInteraction.exclusiveSelection` routes existing Drawing selection and dragging
+through the adapter. While a Drawing is selected, chart scrolling, zooming, and the
+crosshair are suspended. The first blank pointer gesture only clears the selection;
+the following gesture returns to chart navigation. `hitTolerance` uses CSS pixels and
+defaults to a 24px mouse body band and a 44px touch body band, with 14px and 24px anchor
+radii respectively.
 
 The coordinator never derives `scopeKey` from `scene.symbol.ticker`, never accesses
 the KLineCharts `Chart`, and never converts legacy `ChartScene.overlays` into a

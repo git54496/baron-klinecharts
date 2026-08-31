@@ -17,6 +17,17 @@ export interface EngineHandle {
 	readonly module: KLineChartsModule;
 	/** 显式复位引擎点击仲裁状态；每次绘制开始前调用，避免快速连续绘制的首击被吞。 */
 	readonly resetClickArbitration: () => void;
+	/** 在引擎坐标系内移动鼠标语义光标，用于触摸精确绘制预览。 */
+	readonly dispatchMouseMove: (event: EngineMouseInteraction) => void;
+	/** 在引擎坐标系内触发单击语义，用于触摸精确绘制落点。 */
+	readonly dispatchMouseClick: (event: EngineMouseInteraction) => void;
+}
+
+export interface EngineMouseInteraction {
+	readonly x: number;
+	readonly y: number;
+	readonly pageX: number;
+	readonly pageY: number;
 }
 
 /**
@@ -30,6 +41,44 @@ interface EngineClickArbitrationInternals {
 		readonly _event?: {
 			readonly _resetClickTimeout?: () => void;
 		};
+		readonly mouseMoveEvent?: (event: EngineCompatMouseEvent) => boolean;
+		readonly mouseClickEvent?: (event: EngineCompatMouseEvent) => boolean;
+	};
+}
+
+interface EngineCompatMouseEvent extends EngineMouseInteraction {
+	readonly isTouch: false;
+	readonly preventDefault: () => void;
+}
+
+function resolveMouseInteractionDispatch(chart: Chart): {
+	readonly move: (event: EngineMouseInteraction) => void;
+	readonly click: (event: EngineMouseInteraction) => void;
+} {
+	const chartEvent = (chart as unknown as EngineClickArbitrationInternals)._chartEvent;
+	if (
+		chartEvent === undefined ||
+		typeof chartEvent.mouseMoveEvent !== 'function' ||
+		typeof chartEvent.mouseClickEvent !== 'function'
+	) {
+		throw new SceneError(
+			'RUNTIME_INIT_FAILED',
+			'/runtime',
+			`KLineCharts ${KLINECHARTS_ENGINE_VERSION} 内部鼠标语义派发钩子不可用；引擎私有结构可能已变化。`,
+		);
+	}
+	const compatEvent = (event: EngineMouseInteraction): EngineCompatMouseEvent => ({
+		...event,
+		isTouch: false,
+		preventDefault: () => undefined,
+	});
+	return {
+		move: (event) => {
+			chartEvent.mouseMoveEvent!(compatEvent(event));
+		},
+		click: (event) => {
+			chartEvent.mouseClickEvent!(compatEvent(event));
+		},
 	};
 }
 
@@ -102,9 +151,12 @@ export async function createEngine(
 	});
 	chart.setPeriod(structuredClone(scene.period));
 	chart.setDataLoader(createStaticDataLoader(scene.data));
+	const mouseInteraction = resolveMouseInteractionDispatch(chart);
 	return {
 		chart,
 		module: engine,
 		resetClickArbitration: resolveClickArbitrationReset(chart),
+		dispatchMouseMove: mouseInteraction.move,
+		dispatchMouseClick: mouseInteraction.click,
 	};
 }

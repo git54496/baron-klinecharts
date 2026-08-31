@@ -1,9 +1,33 @@
 export const OVERLAY_BODY_HIT_THRESHOLD_CSS_PX = 12;
 export const OVERLAY_ANCHOR_HIT_THRESHOLD_CSS_PX = 14;
+export const OVERLAY_TOUCH_BODY_HIT_THRESHOLD_CSS_PX = 22;
+export const OVERLAY_TOUCH_ANCHOR_HIT_THRESHOLD_CSS_PX = 24;
+
+export interface OverlayHitTolerance {
+	readonly body: number;
+	readonly anchor: number;
+}
+
+export const DEFAULT_OVERLAY_MOUSE_HIT_TOLERANCE: OverlayHitTolerance = {
+	body: OVERLAY_BODY_HIT_THRESHOLD_CSS_PX,
+	anchor: OVERLAY_ANCHOR_HIT_THRESHOLD_CSS_PX,
+};
+
+export const DEFAULT_OVERLAY_TOUCH_HIT_TOLERANCE: OverlayHitTolerance = {
+	body: OVERLAY_TOUCH_BODY_HIT_THRESHOLD_CSS_PX,
+	anchor: OVERLAY_TOUCH_ANCHOR_HIT_THRESHOLD_CSS_PX,
+};
 
 export interface PixelCoordinate {
 	readonly x: number;
 	readonly y: number;
+}
+
+export interface PixelRectangle {
+	readonly left: number;
+	readonly top: number;
+	readonly right: number;
+	readonly bottom: number;
 }
 
 export interface OverlayPixelGeometry {
@@ -13,6 +37,7 @@ export interface OverlayPixelGeometry {
 	readonly locked: boolean;
 	readonly anchors: readonly PixelCoordinate[];
 	readonly bodySegments: readonly (readonly [PixelCoordinate, PixelCoordinate])[];
+	readonly bodyRectangles?: readonly PixelRectangle[];
 }
 
 export interface OverlayHitResult {
@@ -53,7 +78,16 @@ function segmentDistance(
 	});
 }
 
+function rectangleDistance(point: PixelCoordinate, rectangle: PixelRectangle): number {
+	const horizontal = Math.max(rectangle.left - point.x, 0, point.x - rectangle.right);
+	const vertical = Math.max(rectangle.top - point.y, 0, point.y - rectangle.bottom);
+	return Math.hypot(horizontal, vertical);
+}
+
 function compareHits(left: RankedHit, right: RankedHit): number {
+	if (left.distance !== right.distance) {
+		return left.distance - right.distance;
+	}
 	if (left.zLevel !== right.zLevel) {
 		return right.zLevel - left.zLevel;
 	}
@@ -68,7 +102,7 @@ function compareHits(left: RankedHit, right: RankedHit): number {
 	) {
 		return left.anchorIndex - right.anchorIndex;
 	}
-	return left.distance - right.distance;
+	return 0;
 }
 
 /**
@@ -78,6 +112,7 @@ function compareHits(left: RankedHit, right: RankedHit): number {
 export function hitTestOverlayGeometries(
 	point: PixelCoordinate,
 	geometries: readonly OverlayPixelGeometry[],
+	tolerance: OverlayHitTolerance = DEFAULT_OVERLAY_MOUSE_HIT_TOLERANCE,
 ): OverlayHitResult | null {
 	const anchorHits: RankedHit[] = [];
 	const bodyHits: RankedHit[] = [];
@@ -88,7 +123,7 @@ export function hitTestOverlayGeometries(
 				continue;
 			}
 			const distance = coordinateDistance(point, anchor);
-			if (distance <= OVERLAY_ANCHOR_HIT_THRESHOLD_CSS_PX) {
+			if (distance <= tolerance.anchor) {
 				anchorHits.push({
 					overlayId: geometry.overlayId,
 					target: 'anchor',
@@ -104,7 +139,10 @@ export function hitTestOverlayGeometries(
 		for (const [start, end] of geometry.bodySegments) {
 			distance = Math.min(distance, segmentDistance(point, start, end));
 		}
-		if (distance <= OVERLAY_BODY_HIT_THRESHOLD_CSS_PX) {
+		for (const rectangle of geometry.bodyRectangles ?? []) {
+			distance = Math.min(distance, rectangleDistance(point, rectangle));
+		}
+		if (distance <= tolerance.body) {
 			bodyHits.push({
 				overlayId: geometry.overlayId,
 				target: 'body',

@@ -39,6 +39,7 @@ import {
 	sceneOverlayToDrawing,
 } from './drawing/overlay-conversion.js';
 import type {
+	DrawingInteractionOptions,
 	DrawingEnginePort,
 	EngineDrawingEvent,
 	EngineDrawingSnapshot,
@@ -64,12 +65,23 @@ import {
 	type DragDataPoint,
 } from './interaction/dragging.js';
 import {
+	DEFAULT_OVERLAY_MOUSE_HIT_TOLERANCE,
+	DEFAULT_OVERLAY_TOUCH_HIT_TOLERANCE,
 	hitTestOverlayGeometries,
+	type OverlayHitTolerance,
 	type OverlayHitResult,
 	type OverlayPixelGeometry,
 	type PixelCoordinate,
 } from './interaction/hit-testing.js';
+import { projectOverlayGeometry } from './interaction/overlay-geometry.js';
 import { shouldIgnoreStaleOverlayDeselection } from './interaction/selection-arbitration.js';
+import {
+	isTouchPrecisionTap,
+	resolveTouchPrecisionCursor,
+	TouchPrecisionDrawingGuide,
+	type TouchPrecisionDrawingPhase,
+	type TouchPrecisionPoint,
+} from './interaction/touch-precision-drawing.js';
 
 export type PriceScale = 'linear' | 'logarithmic';
 export type AdapterDragTarget = 'body' | 'anchor';
@@ -154,6 +166,24 @@ interface PointerInteraction {
 	candidate?: SceneOverlay;
 }
 
+interface TouchPrecisionDrawingState {
+	readonly id: string;
+	readonly paneId: string;
+	phase: TouchPrecisionDrawingPhase;
+}
+
+interface TouchPrecisionPointerInteraction {
+	readonly pointerId: number;
+	readonly origin: TouchPrecisionPoint;
+	current: TouchPrecisionPoint;
+}
+
+interface ChartInteractionSnapshot {
+	readonly scrollEnabled: boolean;
+	readonly zoomEnabled: boolean;
+	readonly crosshairVisible: boolean;
+}
+
 interface InteractivePriceMeasurement {
 	readonly source: OverlayDrawingSource & { readonly type: 'priceMeasurement' };
 	start?: NonNullable<SceneOverlay['start']>;
@@ -191,12 +221,19 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	readonly #engine: EngineHandle['module'];
 	/** 引擎点击仲裁显式复位；每次绘制开始前调用，保证新绘制首击独立成单击。 */
 	readonly #resetClickArbitration: () => void;
+	/** 向引擎派发鼠标移动语义，供触摸虚拟光标复用原生绘制预览。 */
+	readonly #dispatchEngineMouseMove: EngineHandle['dispatchMouseMove'];
+	/** 向引擎派发鼠标单击语义，供触摸轻点复用原生绘制落点。 */
+	readonly #dispatchEngineMouseClick: EngineHandle['dispatchMouseClick'];
 	/** 引擎十字线动作监听器集合。 */
 	readonly #crosshairListeners = new Set<AdapterCrosshairListener>();
 	/** 引擎十字线动作退订函数。 */
 	#unsubscribeCrosshair: (() => void) | null = null;
 	/** 引擎十字线动作的绑定处理函数。 */
 	readonly #handleCrosshairChange = (payload: unknown): void => {
+		if (this.#chartInteractionSnapshot !== undefined) {
+			return;
+		}
 		const event = (typeof payload === 'object' && payload !== null
 			? payload
 			: {}) as {
@@ -269,12 +306,26 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	readonly #listeners = new Set<AdapterSceneEventListener>();
 	/** 当前选择状态，null 表示明确未选择。 */
 	#selectedOverlayId: string | null = null;
+	/** 独占选择前的图表交互状态，用于无损恢复宿主原配置。 */
+	#chartInteractionSnapshot: ChartInteractionSnapshot | undefined;
+	/** 点击空白退出编辑时被完整消费的 Pointer ID。 */
+	#deselectingPointerId: number | undefined;
 	/** 当前受控拖动事务；progress 永不写入 #scene。 */
 	#pointerInteraction: PointerInteraction | undefined;
 	/** 当前交互式量度的首锚点；只用于补偿引擎丢弃快速第二击，不进入 Scene。 */
 	#interactivePriceMeasurement: InteractivePriceMeasurement | undefined;
 	/** 当前引擎进行中的绘制 Overlay ID；非 null 时 pointerdown 只路由给新绘制，不做命中测试。 */
 	#drawingInProgressId: string | null = null;
+	/** 宿主显式开启的 Drawing 输入策略；未配置时保持引擎原生行为。 */
+	readonly #drawingInteraction: DrawingInteractionOptions;
+	/** 触摸精确绘制的通用提示与虚拟光标层。 */
+	#touchPrecisionGuide: TouchPrecisionDrawingGuide | undefined;
+	/** 当前允许切换到触摸精确交互的线段绘制。 */
+	#touchPrecisionDrawing: TouchPrecisionDrawingState | undefined;
+	/** 当前单指定位手势；拖动只更新光标，轻点才确认。 */
+	#touchPrecisionPointer: TouchPrecisionPointerInteraction | undefined;
+	/** 阻断触摸结束后浏览器补发的兼容鼠标事件。 */
+	#suppressCompatibilityMouseUntil = 0;
 	/** 确定性 opaque 交互 ID 序号。 */
 	#interactionSequence = 0;
 	/** 显式 Workspace 模式；Legacy 与 Workspace 状态严格隔离。 */
@@ -314,14 +365,20 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		handle: EngineHandle,
 		idMap: EngineIdMap,
 		originalBackground: string,
+		drawingInteraction: DrawingInteractionOptions = {},
 	) {
 		this.#container = container;
 		this.#scene = scene;
 		this.#chart = handle.chart;
 		this.#engine = handle.module;
 		this.#resetClickArbitration = handle.resetClickArbitration;
+		this.#dispatchEngineMouseMove = handle.dispatchMouseMove;
+		this.#dispatchEngineMouseClick = handle.dispatchMouseClick;
 		this.#idMap = idMap;
 		this.#originalBackground = originalBackground;
+		this.#drawingInteraction = structuredClone(drawingInteraction);
+		this.#hitTolerance('mouse');
+		this.#hitTolerance('touch');
 		this.#installInteractionListeners();
 		this.#chart.subscribeAction('onCrosshairChange', this.#handleCrosshairChange);
 		this.#unsubscribeCrosshair = () => {
@@ -377,6 +434,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		options?: {
 			readonly historicalDataLoading?: { readonly hasMore: boolean };
 			readonly displayTimezone?: string;
+			readonly drawingInteraction?: DrawingInteractionOptions;
 		},
 	): Promise<KLineChartsSceneAdapter> {
 		const workspace = parseDrawableWorkspaceDocument(value);
@@ -406,6 +464,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				handle,
 				idMap,
 				originalBackground,
+				options?.drawingInteraction,
 			);
 			applyViewport(handle.chart, scene.viewport);
 			container.style.backgroundColor = scene.chart.layout.backgroundColor;
@@ -625,6 +684,11 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		if (previousId === id) {
 			return;
 		}
+		if (previousId === null && id !== null) {
+			this.#enterExclusiveSelection();
+		} else if (previousId !== null && id === null) {
+			this.#leaveExclusiveSelection();
+		}
 		this.#selectedOverlayId = id;
 		if (this.#workspaceMode) {
 			this.#emitPort({
@@ -639,10 +703,75 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		}
 	}
 
+	#enterExclusiveSelection(): void {
+		if (
+			this.#drawingInteraction.exclusiveSelection !== true ||
+			this.#chartInteractionSnapshot !== undefined
+		) {
+			return;
+		}
+		this.#chartInteractionSnapshot = {
+			scrollEnabled: this.#chart.isScrollEnabled(),
+			zoomEnabled: this.#chart.isZoomEnabled(),
+			crosshairVisible: this.#chart.getStyles().crosshair.show,
+		};
+		this.#chart.setScrollEnabled(false);
+		this.#chart.setZoomEnabled(false);
+		this.#chart.setStyles({ crosshair: { show: false } });
+	}
+
+	#leaveExclusiveSelection(): void {
+		const snapshot = this.#chartInteractionSnapshot;
+		if (snapshot === undefined) {
+			return;
+		}
+		this.#chartInteractionSnapshot = undefined;
+		this.#chart.setScrollEnabled(snapshot.scrollEnabled);
+		this.#chart.setZoomEnabled(snapshot.zoomEnabled);
+		this.#chart.setStyles({ crosshair: { show: snapshot.crosshairVisible } });
+	}
+
+	#hitTolerance(pointerType: string): OverlayHitTolerance {
+		const touch = pointerType === 'touch';
+		const defaults = touch
+			? DEFAULT_OVERLAY_TOUCH_HIT_TOLERANCE
+			: DEFAULT_OVERLAY_MOUSE_HIT_TOLERANCE;
+		const configured = touch
+			? this.#drawingInteraction.hitTolerance?.touch
+			: this.#drawingInteraction.hitTolerance?.mouse;
+		const body = configured?.body ?? defaults.body;
+		const anchor = configured?.anchor ?? defaults.anchor;
+		if (!Number.isFinite(body) || body < 0 || !Number.isFinite(anchor) || anchor < 0) {
+			throw new SceneError(
+				'RUNTIME_INIT_FAILED',
+				'/drawingInteraction/hitTolerance',
+				'Drawing hit tolerance must contain finite non-negative CSS pixel values.',
+			);
+		}
+		return { body, anchor };
+	}
+
 	#dimensionsForHit(
 		overlay: SceneOverlay,
 		hit: { readonly target: 'anchor' | 'body' },
 	): InteractionDimensions {
+		const constrainedType = overlay.type === 'horizontalStraightLine'
+			|| overlay.type === 'priceLine'
+			|| overlay.type === 'simpleTag'
+			|| overlay.type === 'horizontalRayLine'
+			|| overlay.type === 'horizontalSegment'
+				? 'vertical'
+				: overlay.type === 'verticalStraightLine'
+					|| overlay.type === 'verticalRayLine'
+					|| overlay.type === 'verticalSegment'
+					? 'horizontal'
+					: null;
+		if (constrainedType === 'vertical') {
+			return { horizontal: false, vertical: true };
+		}
+		if (constrainedType === 'horizontal') {
+			return { horizontal: true, vertical: false };
+		}
 		if (hit.target !== 'anchor') {
 			return { horizontal: true, vertical: true };
 		}
@@ -716,6 +845,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				preventDefault?.();
 			},
 			onDrawEnd: ({ overlay }) => {
+				this.#finishTouchPrecisionDrawing(overlay.id);
 				if (
 					drawing &&
 					this.#interactivePriceMeasurement?.source.id === source.id
@@ -759,6 +889,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				}
 			},
 			onRemoved: ({ overlay }) => {
+				this.#finishTouchPrecisionDrawing(overlay.id);
 				if (this.#interactivePriceMeasurement?.source.id === overlay.id) {
 					this.#interactivePriceMeasurement = undefined;
 				}
@@ -799,32 +930,229 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		}
 	}
 
+	#prepareTouchPrecisionDrawing(id: string, paneId: string): void {
+		if (this.#drawingInteraction.touch !== 'precision-cursor') {
+			return;
+		}
+		this.#finishTouchPrecisionDrawing();
+		this.#touchPrecisionDrawing = {
+			id,
+			paneId,
+			phase: 'move-start',
+		};
+		const view = this.#container.ownerDocument.defaultView;
+		if (
+			(view?.navigator.maxTouchPoints ?? 0) > 0 ||
+			view?.matchMedia('(any-pointer: coarse)').matches === true
+		) {
+			const guide = this.#ensureTouchPrecisionGuide();
+			guide.setPhase('move-start');
+			guide.show();
+		}
+	}
+
+	#ensureTouchPrecisionGuide(): TouchPrecisionDrawingGuide {
+		this.#touchPrecisionGuide ??= new TouchPrecisionDrawingGuide(
+			this.#container,
+			() => this.#cancelTouchPrecisionDrawing(true),
+		);
+		return this.#touchPrecisionGuide;
+	}
+
+	#finishTouchPrecisionDrawing(id?: string): void {
+		const drawing = this.#touchPrecisionDrawing;
+		if (drawing === undefined || (id !== undefined && drawing.id !== id)) {
+			return;
+		}
+		this.#stopTouchPrecisionPointerCapture();
+		this.#touchPrecisionPointer = undefined;
+		this.#touchPrecisionDrawing = undefined;
+		this.#touchPrecisionGuide?.hide();
+	}
+
+	#cancelTouchPrecisionDrawing(emitRemoval: boolean): void {
+		const drawing = this.#touchPrecisionDrawing;
+		if (drawing === undefined) {
+			return;
+		}
+		const id = drawing.id;
+		this.#finishTouchPrecisionDrawing(id);
+		this.#suppressCompatibilityMouseUntil = performance.now() + 800;
+		this.#chart.removeOverlay({ id });
+		if (this.#drawingInProgressId === id) {
+			this.#drawingInProgressId = null;
+		}
+		if (this.#workspaceMode) {
+			const removed = this.#workspaceSources.delete(id);
+			if (emitRemoval && removed) {
+				this.#emitPort({ type: 'removed', id });
+			}
+		}
+	}
+
+	#stopTouchPrecisionPointerCapture(): void {
+		const pointer = this.#touchPrecisionPointer;
+		if (pointer === undefined) {
+			return;
+		}
+		try {
+			if (this.#container.hasPointerCapture(pointer.pointerId)) {
+				this.#container.releasePointerCapture(pointer.pointerId);
+			}
+		} catch {
+			// Synthetic browser tests and interrupted system gestures may not own capture.
+		}
+	}
+
+	#touchPrecisionMainElement(paneId: string): HTMLElement {
+		const filter = this.#primaryAxisFilter(paneId);
+		const main = this.#chart.getDom(filter.paneId, 'main');
+		if (!(main instanceof HTMLElement)) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/drawings/target',
+				'Touch Drawing target Pane has no interactive main element.',
+			);
+		}
+		return main;
+	}
+
+	#touchPrecisionBounds(paneId: string): {
+		readonly left: number;
+		readonly top: number;
+		readonly right: number;
+		readonly bottom: number;
+	} {
+		const containerRect = this.#container.getBoundingClientRect();
+		const mainRect = this.#touchPrecisionMainElement(paneId).getBoundingClientRect();
+		return {
+			left: Math.max(0, mainRect.left - containerRect.left),
+			top: Math.max(0, mainRect.top - containerRect.top),
+			right: Math.min(containerRect.width, mainRect.right - containerRect.left),
+			bottom: Math.min(containerRect.height, mainRect.bottom - containerRect.top),
+		};
+	}
+
+	#dispatchTouchPrecisionMouseMove(point: TouchPrecisionPoint): void {
+		const rect = this.#container.getBoundingClientRect();
+		this.#dispatchEngineMouseMove({
+			x: point.x,
+			y: point.y,
+			pageX: rect.left + point.x + window.scrollX,
+			pageY: rect.top + point.y + window.scrollY,
+		});
+	}
+
+	#dispatchTouchPrecisionClick(point: TouchPrecisionPoint): void {
+		const rect = this.#container.getBoundingClientRect();
+		this.#resetClickArbitration();
+		this.#dispatchEngineMouseClick({
+			x: point.x,
+			y: point.y,
+			pageX: rect.left + point.x + window.scrollX,
+			pageY: rect.top + point.y + window.scrollY,
+		});
+	}
+
+	#updateTouchPrecisionCursor(
+		drawing: TouchPrecisionDrawingState,
+		pointer: TouchPrecisionPoint,
+	): TouchPrecisionPoint {
+		const cursor = resolveTouchPrecisionCursor(
+			pointer,
+			this.#touchPrecisionBounds(drawing.paneId),
+		);
+		this.#touchPrecisionGuide?.updateCursor(cursor);
+		this.#dispatchTouchPrecisionMouseMove(cursor);
+		return cursor;
+	}
+
+	#isTouchPrecisionCancelTarget(target: EventTarget | null): boolean {
+		return this.#touchPrecisionGuide?.ownsCancelTarget(target) ?? false;
+	}
+
 	#installInteractionListeners(): void {
 		this.#container.addEventListener('mousedown', this.#handleRightMouseDown, true);
+		this.#container.addEventListener('click', this.#handleCompatibilityClick, true);
 		this.#container.addEventListener('contextmenu', this.#handleContextMenu, true);
 		this.#container.addEventListener('pointerdown', this.#handlePointerDown, true);
 		this.#container.addEventListener('pointermove', this.#handlePointerMove, true);
 		this.#container.addEventListener('pointerup', this.#handlePointerUp, true);
 		this.#container.addEventListener('pointercancel', this.#handlePointerCancel, true);
+		this.#container.addEventListener('touchstart', this.#handleCompatibilityTouch, {
+			capture: true,
+			passive: false,
+		});
+		this.#container.addEventListener('touchmove', this.#handleCompatibilityTouch, {
+			capture: true,
+			passive: false,
+		});
+		this.#container.addEventListener('touchend', this.#handleCompatibilityTouch, {
+			capture: true,
+			passive: false,
+		});
+		this.#container.addEventListener('touchcancel', this.#handleCompatibilityTouch, {
+			capture: true,
+			passive: false,
+		});
 		window.addEventListener('keydown', this.#handleKeyDown);
 		window.addEventListener('blur', this.#handleWindowBlur);
 	}
 
 	#removeInteractionListeners(): void {
 		this.#container.removeEventListener('mousedown', this.#handleRightMouseDown, true);
+		this.#container.removeEventListener('click', this.#handleCompatibilityClick, true);
 		this.#container.removeEventListener('contextmenu', this.#handleContextMenu, true);
 		this.#container.removeEventListener('pointerdown', this.#handlePointerDown, true);
 		this.#container.removeEventListener('pointermove', this.#handlePointerMove, true);
 		this.#container.removeEventListener('pointerup', this.#handlePointerUp, true);
 		this.#container.removeEventListener('pointercancel', this.#handlePointerCancel, true);
+		this.#container.removeEventListener('touchstart', this.#handleCompatibilityTouch, true);
+		this.#container.removeEventListener('touchmove', this.#handleCompatibilityTouch, true);
+		this.#container.removeEventListener('touchend', this.#handleCompatibilityTouch, true);
+		this.#container.removeEventListener('touchcancel', this.#handleCompatibilityTouch, true);
 		window.removeEventListener('keydown', this.#handleKeyDown);
 		window.removeEventListener('blur', this.#handleWindowBlur);
 	}
 
 	readonly #handleRightMouseDown = (event: MouseEvent): void => {
+		if (
+			event.button === 0 &&
+			event.isTrusted &&
+			performance.now() < this.#suppressCompatibilityMouseUntil &&
+			!this.#isTouchPrecisionCancelTarget(event.target)
+		) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			return;
+		}
 		if (event.button === 2) {
 			// 阻止事件到达 KLineCharts；不 preventDefault，保留浏览器原生右键菜单。
 			event.stopPropagation();
+		}
+	};
+
+	readonly #handleCompatibilityClick = (event: MouseEvent): void => {
+		if (
+			event.isTrusted &&
+			performance.now() < this.#suppressCompatibilityMouseUntil &&
+			!this.#isTouchPrecisionCancelTarget(event.target)
+		) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+		}
+	};
+
+	readonly #handleCompatibilityTouch = (event: TouchEvent): void => {
+		if (
+			(this.#touchPrecisionDrawing !== undefined ||
+				performance.now() < this.#suppressCompatibilityMouseUntil) &&
+			!this.#isTouchPrecisionCancelTarget(event.target)
+		) {
+			if (event.cancelable) {
+				event.preventDefault();
+			}
+			event.stopImmediatePropagation();
 		}
 	};
 
@@ -949,63 +1277,43 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	#overlayGeometries(): readonly OverlayPixelGeometry[] {
 		const geometries: OverlayPixelGeometry[] = [];
 		const active = this.#activeOverlays();
+		const containerRect = this.#container.getBoundingClientRect();
+		const canvas = this.#container.ownerDocument.createElement('canvas');
+		const textContext = canvas.getContext('2d');
 		for (let sceneIndex = 0; sceneIndex < active.length; sceneIndex++) {
 			const overlay = active[sceneIndex];
 			if (overlay === undefined || !overlay.visible) {
 				continue;
 			}
-			if (overlay.type === 'horizontalStraightLine') {
-				const anchor = overlay.anchor;
-				if (anchor === undefined || !('value' in anchor)) {
-					continue;
-				}
-				const paneFilter = this.#primaryAxisFilter(overlay.paneId);
-				const paneMain = this.#chart.getDom(paneFilter.paneId, 'main');
-				const containerRect = this.#container.getBoundingClientRect();
-				const mainRect = paneMain?.getBoundingClientRect() ?? containerRect;
-				const projected = this.#toPixel(
-					{ timestamp: this.#scene.data[0]!.timestamp, value: anchor.value },
-					overlay.paneId,
-				);
-				const start = { x: mainRect.left - containerRect.left, y: projected.y };
-				const end = { x: mainRect.right - containerRect.left, y: projected.y };
-				geometries.push({
-					overlayId: overlay.id,
-					sceneIndex,
-					zLevel: overlay.zLevel,
-					locked: overlay.locked,
-					anchors: [{ x: (start.x + end.x) / 2, y: projected.y }],
-					bodySegments: [[start, end]],
-				});
-				continue;
-			}
-			if (overlay.type === 'priceMeasurement' && overlay.start !== undefined && overlay.end !== undefined) {
-				const start = this.#toPixel(overlay.start, overlay.paneId);
-				const end = this.#toPixel(overlay.end, overlay.paneId);
-				geometries.push({
-					overlayId: overlay.id,
-					sceneIndex,
-					zLevel: overlay.zLevel,
-					locked: overlay.locked,
-					anchors: [start, end],
-					bodySegments: [[start, end]],
-				});
-				continue;
-			}
-			if (overlay.points !== undefined && overlay.points.length >= 2) {
-				const anchors = overlay.points.map((point) => this.#toPixel(point, overlay.paneId));
-				const bodySegments: Array<readonly [PixelCoordinate, PixelCoordinate]> = [];
-				for (let pointIndex = 1; pointIndex < anchors.length; pointIndex++) {
-					bodySegments.push([anchors[pointIndex - 1]!, anchors[pointIndex]!]);
-				}
-				geometries.push({
-					overlayId: overlay.id,
-					sceneIndex,
-					zLevel: overlay.zLevel,
-					locked: overlay.locked,
-					anchors,
-					bodySegments,
-				});
+			const paneFilter = this.#primaryAxisFilter(overlay.paneId);
+			const paneMain = this.#chart.getDom(paneFilter.paneId, 'main');
+			const mainRect = paneMain?.getBoundingClientRect() ?? containerRect;
+			const geometry = projectOverlayGeometry(overlay, sceneIndex, {
+				bounds: {
+					left: mainRect.left - containerRect.left,
+					top: mainRect.top - containerRect.top,
+					right: mainRect.right - containerRect.left,
+					bottom: mainRect.bottom - containerRect.top,
+				},
+				referenceTimestamp: this.#scene.data[0]!.timestamp,
+				referenceValue: this.#scene.data[0]!.close,
+				project: (point) => this.#toPixel(point, overlay.paneId),
+				measureText: (text, source) => {
+					const textStyle = source.styles.text;
+					if (textContext !== null) {
+						textContext.font = `${textStyle.weight} ${textStyle.size}px ${textStyle.family}`;
+					}
+					return {
+						width: Math.max(
+							textStyle.size,
+							textContext?.measureText(text).width ?? [...text].length * textStyle.size,
+						),
+						height: textStyle.size * 1.4,
+					};
+				},
+			});
+			if (geometry !== null) {
+				geometries.push(geometry);
 			}
 		}
 		return geometries;
@@ -1066,13 +1374,110 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		}
 	}
 
+	#routeTouchPrecisionPointerDown(event: PointerEvent): boolean {
+		const drawing = this.#touchPrecisionDrawing;
+		if (drawing === undefined || this.#isTouchPrecisionCancelTarget(event.target)) {
+			return false;
+		}
+		if (event.pointerType !== 'touch') {
+			this.#finishTouchPrecisionDrawing(drawing.id);
+			return false;
+		}
+		event.preventDefault();
+		event.stopImmediatePropagation();
+		if (this.#touchPrecisionPointer !== undefined) {
+			return true;
+		}
+		const guide = this.#ensureTouchPrecisionGuide();
+		guide.setPhase(drawing.phase);
+		guide.show();
+		const point = this.#pointerCoordinate(event);
+		this.#touchPrecisionPointer = {
+			pointerId: event.pointerId,
+			origin: point,
+			current: point,
+		};
+		try {
+			this.#container.setPointerCapture(event.pointerId);
+		} catch {
+			// Synthetic PointerEvents do not own browser pointer capture.
+		}
+		this.#suppressCompatibilityMouseUntil = performance.now() + 800;
+		this.#updateTouchPrecisionCursor(drawing, point);
+		return true;
+	}
+
+	#routeTouchPrecisionPointerMove(event: PointerEvent): boolean {
+		const drawing = this.#touchPrecisionDrawing;
+		const pointer = this.#touchPrecisionPointer;
+		if (
+			drawing === undefined ||
+			pointer === undefined ||
+			pointer.pointerId !== event.pointerId
+		) {
+			return false;
+		}
+		event.preventDefault();
+		event.stopImmediatePropagation();
+		const point = this.#pointerCoordinate(event);
+		pointer.current = point;
+		this.#suppressCompatibilityMouseUntil = performance.now() + 800;
+		this.#updateTouchPrecisionCursor(drawing, point);
+		return true;
+	}
+
+	#routeTouchPrecisionPointerUp(event: PointerEvent): boolean {
+		const drawing = this.#touchPrecisionDrawing;
+		const pointer = this.#touchPrecisionPointer;
+		if (
+			drawing === undefined ||
+			pointer === undefined ||
+			pointer.pointerId !== event.pointerId
+		) {
+			return false;
+		}
+		event.preventDefault();
+		event.stopImmediatePropagation();
+		const point = this.#pointerCoordinate(event);
+		pointer.current = point;
+		const cursor = this.#updateTouchPrecisionCursor(drawing, point);
+		const tap = isTouchPrecisionTap(pointer.origin, pointer.current);
+		this.#stopTouchPrecisionPointerCapture();
+		this.#touchPrecisionPointer = undefined;
+		this.#suppressCompatibilityMouseUntil = performance.now() + 800;
+		if (drawing.phase === 'move-start') {
+			drawing.phase = 'confirm-start';
+			this.#touchPrecisionGuide?.setPhase('confirm-start');
+			return true;
+		}
+		if (!tap) {
+			return true;
+		}
+		const phase = drawing.phase;
+		this.#dispatchTouchPrecisionClick(cursor);
+		const active = this.#touchPrecisionDrawing;
+		if (
+			phase === 'confirm-start' &&
+			active !== undefined &&
+			active.id === drawing.id
+		) {
+			active.phase = 'confirm-end';
+			this.#touchPrecisionGuide?.setPhase('confirm-end');
+		}
+		return true;
+	}
+
 	readonly #handlePointerDown = (event: PointerEvent): void => {
 		if (
 			this.#disposed ||
 			event.button !== 0 ||
 			this.#pointerInteraction !== undefined ||
+			this.#deselectingPointerId !== undefined ||
 			!this.#mutationsEnabled
 		) {
+			return;
+		}
+		if (this.#routeTouchPrecisionPointerDown(event)) {
 			return;
 		}
 		const coordinate = this.#pointerCoordinate(event);
@@ -1108,11 +1513,29 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		if (this.#drawingInProgressId !== null) {
 			return;
 		}
-		const hit = hitTestOverlayGeometries(coordinate, this.#overlayGeometries());
+		const hit = hitTestOverlayGeometries(
+			coordinate,
+			this.#overlayGeometries(),
+			this.#hitTolerance(event.pointerType),
+		);
 		if (hit === null) {
 			const selected = this.#activeOverlays().find(
 				(overlay) => overlay.id === this.#selectedOverlayId,
 			);
+			if (
+				selected !== undefined &&
+				this.#drawingInteraction.exclusiveSelection === true
+			) {
+				event.preventDefault();
+				event.stopImmediatePropagation();
+				this.#deselectingPointerId = event.pointerId;
+				try {
+					this.#container.setPointerCapture(event.pointerId);
+				} catch {
+					// Synthetic PointerEvents do not own browser pointer capture.
+				}
+				return;
+			}
 			if (selected !== undefined && isControlledInteractionOverlay(selected)) {
 				this.#selectOverlay(null);
 			}
@@ -1123,7 +1546,10 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			return;
 		}
 		this.#selectOverlay(before.id);
-		if (!isControlledInteractionOverlay(before)) {
+		if (
+			!isControlledInteractionOverlay(before) &&
+			this.#drawingInteraction.exclusiveSelection !== true
+		) {
 			return;
 		}
 		event.preventDefault();
@@ -1131,7 +1557,11 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		if (hit.locked) {
 			return;
 		}
-		this.#container.setPointerCapture(event.pointerId);
+		try {
+			this.#container.setPointerCapture(event.pointerId);
+		} catch {
+			// Synthetic PointerEvents do not own browser pointer capture.
+		}
 		this.#interactionDimensions = this.#dimensionsForHit(before, hit);
 		this.#pointerInteraction = {
 			pointerId: event.pointerId,
@@ -1145,6 +1575,14 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	};
 
 	readonly #handlePointerMove = (event: PointerEvent): void => {
+		if (this.#routeTouchPrecisionPointerMove(event)) {
+			return;
+		}
+		if (this.#deselectingPointerId === event.pointerId) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			return;
+		}
 		const interaction = this.#pointerInteraction;
 		if (interaction === undefined || interaction.pointerId !== event.pointerId) {
 			return;
@@ -1197,6 +1635,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				);
 			}
 			if (this.#workspaceMode) {
+				interaction.candidate = candidate;
 				this.#setActiveOverlays(overlays);
 				return;
 			}
@@ -1216,6 +1655,19 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	};
 
 	readonly #handlePointerUp = (event: PointerEvent): void => {
+		if (this.#routeTouchPrecisionPointerUp(event)) {
+			return;
+		}
+		if (this.#deselectingPointerId === event.pointerId) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			if (this.#container.hasPointerCapture(event.pointerId)) {
+				this.#container.releasePointerCapture(event.pointerId);
+			}
+			this.#deselectingPointerId = undefined;
+			this.#selectOverlay(null);
+			return;
+		}
 		const interaction = this.#pointerInteraction;
 		if (interaction === undefined || interaction.pointerId !== event.pointerId) {
 			return;
@@ -1223,6 +1675,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		event.preventDefault();
 		event.stopImmediatePropagation();
 		this.#pointerInteraction = undefined;
+		const interactionDimensions = this.#interactionDimensions;
 		this.#interactionDimensions = { horizontal: false, vertical: false };
 		this.#stopPointerCapture(interaction);
 		if (!interaction.started) {
@@ -1243,7 +1696,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 					drawing: snapshotOfDrawing(
 						sceneOverlayToDrawing(overlay, drawing),
 					),
-					editDimensions: structuredClone(this.#interactionDimensions),
+					editDimensions: structuredClone(interactionDimensions),
 				});
 			}
 			return;
@@ -1259,22 +1712,59 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	};
 
 	readonly #handlePointerCancel = (event: PointerEvent): void => {
+		if (this.#touchPrecisionPointer?.pointerId === event.pointerId) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			this.#cancelTouchPrecisionDrawing(true);
+			return;
+		}
 		if (this.#pointerInteraction?.pointerId === event.pointerId) {
 			event.preventDefault();
 			event.stopImmediatePropagation();
 			this.#cancelInteraction('pointer-cancel');
+			return;
+		}
+		if (this.#deselectingPointerId === event.pointerId) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			if (this.#container.hasPointerCapture(event.pointerId)) {
+				this.#container.releasePointerCapture(event.pointerId);
+			}
+			this.#deselectingPointerId = undefined;
+			this.#selectOverlay(null);
 		}
 	};
 
 	readonly #handleKeyDown = (event: KeyboardEvent): void => {
+		if (event.key === 'Escape' && this.#touchPrecisionDrawing !== undefined) {
+			this.#cancelTouchPrecisionDrawing(true);
+			return;
+		}
 		if (event.key === 'Escape' && this.#pointerInteraction !== undefined) {
 			this.#cancelInteraction('escape');
+		}
+		if (
+			event.key === 'Escape' &&
+			this.#drawingInteraction.exclusiveSelection === true &&
+			this.#selectedOverlayId !== null
+		) {
+			this.#selectOverlay(null);
 		}
 	};
 
 	readonly #handleWindowBlur = (): void => {
+		if (this.#touchPrecisionDrawing !== undefined) {
+			this.#cancelTouchPrecisionDrawing(true);
+		}
 		if (this.#pointerInteraction !== undefined) {
 			this.#cancelInteraction('window-blur');
+		}
+		if (this.#deselectingPointerId !== undefined) {
+			if (this.#container.hasPointerCapture(this.#deselectingPointerId)) {
+				this.#container.releasePointerCapture(this.#deselectingPointerId);
+			}
+			this.#deselectingPointerId = undefined;
+			this.#selectOverlay(null);
 		}
 	};
 
@@ -1570,6 +2060,9 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			);
 		}
 		this.#drawingInProgressId = request.id;
+		if (request.type === 'segment') {
+			this.#prepareTouchPrecisionDrawing(request.id, overlay.paneId);
+		}
 		return request.id;
 	}
 
@@ -2247,6 +2740,11 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			return;
 		}
 		this.#cancelInteraction('destroy');
+		this.#deselectingPointerId = undefined;
+		this.#leaveExclusiveSelection();
+		this.#cancelTouchPrecisionDrawing(false);
+		this.#touchPrecisionGuide?.destroy();
+		this.#touchPrecisionGuide = undefined;
 		this.#interactivePriceMeasurement = undefined;
 		this.#drawingInProgressId = null;
 		this.#disposed = true;

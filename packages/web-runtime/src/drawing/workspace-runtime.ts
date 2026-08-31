@@ -14,6 +14,7 @@ import {
 } from '@baron1996/kline-scene-schema';
 import type {
 	ActiveMainSeriesType,
+	DrawingInteractionOptions,
 	DrawingEnginePort,
 	EngineDrawingSnapshot,
 	EngineHistoricalDataCommitResult,
@@ -59,6 +60,8 @@ export interface DrawableWorkspaceRuntimeOptions {
 	readonly historicalDataLoading?: { readonly hasMore: boolean };
 	/** 仅用于 UI 展示；不会写入 Workspace，也不会改变投影与会话时区。 */
 	readonly displayTimezone?: string;
+	/** 可选输入策略；默认使用图表引擎原生 Drawing 交互。 */
+	readonly drawingInteraction?: DrawingInteractionOptions;
 }
 
 export interface DrawableWorkspaceRuntimeHandle
@@ -176,6 +179,12 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		) {
 			throw new Error('HISTORICAL_DATA_UNSUPPORTED: only chart Workspaces support historical data loading.');
 		}
+		if (
+			options.drawingInteraction?.touch === 'precision-cursor' &&
+			workspace.scene.kind !== 'chart'
+		) {
+			throw new Error('TOUCH_DRAWING_UNSUPPORTED: precision cursor requires a chart Workspace.');
+		}
 		const registration = getSceneRuntime(workspace.scene.kind);
 		const engine = await registration.createAdapter(container, workspace, {
 			...(options.historicalDataLoading === undefined
@@ -184,6 +193,9 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 			...(options.displayTimezone === undefined
 				? {}
 				: { displayTimezone: options.displayTimezone }),
+			...(options.drawingInteraction === undefined
+				? {}
+				: { drawingInteraction: options.drawingInteraction }),
 		});
 		return new DrawableWorkspaceRuntime(container, workspace, engine, options);
 	}

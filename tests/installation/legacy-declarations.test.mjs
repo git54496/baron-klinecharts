@@ -72,6 +72,7 @@ export interface DrawingFloatingToolbar {
 	[
 		'packages/web-runtime/dist/drawing/workspace-runtime.d.ts',
 		[
+			'DrawingInteractionOptions, ',
 			' MarketData,',
 			' EngineHistoricalDataCommitResult,',
 			' HistoricalDataRuntimeCapability,',
@@ -82,6 +83,9 @@ export interface DrawingFloatingToolbar {
 `,
 			`    /** 仅用于 UI 展示；不会写入 Workspace，也不会改变投影与会话时区。 */
     readonly displayTimezone?: string;
+`,
+			`    /** 可选输入策略；默认使用图表引擎原生 Drawing 交互。 */
+    readonly drawingInteraction?: DrawingInteractionOptions;
 `,
 			`    commitHistoricalData(requestId: string, data: readonly MarketData[], hasMore: boolean): EngineHistoricalDataCommitResult;
     rejectHistoricalData(requestId: string, message: string): boolean;

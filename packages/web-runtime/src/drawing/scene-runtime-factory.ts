@@ -9,6 +9,7 @@ import {
 	KLineDrawingProjectionPolicy,
 	TimeSeriesChartsAdapter,
 	TimeSeriesDrawingProjectionPolicy,
+	type DrawingInteractionOptions,
 	type DrawingEnginePort,
 	type DrawingProjectionPolicy,
 } from '@baron1996/klinecharts-adapter';
@@ -32,6 +33,8 @@ export interface SceneRuntimeAdapterOptions {
 	readonly historicalDataLoading?: { readonly hasMore: boolean };
 	/** 仅改变时间文本与坐标轴的展示时区，不改变 Scene/Drawings 的业务时区。 */
 	readonly displayTimezone?: string;
+	/** 仅改变输入交互，不改变 Drawing 几何与持久化协议。 */
+	readonly drawingInteraction?: DrawingInteractionOptions;
 }
 
 const registrations = new Map<string, SceneRuntimeRegistration>();

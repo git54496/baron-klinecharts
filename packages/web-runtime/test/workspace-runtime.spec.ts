@@ -320,6 +320,47 @@ describe('DrawableWorkspaceRuntime', () => {
 		runtime.destroy();
 	});
 
+	it('forwards Drawing interaction policy as an adapter-only option', async () => {
+		const container = {} as HTMLElement;
+		const runtime = await createDrawableWorkspaceRuntime(
+			container,
+			chartWorkspaceFixture,
+			{
+				commitMode: 'immediate',
+				drawingInteraction: {
+					touch: 'precision-cursor',
+					exclusiveSelection: true,
+					hitTolerance: {
+						mouse: { body: 12, anchor: 14 },
+						touch: { body: 22, anchor: 24 },
+					},
+				},
+			},
+		);
+
+		expect(mockAdapterOptions?.drawingInteraction).toEqual({
+			touch: 'precision-cursor',
+			exclusiveSelection: true,
+			hitTolerance: {
+				mouse: { body: 12, anchor: 14 },
+				touch: { body: 22, anchor: 24 },
+			},
+		});
+		expect(runtime.exportWorkspace()).toEqual(chartWorkspaceFixture);
+		runtime.destroy();
+	});
+
+	it('rejects precision touch Drawing for a time-series Workspace', async () => {
+		await expect(createDrawableWorkspaceRuntime(
+			{} as HTMLElement,
+			timeSeriesWorkspaceFixture,
+			{
+				commitMode: 'immediate',
+				drawingInteraction: { touch: 'precision-cursor' },
+			},
+		)).rejects.toThrow('TOUCH_DRAWING_UNSUPPORTED');
+	});
+
 	it('restores confirmed drawings and exports a canonical Workspace', async () => {
 		const { runtime } = await makeRuntime(chartWorkspaceFixture);
 		expect(runtime.listDrawings()).toHaveLength(22);

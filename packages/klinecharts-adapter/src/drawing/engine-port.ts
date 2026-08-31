@@ -35,6 +35,23 @@ export interface EngineDrawingStartRequest {
 	readonly text?: string;
 }
 
+export interface DrawingHitTolerance {
+	readonly body: number;
+	readonly anchor: number;
+}
+
+/** 宿主可选的 Drawing 输入策略；默认继续使用 KLineCharts 原生交互。 */
+export interface DrawingInteractionOptions {
+	readonly touch?: 'native' | 'precision-cursor';
+	/** 选中 Drawing 后是否独占图表输入，直到显式取消选择。 */
+	readonly exclusiveSelection?: boolean;
+	/** CSS 像素命中半径；未配置项分别使用桌面 12/14、触摸 22/24。 */
+	readonly hitTolerance?: {
+		readonly mouse?: Partial<DrawingHitTolerance>;
+		readonly touch?: Partial<DrawingHitTolerance>;
+	};
+}
+
 export type EngineDrawingEventType =
 	| 'created'
 	| 'updated'

@@ -139,11 +139,15 @@ const SUPPORTED_TYPES = [
 async function installWorkspace(
 	page: Page,
 	kind: 'chart' | 'time-series',
+	options: {
+		readonly precisionTouch?: boolean;
+		readonly exclusiveSelection?: boolean;
+	} = {},
 ): Promise<void> {
 	await page.addInitScript(SNAPSHOT_BUILDER);
 	await page.goto('/test/fixture.html');
 	await page.evaluate(
-		async ({ kind, chartWorkspace, timeSeriesWorkspace }) => {
+		async ({ kind, chartWorkspace, timeSeriesWorkspace, precisionTouch, exclusiveSelection }) => {
 			const { KLineChartsSceneAdapter, TimeSeriesChartsAdapter } =
 				await import('/src/index.ts');
 			const container = document.querySelector<HTMLElement>(
@@ -153,6 +157,14 @@ async function installWorkspace(
 				? await KLineChartsSceneAdapter.createWorkspace(
 						container,
 						chartWorkspace,
+						precisionTouch || exclusiveSelection
+							? {
+								drawingInteraction: {
+									...(precisionTouch ? { touch: 'precision-cursor' as const } : {}),
+									...(exclusiveSelection ? { exclusiveSelection: true } : {}),
+								},
+							}
+							: undefined,
 					)
 				: await TimeSeriesChartsAdapter.createWorkspace(
 						container,
@@ -161,8 +173,38 @@ async function installWorkspace(
 			(window as unknown as Record<string, unknown>).__adapter = adapter;
 			(window as unknown as Record<string, unknown>).__kind = kind;
 		},
-		{ kind, chartWorkspace, timeSeriesWorkspace },
+		{
+			kind,
+			chartWorkspace,
+			timeSeriesWorkspace,
+			precisionTouch: options.precisionTouch,
+			exclusiveSelection: options.exclusiveSelection,
+		},
 	);
+}
+
+async function dispatchTouchPointer(
+	page: Page,
+	type: 'pointerdown' | 'pointermove' | 'pointerup',
+	point: { readonly x: number; readonly y: number },
+	pointerId = 41,
+): Promise<boolean> {
+	return page.evaluate(({ type, point, pointerId }) => {
+		const target = document.querySelector<HTMLElement>('#chart')!;
+		const rect = target.getBoundingClientRect();
+		return target.dispatchEvent(new PointerEvent(type, {
+			bubbles: true,
+			cancelable: true,
+			clientX: rect.left + point.x,
+			clientY: rect.top + point.y,
+			button: 0,
+			buttons: type === 'pointerup' ? 0 : 1,
+			isPrimary: true,
+			pointerId,
+			pointerType: 'touch',
+			pressure: type === 'pointerup' ? 0 : 0.5,
+		}));
+	}, { type, point, pointerId });
 }
 
 async function settle(page: Page): Promise<void> {
@@ -438,3 +480,313 @@ for (const kind of ['chart', 'time-series'] as const) {
 		});
 	});
 }
+
+test.describe('DrawingEnginePort precision touch Drawing', () => {
+	test('@browser touch drag moves the virtual cursor and only taps confirm segment anchors', async ({ browser }) => {
+		const context = await browser.newContext({
+			hasTouch: true,
+			isMobile: true,
+			viewport: { width: 1000, height: 700 },
+		});
+		const page = await context.newPage();
+		try {
+			await installWorkspace(page, 'chart', { precisionTouch: true });
+			await page.evaluate(() => {
+				const adapter = (window as unknown as {
+					__adapter: {
+						restoreDrawings(drawings: readonly unknown[]): void;
+						startDrawing(request: unknown): string;
+						subscribeDrawingEvents(
+							listener: (event: { readonly type: string; readonly id: string }) => void,
+						): () => void;
+					};
+				}).__adapter;
+				adapter.restoreDrawings([]);
+				const events: string[] = [];
+				adapter.subscribeDrawingEvents((event) => {
+					events.push(`${event.type}:${event.id}`);
+				});
+				(window as unknown as { __drawingEvents: string[] }).__drawingEvents = events;
+				adapter.startDrawing(
+					(window as unknown as {
+						__baronRequest(type: string, index: number, paneRole: string): unknown;
+					}).__baronRequest('segment', 0, 'candle'),
+				);
+			});
+
+			const guide = page.locator('[data-touch-drawing-guide]');
+			await expect(guide).toBeVisible();
+			await expect(guide).toHaveAttribute('data-phase', 'move-start');
+
+			// A drag only positions the virtual cursor; it must not commit an anchor.
+			expect(await dispatchTouchPointer(page, 'pointerdown', { x: 620, y: 420 })).toBe(false);
+			expect(await dispatchTouchPointer(page, 'pointermove', { x: 700, y: 470 })).toBe(false);
+			await expect(guide).toHaveAttribute('data-phase', 'move-start');
+			expect(await dispatchTouchPointer(page, 'pointerup', { x: 700, y: 470 })).toBe(false);
+			await expect(guide).toHaveAttribute('data-phase', 'confirm-start');
+			await expect(guide).toHaveAttribute('data-cursor-x', '644');
+			await expect(guide).toHaveAttribute('data-cursor-y', '366');
+			expect(await page.evaluate(() => (
+				window as unknown as { __drawingEvents: string[] }
+			).__drawingEvents)).not.toContain('created:port-segment-0');
+
+			// A stationary tap commits the first anchor.
+			await dispatchTouchPointer(page, 'pointerdown', { x: 700, y: 470 });
+			await dispatchTouchPointer(page, 'pointerup', { x: 700, y: 470 });
+			await expect(guide).toHaveAttribute('data-phase', 'confirm-end');
+			expect(await page.evaluate(() => (
+				window as unknown as { __drawingEvents: string[] }
+			).__drawingEvents)).not.toContain('created:port-segment-0');
+
+			// Moving the end preview is still non-committing; the following tap completes it.
+			await dispatchTouchPointer(page, 'pointerdown', { x: 780, y: 500 });
+			await dispatchTouchPointer(page, 'pointermove', { x: 840, y: 540 });
+			await dispatchTouchPointer(page, 'pointerup', { x: 840, y: 540 });
+			expect(await page.evaluate(() => (
+				window as unknown as { __drawingEvents: string[] }
+			).__drawingEvents)).not.toContain('created:port-segment-0');
+			await dispatchTouchPointer(page, 'pointerdown', { x: 840, y: 540 });
+			await dispatchTouchPointer(page, 'pointerup', { x: 840, y: 540 });
+			await settle(page);
+
+			await expect(guide).toBeHidden();
+			const result = await page.evaluate(() => {
+				const adapter = (window as unknown as {
+					__adapter: {
+						getDrawing(id: string): { readonly geometry: unknown } | undefined;
+					};
+					__baronGeometryComplete(geometry: unknown): boolean;
+					__drawingEvents: string[];
+				}).__adapter;
+				const drawing = adapter.getDrawing('port-segment-0');
+				return {
+					complete: drawing !== undefined && (
+						window as unknown as { __baronGeometryComplete(geometry: unknown): boolean }
+					).__baronGeometryComplete(drawing.geometry),
+					events: (window as unknown as { __drawingEvents: string[] }).__drawingEvents,
+				};
+			});
+			expect(result.complete).toBe(true);
+			expect(result.events).toContain('created:port-segment-0');
+		} finally {
+			await context.close();
+		}
+	});
+
+	test('@browser precision touch option preserves native two-click mouse Drawing', async ({ page }) => {
+		await installWorkspace(page, 'chart', { precisionTouch: true });
+		await page.evaluate(() => {
+			const adapter = (window as unknown as {
+				__adapter: {
+					restoreDrawings(drawings: readonly unknown[]): void;
+					startDrawing(request: unknown): string;
+				};
+			}).__adapter;
+			adapter.restoreDrawings([]);
+			adapter.startDrawing(
+				(window as unknown as {
+					__baronRequest(type: string, index: number, paneRole: string): unknown;
+				}).__baronRequest('segment', 0, 'candle'),
+			);
+		});
+
+		const guide = page.locator('[data-touch-drawing-guide]');
+		await expect(guide).toHaveCount(0);
+		await page.mouse.click(260, 300);
+		await expect(guide).toHaveCount(0);
+		await page.mouse.click(620, 380);
+		await settle(page);
+		const complete = await page.evaluate(() => {
+			const adapter = (window as unknown as {
+				__adapter: {
+					getDrawing(id: string): { readonly geometry: unknown } | undefined;
+				};
+			}).__adapter;
+			const drawing = adapter.getDrawing('port-segment-0');
+			return drawing !== undefined && (
+				window as unknown as { __baronGeometryComplete(geometry: unknown): boolean }
+			).__baronGeometryComplete(drawing.geometry);
+		});
+		expect(complete).toBe(true);
+	});
+
+	test('@browser precision touch cancel removes the unfinished segment', async ({ page }) => {
+		await installWorkspace(page, 'chart', { precisionTouch: true });
+		await page.evaluate(() => {
+			const adapter = (window as unknown as {
+				__adapter: {
+					restoreDrawings(drawings: readonly unknown[]): void;
+					startDrawing(request: unknown): string;
+				};
+			}).__adapter;
+			adapter.restoreDrawings([]);
+			adapter.startDrawing(
+				(window as unknown as {
+					__baronRequest(type: string, index: number, paneRole: string): unknown;
+				}).__baronRequest('segment', 0, 'candle'),
+			);
+		});
+
+		const guide = page.locator('[data-touch-drawing-guide]');
+		await expect(guide).toHaveCount(0);
+		await dispatchTouchPointer(page, 'pointerdown', { x: 620, y: 420 });
+		await dispatchTouchPointer(page, 'pointerup', { x: 620, y: 420 });
+		await expect(guide).toBeVisible();
+		await page.getByRole('button', { name: '取消绘制线段' }).click();
+		await expect(guide).toBeHidden();
+		const drawing = await page.evaluate(() => (
+			window as unknown as {
+				__adapter: { getDrawing(id: string): unknown };
+			}
+		).__adapter.getDrawing('port-segment-0'));
+		expect(drawing).toBeUndefined();
+	});
+});
+
+test.describe('DrawingEnginePort exclusive Drawing selection', () => {
+	test('@browser touch hit band selects and drags a segment without moving the chart', async ({ browser }) => {
+		const context = await browser.newContext({
+			hasTouch: true,
+			isMobile: true,
+			viewport: { width: 1000, height: 700 },
+		});
+		const page = await context.newPage();
+		try {
+			await installWorkspace(page, 'chart', { exclusiveSelection: true });
+			const setup = await page.evaluate(() => {
+				const adapter = (window as unknown as {
+					__adapter: {
+						restoreDrawings(drawings: readonly unknown[]): void;
+						getDrawing(id: string): { readonly geometry: unknown } | undefined;
+						projectToPixel(
+							anchor: { readonly timestamp: number; readonly value: number },
+							paneRole: string,
+						): { readonly x: number; readonly y: number };
+						inspect(): { readonly rightOffsetDistance: number; readonly barSpace: number };
+						subscribeDrawingEvents(
+							listener: (event: { readonly type: string; readonly id: string }) => void,
+						): () => void;
+					};
+				}).__adapter;
+				adapter.restoreDrawings(
+					(window as unknown as {
+						__baronSnapshots(types: string[], paneRole: string): unknown[];
+					}).__baronSnapshots(['segment'], 'candle'),
+				);
+				const events: string[] = [];
+				adapter.subscribeDrawingEvents((event) => events.push(`${event.type}:${event.id}`));
+				(window as unknown as { __drawingEvents: string[] }).__drawingEvents = events;
+				const start = adapter.projectToPixel(
+					{ timestamp: 1784736000000, value: 12.34 },
+					'candle',
+				);
+				const end = adapter.projectToPixel(
+					{ timestamp: 1784822400000, value: 12.55 },
+					'candle',
+				);
+				const dx = end.x - start.x;
+				const dy = end.y - start.y;
+				const length = Math.hypot(dx, dy);
+				return {
+					hit: {
+						x: (start.x + end.x) / 2 - dy / length * 21,
+						y: (start.y + end.y) / 2 + dx / length * 21,
+					},
+					viewport: adapter.inspect(),
+				};
+			});
+
+			await dispatchTouchPointer(page, 'pointerdown', setup.hit, 81);
+			await dispatchTouchPointer(page, 'pointerup', setup.hit, 81);
+			expect(await page.evaluate(() => (
+				window as unknown as { __drawingEvents: string[] }
+			).__drawingEvents)).toContain('selected:port-segment-0');
+
+			await dispatchTouchPointer(page, 'pointerdown', setup.hit, 82);
+			await dispatchTouchPointer(
+				page,
+				'pointermove',
+				{ x: setup.hit.x, y: setup.hit.y - 20 },
+				82,
+			);
+			await dispatchTouchPointer(
+				page,
+				'pointerup',
+				{ x: setup.hit.x, y: setup.hit.y - 20 },
+				82,
+			);
+			await settle(page);
+
+			const result = await page.evaluate(() => {
+				const adapter = (window as unknown as {
+					__adapter: {
+						getDrawing(id: string): { readonly geometry: unknown } | undefined;
+						inspect(): { readonly rightOffsetDistance: number; readonly barSpace: number };
+					};
+				}).__adapter;
+				return {
+					drawing: adapter.getDrawing('port-segment-0'),
+					viewport: adapter.inspect(),
+					events: (window as unknown as { __drawingEvents: string[] }).__drawingEvents,
+				};
+			});
+			expect(result.events).toContain('updated:port-segment-0');
+			expect(result.drawing?.geometry).not.toEqual({
+				points: [
+					{ timestamp: 1784736000000, granularity: { type: 'day', span: 1 }, value: 12.34 },
+					{ timestamp: 1784822400000, granularity: { type: 'day', span: 1 }, value: 12.55 },
+				],
+			});
+			expect(result.viewport).toEqual(setup.viewport);
+		} finally {
+			await context.close();
+		}
+	});
+
+	test('@browser the first blank gesture only deselects and restores chart interaction', async ({ page }) => {
+		await installWorkspace(page, 'chart', { exclusiveSelection: true });
+		const hit = await page.evaluate(() => {
+			const adapter = (window as unknown as {
+				__adapter: {
+					restoreDrawings(drawings: readonly unknown[]): void;
+					projectToPixel(
+						anchor: { readonly timestamp: number; readonly value: number },
+						paneRole: string,
+					): { readonly x: number; readonly y: number };
+					subscribeDrawingEvents(
+						listener: (event: { readonly type: string; readonly id: string }) => void,
+					): () => void;
+				};
+			}).__adapter;
+			adapter.restoreDrawings(
+				(window as unknown as {
+					__baronSnapshots(types: string[], paneRole: string): unknown[];
+				}).__baronSnapshots(['horizontalStraightLine'], 'candle'),
+			);
+			const events: string[] = [];
+			adapter.subscribeDrawingEvents((event) => events.push(`${event.type}:${event.id}`));
+			(window as unknown as { __drawingEvents: string[] }).__drawingEvents = events;
+			return adapter.projectToPixel(
+				{ timestamp: 1784822400000, value: 12.55 },
+				'candle',
+			);
+		});
+		await page.mouse.click(hit.x, hit.y);
+		const beforeBlank = await page.evaluate(() => (
+			window as unknown as { __adapter: { inspect(): unknown } }
+		).__adapter.inspect());
+		await page.mouse.move(850, 500);
+		await page.mouse.down();
+		await page.mouse.move(650, 500, { steps: 4 });
+		await page.mouse.up();
+		const afterBlank = await page.evaluate(() => (
+			window as unknown as { __adapter: { inspect(): unknown } }
+		).__adapter.inspect());
+		const events = await page.evaluate(() => (
+			window as unknown as { __drawingEvents: string[] }
+		).__drawingEvents);
+		expect(events).toContain('selected:port-horizontalStraightLine-0');
+		expect(events).toContain('deselected:port-horizontalStraightLine-0');
+		expect(afterBlank).toEqual(beforeBlank);
+	});
+});

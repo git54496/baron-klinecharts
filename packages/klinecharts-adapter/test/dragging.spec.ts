@@ -73,4 +73,90 @@ describe('M2 drag candidate semantics', () => {
 			2,
 		)).toThrowError(expect.objectContaining({ code: 'INVALID_REFERENCE' }));
 	});
+
+	it('moves a segment anchor and body through the same controlled path', () => {
+		const segment: SceneOverlay = {
+			...measurement,
+			id: 'segment',
+			type: 'segment',
+			start: undefined,
+			end: undefined,
+			points: [
+				{ timestamp: 1000, value: 300 },
+				{ timestamp: 3000, value: 330 },
+			],
+		};
+
+		const anchor = createDragCandidate(
+			segment,
+			{ target: 'anchor', anchorIndex: 1 },
+			{ dataIndex: 2, value: 330 },
+			{ dataIndex: 4, value: 342.345 },
+			timestamps,
+			2,
+		);
+		expect(anchor.points).toEqual([
+			{ timestamp: 1000, value: 300 },
+			{ timestamp: 5000, value: 342.35 },
+		]);
+
+		const body = createDragCandidate(
+			segment,
+			{ target: 'body', anchorIndex: null },
+			{ dataIndex: 1, value: 310 },
+			{ dataIndex: 2, value: 315.555 },
+			timestamps,
+			2,
+		);
+		expect(body.points).toEqual([
+			{ timestamp: 2000, value: 305.56 },
+			{ timestamp: 4000, value: 335.56 },
+		]);
+	});
+
+	it('moves annotations and constrained horizontal segments without changing unrelated fields', () => {
+		const annotation: SceneOverlay = {
+			...measurement,
+			id: 'annotation',
+			type: 'simpleAnnotation',
+			start: undefined,
+			end: undefined,
+			point: { timestamp: 2000, value: 310 },
+			text: '重要位置',
+		};
+		const movedAnnotation = createDragCandidate(
+			annotation,
+			{ target: 'body', anchorIndex: null },
+			{ dataIndex: 1, value: 310 },
+			{ dataIndex: 2, value: 315.555 },
+			timestamps,
+			2,
+		);
+		expect(movedAnnotation.point).toEqual({ timestamp: 3000, value: 315.56 });
+		expect(movedAnnotation.text).toBe('重要位置');
+
+		const horizontal: SceneOverlay = {
+			...measurement,
+			id: 'horizontal',
+			type: 'horizontalSegment',
+			start: undefined,
+			end: undefined,
+			value: 310,
+			startTimestamp: 1000,
+			endTimestamp: 3000,
+		};
+		const movedHorizontal = createDragCandidate(
+			horizontal,
+			{ target: 'anchor', anchorIndex: 1 },
+			{ dataIndex: 2, value: 310 },
+			{ dataIndex: 4, value: 320.126 },
+			timestamps,
+			2,
+		);
+		expect(movedHorizontal).toMatchObject({
+			value: 320.13,
+			startTimestamp: 1000,
+			endTimestamp: 5000,
+		});
+	});
 });

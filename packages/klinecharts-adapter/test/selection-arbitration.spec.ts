@@ -11,6 +11,7 @@ const updatedGeometries: readonly OverlayPixelGeometry[] = [
 		locked: false,
 		anchors: [{ x: 100, y: 100 }, { x: 200, y: 160 }],
 		bodySegments: [[{ x: 100, y: 100 }, { x: 200, y: 160 }]],
+		bodyRectangles: [],
 	},
 	{
 		overlayId: 'other-overlay',
@@ -19,6 +20,7 @@ const updatedGeometries: readonly OverlayPixelGeometry[] = [
 		locked: false,
 		anchors: [{ x: 300, y: 100 }, { x: 400, y: 100 }],
 		bodySegments: [[{ x: 300, y: 100 }, { x: 400, y: 100 }]],
+		bodyRectangles: [],
 	},
 ];
 

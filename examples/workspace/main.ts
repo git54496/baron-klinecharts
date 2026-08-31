@@ -20,6 +20,14 @@ const events: WorkspaceRuntimeEvent[] = [];
 try {
 	const runtime = await createDrawableWorkspaceRuntime(chart, workspace, {
 		commitMode: 'immediate',
+		drawingInteraction: {
+			touch: 'precision-cursor',
+			exclusiveSelection: true,
+			hitTolerance: {
+				mouse: { body: 12, anchor: 14 },
+				touch: { body: 22, anchor: 24 },
+			},
+		},
 		onEvent: (event) => events.push(event),
 	});
 	const toolbar = createStandardToolbar(toolbarRoot, runtime, {
