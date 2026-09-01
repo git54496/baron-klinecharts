@@ -21,7 +21,7 @@ const publicPackageNames = [
 const publicPackageVersions = new Map([
 	['@baron1996/kline-scene-schema', '0.6.0'],
 	['@baron1996/klinecharts-adapter', '0.9.5'],
-	['@baron1996/klinecharts-runtime', '0.9.5'],
+	['@baron1996/klinecharts-runtime', '0.9.6'],
 	['@baron1996/klinecharts-cli', '0.6.0'],
 ]);
 
