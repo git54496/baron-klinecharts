@@ -183,11 +183,10 @@ CI 分别使用 `tests/rendering/baselines/github-macos-15` 和
 
 ## 发布
 
-当前发布版本为 `0.9.4`。本次发布 Adapter 与 Web Runtime `0.9.4`；Scene Schema、
-CLI、Python 和私有 Render Runtime 继续保持 `0.6.0`，所有内部依赖使用精确版本。
-该版本将价格度量升级为带半透明填充和居中数值标签的矩形视觉；涨幅使用主图上涨色，
-跌幅或零值使用主图下跌色，并统一控制点与坐标轴投影颜色。价格度量工具图标同步改为
-矩形与垂直双向箭头，Vanilla 示例页也接入可拖动的 Drawing 浮动工具栏。该能力不提升
+当前发布版本为 `0.9.6`。本次发布 Web Runtime `0.9.6`；Adapter 继续保持 `0.9.5`，
+Scene Schema、CLI、Python 和私有 Render Runtime 继续保持 `0.6.0`，所有内部依赖使用
+精确版本。该版本让标准工具栏服从宿主宽度：空间不足时保持单行并支持移动端横向滑动、
+iOS 惯性滚动、触控板横向滚动和普通鼠标滚轮转换，不再把页面整体撑宽。该能力不提升
 Drawing/Workspace Schema 版本或 Runtime 事件协议版本。
 ChartScene `version` 仍为 `1`；Runtime protocol `0.2.0` 增加显式线性/对数轴、
 价格量度、精确命中与过程事件，同时继续读取 Runtime `0.1.0` 的 M1 场景。

@@ -1,6 +1,6 @@
 {
   "name": "@baron1996/klinecharts-runtime",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "description": "Web runtime for deterministic KLineCharts scenes.",
   "type": "module",
   "license": "Apache-2.0",

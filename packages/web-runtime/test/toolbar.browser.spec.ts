@@ -415,6 +415,23 @@ test('@browser toolbar Tooltip supports hover, focus, viewport clamping, and nar
 	expect(hoverGeometry.pageWidth).toBe(hoverGeometry.clientWidth);
 	expect(hoverGeometry.toolbarScrollWidth).toBeGreaterThan(hoverGeometry.toolbarClientWidth);
 
+	const viewport = page.locator('.baron-kline-toolbar__viewport');
+	const scrollBehavior = await viewport.evaluate((element) => ({
+		maxWidth: getComputedStyle(element).maxWidth,
+		overflowX: getComputedStyle(element).overflowX,
+		overscrollBehaviorX: getComputedStyle(element).overscrollBehaviorX,
+		touchAction: getComputedStyle(element).touchAction,
+	}));
+	expect(scrollBehavior).toEqual({
+		maxWidth: '100%',
+		overflowX: 'auto',
+		overscrollBehaviorX: 'contain',
+		touchAction: 'pan-x',
+	});
+	await viewport.hover();
+	await page.mouse.wheel(0, 180);
+	await expect.poll(() => viewport.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+
 	await page.locator('[data-overlay-type="verticalSegment"]').focus();
 	await expect(tooltip.locator('strong')).toHaveText('垂直线段');
 	await expect(tooltip.locator('code')).toHaveText('verticalSegment');

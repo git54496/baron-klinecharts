@@ -282,6 +282,25 @@ export function createStandardToolbar(
 		`baron-kline-toolbar-tooltip-${toolbarId}`,
 	);
 	const cleanupCallbacks: Array<() => void> = [];
+	const handleViewportWheel = (event: WheelEvent): void => {
+		if (
+			event.ctrlKey ||
+			viewport.scrollWidth <= viewport.clientWidth ||
+			Math.abs(event.deltaX) >= Math.abs(event.deltaY)
+		) {
+			return;
+		}
+		const previousScrollLeft = viewport.scrollLeft;
+		viewport.scrollLeft += event.deltaY;
+		if (viewport.scrollLeft !== previousScrollLeft) {
+			event.preventDefault();
+			tooltip.hide();
+		}
+	};
+	viewport.addEventListener('wheel', handleViewportWheel, { passive: false });
+	cleanupCallbacks.push(() =>
+		viewport.removeEventListener('wheel', handleViewportWheel),
+	);
 	const overlayButtons: HTMLButtonElement[] = [];
 	const hostActionControls = new Map<string, HostActionControl>();
 	const textInput = document.createElement('input');

@@ -10,6 +10,7 @@ export const STANDARD_TOOLBAR_STYLES = String.raw`
 	position: relative;
 	display: flex;
 	width: 100%;
+	max-width: 100%;
 	min-width: 0;
 	color: rgba(32, 35, 42, 1);
 	background: rgba(255, 255, 255, 1);
@@ -18,12 +19,17 @@ export const STANDARD_TOOLBAR_STYLES = String.raw`
 }
 
 .baron-kline-toolbar__viewport {
+	flex: 1 1 auto;
 	width: 100%;
+	max-width: 100%;
 	min-width: 0;
 	overflow-x: auto;
 	overflow-y: hidden;
 	contain: layout paint;
+	overscroll-behavior-x: contain;
 	scrollbar-width: none;
+	touch-action: pan-x;
+	-webkit-overflow-scrolling: touch;
 }
 
 .baron-kline-toolbar__viewport::-webkit-scrollbar {
