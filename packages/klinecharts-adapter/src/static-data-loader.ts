@@ -1,4 +1,3 @@
-import type { MarketData } from '@baron1996/kline-scene-schema';
 import type {
 	DataLoader,
 	DataLoaderGetBarsParams,
@@ -8,7 +7,7 @@ import type {
 export type StaticDataLoadType = DataLoaderGetBarsParams['type'];
 
 /** 创建只读取场景内嵌行情的不可变数据加载器。 */
-export function createStaticDataLoader(data: readonly MarketData[]): DataLoader {
+export function createStaticDataLoader(data: readonly KLineData[]): DataLoader {
 	const snapshot = structuredClone(data) as KLineData[];
 	return {
 		getBars({ type, callback }): void {

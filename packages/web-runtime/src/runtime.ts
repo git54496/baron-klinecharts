@@ -97,12 +97,22 @@ function defaultIndicatorStyles(
 	return { lines, bars: [], circles: [] };
 }
 
-function toRuntimeEvent(event: AdapterSceneEvent): KLineSceneRuntimeEvent {
+function toRuntimeEvent(
+	event: AdapterSceneEvent,
+	sceneVersion: ChartScene['version'],
+): KLineSceneRuntimeEvent {
 	return {
 		...structuredClone(event),
-		sceneVersion: 1,
+		sceneVersion,
 		runtimeVersion: '0.2.0',
 	} as KLineSceneRuntimeEvent;
+}
+
+function requestedSceneVersion(value: unknown): ChartScene['version'] {
+	if (typeof value === 'object' && value !== null && 'version' in value && value.version === 2) {
+		return 2;
+	}
+	return 1;
 }
 
 /**
@@ -112,6 +122,8 @@ function toRuntimeEvent(event: AdapterSceneEvent): KLineSceneRuntimeEvent {
 export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxiliaryCapability {
 	/** 唯一引擎 Adapter。 */
 	readonly #adapter: KLineChartsSceneAdapter;
+	/** 当前场景协议版本，所有 Runtime 事件必须原样透传。 */
+	readonly #sceneVersion: ChartScene['version'];
 	/** Runtime 事件总线。 */
 	readonly #events = new RuntimeEventBus();
 	/** Adapter 事件解绑函数。 */
@@ -134,7 +146,7 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 		this.#events.emit({
 			type: 'fullscreen-changed',
 			active: this.isFullscreen(),
-			sceneVersion: 1,
+			sceneVersion: this.#sceneVersion,
 			runtimeVersion: '0.2.0',
 		});
 	};
@@ -144,8 +156,10 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 	private constructor(
 		adapter: KLineChartsSceneAdapter,
 		options: KLineSceneRuntimeOptions,
+		sceneVersion: ChartScene['version'],
 	) {
 		this.#adapter = adapter;
+		this.#sceneVersion = sceneVersion;
 		if (options.onEvent !== undefined) {
 			this.#events.subscribe(options.onEvent);
 		}
@@ -159,7 +173,7 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 			) {
 				this.#selectedOverlayId = null;
 			}
-			this.#events.emit(toRuntimeEvent(event));
+			this.#events.emit(toRuntimeEvent(event, this.#sceneVersion));
 			if (event.type.startsWith('overlay-')) {
 				for (const listener of this.#drawingChangeListeners) {
 					listener();
@@ -171,7 +185,7 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 				type: 'crosshair-changed',
 				timestamp: snapshot.timestamp,
 				bar: snapshot.bar,
-				sceneVersion: 1,
+				sceneVersion: this.#sceneVersion,
 				runtimeVersion: '0.2.0',
 			});
 		});
@@ -189,11 +203,11 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 		try {
 			const scene = parseChartScene(value);
 			const adapter = await KLineChartsSceneAdapter.create(container, scene);
-			const runtime = new KLineSceneRuntime(adapter, options);
+			const runtime = new KLineSceneRuntime(adapter, options, scene.version);
 			runtime.#events.emit({
 				type: 'scene-ready',
 				scene: runtime.getScene(),
-				sceneVersion: 1,
+				sceneVersion: scene.version,
 				runtimeVersion: '0.2.0',
 			});
 			return runtime;
@@ -202,7 +216,7 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 				options.onEvent({
 					type: 'scene-error',
 					issues: structuredClone(error.issues),
-					sceneVersion: 1,
+					sceneVersion: requestedSceneVersion(value),
 					runtimeVersion: '0.2.0',
 				});
 			}
@@ -495,7 +509,7 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 		this.#events.emit({
 			type: 'overlay-delete-requested',
 			overlayId: id,
-			sceneVersion: 1,
+			sceneVersion: this.#sceneVersion,
 			runtimeVersion: '0.2.0',
 		});
 	}
@@ -519,7 +533,7 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 			type: 'host-action-requested',
 			actionId,
 			overlayId,
-			sceneVersion: 1,
+			sceneVersion: this.#sceneVersion,
 			runtimeVersion: '0.2.0',
 		});
 	}

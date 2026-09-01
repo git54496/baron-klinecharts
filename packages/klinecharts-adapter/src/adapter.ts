@@ -33,6 +33,16 @@ import {
 import { normalizePriceValue } from './conversion/price.js';
 import { applyViewport } from './conversion/viewport.js';
 import { createStaticDataLoader } from './static-data-loader.js';
+import {
+	assertGapAwareSceneSupported,
+	engineDataForScene,
+	GAP_AWARE_CANDLE_INDICATOR_ID,
+	gapCount,
+	installGapAwareMainSeries,
+	isGapAwareScene,
+	timelineItemOf,
+	timelineSlotCount,
+} from './gap-aware-series.js';
 import { toOverlayStyles } from './conversion/overlays.js';
 import {
 	drawingToSceneOverlay,
@@ -120,6 +130,8 @@ export interface AdapterSnapshot {
 	readonly engineVersion: string;
 	readonly runtimeVersion: ChartScene['runtime']['runtimeVersion'];
 	readonly dataCount: number;
+	readonly timelineSlotCount: number;
+	readonly gapCount: number;
 	readonly paneIds: readonly string[];
 	readonly indicators: readonly AdapterIndicatorSnapshot[];
 	readonly overlays: readonly SceneOverlay[];
@@ -277,15 +289,17 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		}
 		const match = barIndex === null ? undefined : data[barIndex];
 		const timestamp = match?.timestamp ?? null;
+		const timelineItem = timelineItemOf(match);
+		const source = timelineItem?.kind === 'bar' ? timelineItem.bar : match;
 		const bar: AdapterCrosshairBar | null =
-			match === undefined
+			source === undefined || timelineItem?.kind === 'gap'
 				? null
 				: {
-						open: match.open,
-						high: match.high,
-						low: match.low,
-						close: match.close,
-						volume: match.volume ?? null,
+						open: source.open,
+						high: source.high,
+						low: source.low,
+						close: source.close,
+						volume: source.volume ?? null,
 					};
 		const snapshot: AdapterCrosshairSnapshot = { timestamp, bar };
 		for (const listener of this.#crosshairListeners) {
@@ -396,6 +410,11 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		let adapter: KLineChartsSceneAdapter | undefined;
 		try {
 			handle = await createEngine(container, scene);
+			installGapAwareMainSeries(
+				scene,
+				handle.chart,
+				handle.module.registerIndicator,
+			);
 			registerProjectOverlays(handle.module.registerOverlay);
 			const idMap = createEngineIdMap(scene, handle.chart);
 			applyPanes(scene, handle.chart, idMap);
@@ -455,6 +474,11 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 					? {}
 					: { displayTimezone: options.displayTimezone }),
 			});
+			installGapAwareMainSeries(
+				scene,
+				handle.chart,
+				handle.module.registerIndicator,
+			);
 			registerProjectOverlays(handle.module.registerOverlay);
 			const idMap = createEngineIdMap(scene, handle.chart);
 			applyPanes(scene, handle.chart, idMap);
@@ -576,7 +600,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	}
 
 	#historicalDataLoader(scene: ChartScene): import('klinecharts').DataLoader {
-		const snapshot = structuredClone(scene.data) as unknown as import('klinecharts').KLineData[];
+		const snapshot = structuredClone(engineDataForScene(scene)) as import('klinecharts').KLineData[];
 		return {
 			getBars: ({ type, timestamp, callback }): void => {
 				if (type === 'init') {
@@ -1837,6 +1861,14 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	public replaceScene(value: ChartScene): ChartScene {
 		this.#assertActive();
 		const candidate = parseChartScene(value);
+		if (candidate.version !== this.#scene.version) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/version',
+				'Scene replacement requires the same ChartScene contract version.',
+			);
+		}
+		assertGapAwareSceneSupported(candidate);
 		const paneShape = (scene: ChartScene): string =>
 			JSON.stringify(
 				scene.panes.map((pane) => ({
@@ -1869,7 +1901,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			}
 			this.#chart.setDataLoader(
 				this.#historicalDataLoading === undefined
-					? createStaticDataLoader(candidate.data)
+					? createStaticDataLoader(engineDataForScene(candidate))
 					: this.#historicalDataLoader(candidate),
 			);
 			this.#chart.resetData();
@@ -1895,7 +1927,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				}
 				this.#chart.setDataLoader(
 					this.#historicalDataLoading === undefined
-						? createStaticDataLoader(previous.data)
+						? createStaticDataLoader(engineDataForScene(previous))
 						: this.#historicalDataLoader(previous),
 				);
 				this.#chart.resetData();
@@ -2294,6 +2326,13 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	): MainSeriesPresentationResult {
 		this.#assertActive();
 		this.#assertNotTerminated();
+		if (isGapAwareScene(this.#scene)) {
+			throw new MainSeriesPresentationError(
+				'MAIN_SERIES_PRESENTATION_UNSUPPORTED',
+				'/chart/candle/type',
+				'ChartScene v2 main-series switching is disabled until every presentation is Gap-aware.',
+			);
+		}
 		if (presentation.type === 'area') {
 			const expected = STANDARD_CLOSE_LINE_PRESENTATION;
 			if (
@@ -2706,7 +2745,9 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 
 	public inspect(): AdapterSnapshot {
 		this.#assertActive();
-		const indicators = this.#chart.getIndicators().map((indicator) => {
+		const indicators = this.#chart.getIndicators()
+			.filter((indicator) => indicator.id !== GAP_AWARE_CANDLE_INDICATOR_ID)
+			.map((indicator) => {
 			const paneId = this.#idMap.paneFromEngine.get(indicator.paneId);
 			const yAxisId = this.#idMap.yAxisFromEngine.get(indicator.yAxisId);
 			if (paneId === undefined || yAxisId === undefined) {
@@ -2722,11 +2763,13 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				paneId,
 				yAxisId,
 			};
-		});
+			});
 		return {
 			engineVersion: this.#engine.version(),
 			runtimeVersion: this.#scene.runtime.runtimeVersion,
-			dataCount: this.#chart.getDataList().length,
+			dataCount: this.#scene.data.length,
+			timelineSlotCount: timelineSlotCount(this.#scene),
+			gapCount: gapCount(this.#scene),
 			paneIds: this.#scene.panes.map((pane) => pane.id),
 			indicators,
 			overlays: this.exportScene().overlays,

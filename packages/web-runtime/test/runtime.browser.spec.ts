@@ -6,6 +6,18 @@ const minimalScene = loadScene('minimal-valid.json');
 const allOverlays = loadScene('all-overlays.json');
 const m1Scene = loadScene('m1-candle-horizontal-line.json');
 const m2LinearScene = loadScene('m2-measurement-linear.json');
+const gapScene = {
+	...minimalScene,
+	version: 2 as const,
+	data: [minimalScene.data[0]!, minimalScene.data[2]!],
+	gaps: [{
+		timestamp: minimalScene.data[1]!.timestamp,
+		barEnd: minimalScene.data[2]!.timestamp,
+		classification: 'SOURCE_ERROR' as const,
+		reasonCode: 'UPSTREAM_TIMEOUT',
+		retryable: true,
+	}],
+};
 
 function expectTwoDecimalPrice(value: number): void {
 	expect(value.toString()).toMatch(/^-?\d+(?:\.\d{1,2})?$/u);
@@ -54,6 +66,89 @@ test('@browser Runtime owns overlay CRUD, clone boundaries, and pure-data events
 		'overlay-removed',
 	]);
 	expect(JSON.stringify(result.events)).not.toMatch(/createPointFigures|extendData|function/);
+});
+
+test('@browser Runtime preserves Scene v2 in ready and host events', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const result = await page.evaluate(async (scene) => {
+		const { createKLineSceneRuntime } = await import('/src/index.ts');
+		const events: Array<{ type: string; sceneVersion: number }> = [];
+		const runtime = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			scene,
+			{ onEvent: (event) => events.push(event) },
+		);
+		runtime.requestHostAction('refresh', null);
+		const exported = runtime.exportScene();
+		runtime.destroy();
+		return { events, exported };
+	}, gapScene);
+
+	expect(result.events.map((event) => [event.type, event.sceneVersion])).toEqual([
+		['scene-ready', 2],
+		['host-action-requested', 2],
+	]);
+	expect(result.exported.version).toBe(2);
+	expect(result.exported.gaps).toHaveLength(1);
+	expect(result.exported.gaps![0]).not.toHaveProperty('open');
+});
+
+test('@browser Runtime crosshair reports null bar on a Gap slot', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const gapTimestamp = gapScene.gaps[0]!.timestamp;
+	const point = await page.evaluate(async (scene) => {
+		const { createKLineSceneRuntime } = await import('/src/index.ts');
+		const events: unknown[] = [];
+		const runtime = await createKLineSceneRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			scene,
+			{ onEvent: (event) => events.push(event) },
+		);
+		Object.assign(window, {
+			__baronGapRuntime: runtime,
+			__baronGapEvents: events,
+		});
+		return runtime.projectPoint({
+			timestamp: scene.gaps[0]!.timestamp,
+			value: scene.data[0]!.close,
+		});
+	}, gapScene);
+	const chartBox = await page.locator('#chart').boundingBox();
+	expect(chartBox).not.toBeNull();
+	await page.mouse.move(chartBox!.x + point.x, chartBox!.y + point.y);
+	await page.waitForFunction((timestamp) => {
+		const events = (window as unknown as {
+			__baronGapEvents: Array<{
+				type: string;
+				timestamp: number | null;
+			}>;
+		}).__baronGapEvents;
+		return events.some(
+			(event) => event.type === 'crosshair-changed' && event.timestamp === timestamp,
+		);
+	}, gapTimestamp, { timeout: 5000 });
+	const result = await page.evaluate((timestamp) => {
+		const state = window as unknown as {
+			__baronGapRuntime: { destroy(): void };
+			__baronGapEvents: Array<{
+				type: string;
+				timestamp: number | null;
+				bar: unknown;
+				sceneVersion: number;
+			}>;
+		};
+		const event = state.__baronGapEvents.find(
+			(candidate) => candidate.type === 'crosshair-changed' && candidate.timestamp === timestamp,
+		)!;
+		state.__baronGapRuntime.destroy();
+		return event;
+	}, gapTimestamp);
+	expect(result).toMatchObject({
+		type: 'crosshair-changed',
+		timestamp: gapTimestamp,
+		bar: null,
+		sceneVersion: 2,
+	});
 });
 
 test('@browser starts drawing with a deterministic stable ID without persisting partial geometry', async ({ page }) => {

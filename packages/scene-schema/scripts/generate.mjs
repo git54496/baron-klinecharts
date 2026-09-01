@@ -14,6 +14,7 @@ const schemaNames = [
 	'common.schema.json',
 	'runtime.schema.json',
 	'market-data.schema.json',
+	'market-data-gap.schema.json',
 	'chart-config.schema.json',
 	'indicator.schema.json',
 	'pane.schema.json',

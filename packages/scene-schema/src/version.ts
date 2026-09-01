@@ -1,5 +1,10 @@
 export const SCENE_SCHEMA_NAME = '@baron1996/kline-scene' as const;
-export const SCENE_SCHEMA_VERSION = 1 as const;
+export const LEGACY_SCENE_SCHEMA_VERSION = 1 as const;
+export const SCENE_SCHEMA_VERSION = 2 as const;
+export const SUPPORTED_SCENE_SCHEMA_VERSIONS = [
+	LEGACY_SCENE_SCHEMA_VERSION,
+	SCENE_SCHEMA_VERSION,
+] as const;
 export const KLINECHARTS_ENGINE_VERSION = '10.0.0' as const;
 export const M1_SCENE_RUNTIME_VERSION = '0.1.0' as const;
 export const SCENE_RUNTIME_VERSION = '0.2.0' as const;

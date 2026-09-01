@@ -4,6 +4,7 @@ import type { Chart } from 'klinecharts';
 
 import { toKLineChartsOptions } from './conversion/chart-options.js';
 import { createStaticDataLoader } from './static-data-loader.js';
+import { engineDataForScene } from './gap-aware-series.js';
 import {
 	KLINECHARTS_ENGINE_VERSION,
 	KLINECHARTS_RUNTIME_VERSION,
@@ -150,7 +151,7 @@ export async function createEngine(
 		...(scene.symbol.name === undefined ? {} : { name: scene.symbol.name }),
 	});
 	chart.setPeriod(structuredClone(scene.period));
-	chart.setDataLoader(createStaticDataLoader(scene.data));
+	chart.setDataLoader(createStaticDataLoader(engineDataForScene(scene)));
 	const mouseInteraction = resolveMouseInteractionDispatch(chart);
 	return {
 		chart,

@@ -133,6 +133,43 @@ function validateMarketData(scene: ChartScene, issues: SceneIssue[]): void {
 			),
 		);
 	}
+	const barTimestamps = new Set(scene.data.map((bar) => bar.timestamp));
+	let previousGapTimestamp = -Infinity;
+	for (let index = 0; index < (scene.gaps?.length ?? 0); index++) {
+		const gap = scene.gaps?.[index];
+		if (gap === undefined) {
+			continue;
+		}
+		const path = `/gaps/${index}`;
+		if (gap.timestamp <= previousGapTimestamp) {
+			issues.push(
+				issue(
+					'INVALID_MARKET_DATA',
+					`${path}/timestamp`,
+					'Market-data Gap timestamps must be strictly increasing.',
+				),
+			);
+		}
+		previousGapTimestamp = gap.timestamp;
+		if (gap.barEnd <= gap.timestamp) {
+			issues.push(
+				issue(
+					'INVALID_MARKET_DATA',
+					`${path}/barEnd`,
+					'Market-data Gap barEnd must be greater than timestamp.',
+				),
+			);
+		}
+		if (barTimestamps.has(gap.timestamp)) {
+			issues.push(
+				issue(
+					'INVALID_MARKET_DATA',
+					`${path}/timestamp`,
+					'A timestamp cannot contain both a real Bar and a Gap.',
+				),
+			);
+		}
+	}
 }
 
 function validateIndicator(

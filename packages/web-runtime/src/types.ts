@@ -11,7 +11,7 @@ import type { HostActionDescriptor } from './drawing/runtime-capability-descript
 export type SupportedOverlayType = (typeof SUPPORTED_OVERLAYS)[number];
 
 export interface KLineSceneRuntimeEventEnvelope {
-	readonly sceneVersion: 1;
+	readonly sceneVersion: ChartScene['version'];
 	readonly runtimeVersion: '0.2.0';
 }
 

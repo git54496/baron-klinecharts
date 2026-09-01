@@ -23,7 +23,10 @@
       "const": "@baron1996/kline-scene"
     },
     "version": {
-      "const": 1
+      "enum": [
+        1,
+        2
+      ]
     },
     "runtime": {
       "$ref": "https://baron.dev/kline-scene/runtime.schema.json"
@@ -40,6 +43,13 @@
       "maxItems": 1000000,
       "items": {
         "$ref": "https://baron.dev/kline-scene/market-data.schema.json"
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "maxItems": 1000000,
+      "items": {
+        "$ref": "https://baron.dev/kline-scene/market-data-gap.schema.json"
       }
     },
     "chart": {
@@ -70,6 +80,33 @@
       "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/metadata"
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "version": {
+            "const": 1
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "then": {
+        "properties": {
+          "gaps": false
+        }
+      },
+      "else": {
+        "properties": {
+          "gaps": true
+        },
+        "required": [
+          "gaps"
+        ]
+      }
+    }
+  ],
   "$defs": {
     "symbol": {
       "type": "object",

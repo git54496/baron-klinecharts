@@ -248,6 +248,46 @@ export const MarketDataSchema = {
   }
 } as const;
 
+export const MarketDataGapSchema = {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://baron.dev/kline-scene/market-data-gap.schema.json",
+  "title": "MarketDataGap",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "timestamp",
+    "barEnd",
+    "classification",
+    "reasonCode",
+    "retryable"
+  ],
+  "properties": {
+    "timestamp": {
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/safeInteger"
+    },
+    "barEnd": {
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/safeInteger"
+    },
+    "classification": {
+      "enum": [
+        "INSTRUMENT_NOT_TRADABLE",
+        "SOURCE_ERROR",
+        "NO_TRADE",
+        "UNKNOWN_MISSING"
+      ]
+    },
+    "reasonCode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Z][A-Z0-9_]*$"
+    },
+    "retryable": {
+      "type": "boolean"
+    }
+  }
+} as const;
+
 export const ChartConfigSchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://baron.dev/kline-scene/chart-config.schema.json",
@@ -979,7 +1019,10 @@ export const ChartSceneSchema = {
       "const": "@baron1996/kline-scene"
     },
     "version": {
-      "const": 1
+      "enum": [
+        1,
+        2
+      ]
     },
     "runtime": {
       "$ref": "https://baron.dev/kline-scene/runtime.schema.json"
@@ -996,6 +1039,13 @@ export const ChartSceneSchema = {
       "maxItems": 1000000,
       "items": {
         "$ref": "https://baron.dev/kline-scene/market-data.schema.json"
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "maxItems": 1000000,
+      "items": {
+        "$ref": "https://baron.dev/kline-scene/market-data-gap.schema.json"
       }
     },
     "chart": {
@@ -1026,6 +1076,33 @@ export const ChartSceneSchema = {
       "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/metadata"
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "version": {
+            "const": 1
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "then": {
+        "properties": {
+          "gaps": false
+        }
+      },
+      "else": {
+        "properties": {
+          "gaps": true
+        },
+        "required": [
+          "gaps"
+        ]
+      }
+    }
+  ],
   "$defs": {
     "symbol": {
       "type": "object",

@@ -196,7 +196,7 @@ if (!(await readFile(cliPng)).equals(await readFile(pythonPng))) {
 }
 const html = cliHtmlBytes.toString('utf8');
 for (const metadata of [
-	'name="baron-scene-version" content="1"',
+	'name="baron-scene-version" content="2"',
 	'name="baron-runtime-version" content="0.2.0"',
 	'name="baron-klinecharts-version" content="10.0.0"',
 	'name="baron-playwright-version" content="1.61.0"',

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://baron.dev/kline-scene/market-data-gap.schema.json",
+  "title": "MarketDataGap",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "timestamp",
+    "barEnd",
+    "classification",
+    "reasonCode",
+    "retryable"
+  ],
+  "properties": {
+    "timestamp": {
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/safeInteger"
+    },
+    "barEnd": {
+      "$ref": "https://baron.dev/kline-scene/common.schema.json#/$defs/safeInteger"
+    },
+    "classification": {
+      "enum": [
+        "INSTRUMENT_NOT_TRADABLE",
+        "SOURCE_ERROR",
+        "NO_TRADE",
+        "UNKNOWN_MISSING"
+      ]
+    },
+    "reasonCode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Z][A-Z0-9_]*$"
+    },
+    "retryable": {
+      "type": "boolean"
+    }
+  }
+}

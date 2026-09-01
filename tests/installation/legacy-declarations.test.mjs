@@ -29,6 +29,42 @@ const legacyDeclarationHashes = new Map([
 
 const additiveDeclarationBlocks = new Map([
 	[
+		'packages/scene-schema/dist/generated/chart-scene.d.ts',
+		[
+			`    /**
+     * @maxItems 1000000
+     */
+    gaps?: MarketDataGap[];
+`,
+			`export interface MarketDataGap {
+    timestamp: number;
+    barEnd: number;
+    classification: 'INSTRUMENT_NOT_TRADABLE' | 'SOURCE_ERROR' | 'NO_TRADE' | 'UNKNOWN_MISSING';
+    reasonCode: string;
+    retryable: boolean;
+}
+`,
+		],
+	],
+	[
+		'packages/scene-schema/dist/generated/drawable-workspace.d.ts',
+		[
+			`    /**
+     * @maxItems 1000000
+     */
+    gaps?: MarketDataGap[];
+`,
+			`export interface MarketDataGap {
+    timestamp: number;
+    barEnd: number;
+    classification: 'INSTRUMENT_NOT_TRADABLE' | 'SOURCE_ERROR' | 'NO_TRADE' | 'UNKNOWN_MISSING';
+    reasonCode: string;
+    retryable: boolean;
+}
+`,
+		],
+	],
+	[
 		'packages/web-runtime/dist/types.d.ts',
 		[
 			`export interface DrawingFloatingToolbarOptions {
@@ -165,6 +201,49 @@ export interface HistoricalDataRuntimeCapability {
 
 function projectLegacyDeclaration(path, content) {
 	let legacyContent = content;
+	if (
+		path === 'packages/scene-schema/dist/generated/chart-scene.d.ts' ||
+		path === 'packages/scene-schema/dist/generated/drawable-workspace.d.ts'
+	) {
+		legacyContent = legacyContent
+			.replace(
+				`export type ChartScene = {
+    [k: string]: unknown | undefined;
+} & {
+`,
+				'export interface ChartScene {\n',
+			)
+			.replace('    version: 1 | 2;\n', '    version: 1;\n')
+			.replace('    metadata: JsonObject;\n};\n', '    metadata: JsonObject;\n}\n')
+			.replace(
+				'    metadata: DrawableWorkspaceMetadata;\n};\n',
+				'    metadata: DrawableWorkspaceMetadata;\n}\n',
+			);
+	}
+	if (path === 'packages/web-runtime/dist/types.d.ts') {
+		legacyContent = legacyContent.replace(
+			"    readonly sceneVersion: ChartScene['version'];\n",
+			'    readonly sceneVersion: 1;\n',
+		);
+	}
+	if (path === 'packages/scene-schema/dist/generated/drawable-workspace.d.ts') {
+		const chartScene = legacyContent.match(/^export interface ChartScene \{[\s\S]*?^\}\n/m)?.[0];
+		assert.notEqual(chartScene, undefined, `${path} is missing ChartScene`);
+		legacyContent = legacyContent
+			.replace(chartScene, '')
+			.replace(
+				`export interface ChartWorkspaceScene {
+    kind: 'chart';
+    document: ChartScene;
+}
+`,
+				`export interface ChartWorkspaceScene {
+    kind: 'chart';
+    document: ChartScene;
+}
+${chartScene}`,
+			);
+	}
 	for (const block of additiveDeclarationBlocks.get(path) ?? []) {
 		assert.equal(
 			legacyContent.includes(block),
