@@ -36,13 +36,13 @@ tests                          跨语言、浏览器、视觉与安装门禁
 安装 Web Runtime：
 
 ```bash
-npm install --save-exact @baron1996/klinecharts-runtime@0.9.4
+npm install --save-exact @baron1996/klinecharts-runtime@0.9.8
 ```
 
 安装 CLI：
 
 ```bash
-npm install --global @baron1996/klinecharts-cli@0.9.7
+npm install --global @baron1996/klinecharts-cli@0.9.8
 baron-kline install-browser
 ```
 
@@ -104,7 +104,7 @@ Workspace 示例一致。
 - 禁止把本仓库路径加入其他工程或 Agent 的可写 workspace。
 
 消费方必须安装明确版本并提交自己的 lockfile，例如
-`@baron1996/klinecharts-runtime@0.9.4` 和 `baron-klinecharts==0.9.7`。升级只能
+`@baron1996/klinecharts-runtime@0.9.8` 和 `baron-klinecharts==0.9.8`。升级只能
 通过本仓库发布新版本后，由消费方主动修改依赖版本完成；不得直接修改本仓库来
 适配某个业务工程。
 
@@ -154,7 +154,7 @@ baron-kline install-browser
 要求 Python 3.11–3.14。浏览器客户端随包安装，但 Chromium 不会被隐式下载。
 
 ```bash
-pip install baron-klinecharts==0.9.7
+pip install baron-klinecharts==0.9.8
 python -m playwright install chromium
 ```
 
@@ -183,11 +183,11 @@ CI 分别使用 `tests/rendering/baselines/github-macos-15` 和
 
 ## 发布
 
-当前发布版本为 `0.9.7`。本次发布 Web Runtime `0.9.7`；Adapter 继续保持 `0.9.7`，
-Scene Schema、CLI、Python 和私有 Render Runtime 继续保持 `0.9.7`，所有内部依赖使用
-精确版本。该版本让标准工具栏服从宿主宽度：空间不足时保持单行并支持移动端横向滑动、
-iOS 惯性滚动、触控板横向滚动和普通鼠标滚轮转换，不再把页面整体撑宽。该能力不提升
-Drawing/Workspace Schema 版本或 Runtime 事件协议版本。
+当前发布版本为 `0.9.8`。本次同步发布 Web Runtime、Adapter、Scene Schema、CLI 和
+Python，私有 Render Runtime 也同步到 `0.9.8`，所有内部依赖使用精确版本。该版本在
+等待更早历史 K 线期间冻结图表平移，历史数据提交、拒绝或加载终止后恢复原交互状态，
+避免连续拖动把视口移出有效数据范围。该能力不提升 Drawing/Workspace Schema 版本或
+Runtime 事件协议版本。
 ChartScene `version` 仍为 `1`；Runtime protocol `0.2.0` 增加显式线性/对数轴、
 价格量度、精确命中与过程事件，同时继续读取 Runtime `0.1.0` 的 M1 场景。
 发布流水线先执行完整验证，再只为版本与 tag 相同的公共包构建一次不可变产物。
