@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "baron-klinecharts"
-version = "0.9.8"
+version = "0.9.9"
 description = "Deterministic ChartScene models, validation, editing, and rendering."
 readme = "README.md"
 requires-python = ">=3.11,<3.15"

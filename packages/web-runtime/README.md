@@ -4,7 +4,7 @@ Browser editing runtime and standard annotation toolbar for deterministic KLineC
 ChartScene files.
 
 ```bash
-npm install --save-exact @baron1996/kline-scene-schema@0.9.8 @baron1996/klinecharts-runtime@0.9.8
+npm install --save-exact @baron1996/kline-scene-schema@0.9.9 @baron1996/klinecharts-runtime@0.9.9
 ```
 
 ```ts
