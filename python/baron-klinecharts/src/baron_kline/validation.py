@@ -161,13 +161,12 @@ def _validate_market_data(scene: dict[str, Any], issues: list[SceneIssue]) -> No
         previous = timestamp
         if (
             bar["low"] > bar["high"]
-            or bar["open"] > bar["high"]
             or bar["close"] < bar["low"]
             or bar["close"] > bar["high"]
         ):
             issues.append(_issue(
                 "INVALID_MARKET_DATA", path,
-                "OHLC values must satisfy open <= high and low <= close <= high.",
+                "OHLC values must satisfy low <= close <= high.",
             ))
         if logarithmic and any(bar[key] <= 0 for key in ("open", "high", "low", "close")):
             issues.append(_issue(

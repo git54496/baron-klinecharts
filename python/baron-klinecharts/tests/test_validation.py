@@ -79,6 +79,14 @@ class ValidationTests(unittest.TestCase):
 
         self.assertEqual(validated["data"][0]["open"], scene["data"][0]["open"])
 
+    def test_accepts_open_above_reported_high(self) -> None:
+        scene = load_fixture("minimal-valid.json")
+        scene["data"][0]["open"] = scene["data"][0]["high"] + 1
+
+        validated = validate_scene(scene)
+
+        self.assertEqual(validated["data"][0]["open"], scene["data"][0]["open"])
+
     def test_rejects_non_finite_and_unsafe_numbers(self) -> None:
         scene = load_fixture("minimal-valid.json")
         scene["metadata"]["unsafe"] = 9_007_199_254_740_992
