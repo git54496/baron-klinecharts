@@ -361,6 +361,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		readonly request: EngineHistoricalDataRequest;
 		readonly callback: import('klinecharts').DataLoaderGetBarsParams['callback'];
 	} | undefined;
+	/** 历史行情请求期间冻结平移前的宿主滚动状态。 */
+	#historicalScrollEnabled: boolean | undefined;
 	/** 历史行情请求的单调序号。 */
 	#historicalDataSequence = 0;
 	/** 交互启用开关。 */
@@ -628,6 +630,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 					period: structuredClone(this.#scene.period),
 					dataCount: this.#scene.data.length,
 				};
+				this.#lockHistoricalScroll();
 				this.#pendingHistoricalData = { request, callback };
 				for (const listener of this.#historicalDataListeners) {
 					listener(structuredClone(request));
@@ -636,13 +639,42 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		};
 	}
 
+	#lockHistoricalScroll(): void {
+		if (this.#historicalScrollEnabled === undefined) {
+			this.#historicalScrollEnabled =
+				this.#chartInteractionSnapshot?.scrollEnabled ??
+				this.#chart.isScrollEnabled();
+		}
+		this.#chart.setScrollEnabled(false);
+	}
+
+	#restoreHistoricalScrollIfIdle(): void {
+		if (
+			this.#pendingHistoricalData !== undefined ||
+			this.#historicalScrollEnabled === undefined
+		) {
+			return;
+		}
+		const scrollEnabled = this.#historicalScrollEnabled;
+		this.#historicalScrollEnabled = undefined;
+		this.#chart.setScrollEnabled(
+			this.#chartInteractionSnapshot === undefined
+				? scrollEnabled
+				: false,
+		);
+	}
+
 	#settlePendingHistoricalData(hasMore: boolean): void {
 		const pending = this.#pendingHistoricalData;
 		if (pending === undefined) {
 			return;
 		}
 		this.#pendingHistoricalData = undefined;
-		pending.callback([], { forward: hasMore, backward: false });
+		try {
+			pending.callback([], { forward: hasMore, backward: false });
+		} finally {
+			this.#restoreHistoricalScrollIfIdle();
+		}
 	}
 
 	#restoreWorkspaceDrawings(drawings: readonly EngineDrawingSnapshot[]): void {
@@ -735,7 +767,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			return;
 		}
 		this.#chartInteractionSnapshot = {
-			scrollEnabled: this.#chart.isScrollEnabled(),
+			scrollEnabled:
+				this.#historicalScrollEnabled ?? this.#chart.isScrollEnabled(),
 			zoomEnabled: this.#chart.isZoomEnabled(),
 			crosshairVisible: this.#chart.getStyles().crosshair.show,
 		};
@@ -750,7 +783,11 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			return;
 		}
 		this.#chartInteractionSnapshot = undefined;
-		this.#chart.setScrollEnabled(snapshot.scrollEnabled);
+		this.#chart.setScrollEnabled(
+			this.#historicalScrollEnabled === undefined
+				? snapshot.scrollEnabled
+				: false,
+		);
 		this.#chart.setZoomEnabled(snapshot.zoomEnabled);
 		this.#chart.setStyles({ crosshair: { show: snapshot.crosshairVisible } });
 	}
@@ -2013,10 +2050,14 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#pendingHistoricalData = undefined;
 		this.#historicalDataLoading = { hasMore };
 		this.#scene = candidate;
-		pending.callback(structuredClone(page) as unknown as import('klinecharts').KLineData[], {
-			forward: hasMore,
-			backward: false,
-		});
+		try {
+			pending.callback(structuredClone(page) as unknown as import('klinecharts').KLineData[], {
+				forward: hasMore,
+				backward: false,
+			});
+		} finally {
+			this.#restoreHistoricalScrollIfIdle();
+		}
 		return {
 			scene: structuredClone(candidate),
 			addedCount: page.length,
@@ -2031,10 +2072,14 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			return false;
 		}
 		this.#pendingHistoricalData = undefined;
-		pending.callback([], {
-			forward: this.#historicalDataLoading?.hasMore ?? false,
-			backward: false,
-		});
+		try {
+			pending.callback([], {
+				forward: this.#historicalDataLoading?.hasMore ?? false,
+				backward: false,
+			});
+		} finally {
+			this.#restoreHistoricalScrollIfIdle();
+		}
 		return true;
 	}
 

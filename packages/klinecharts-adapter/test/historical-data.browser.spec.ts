@@ -10,7 +10,7 @@ async function readFixture(path: string): Promise<string> {
 	return readFile(join(process.cwd(), '..', '..', 'tests', 'fixtures', path), 'utf8');
 }
 
-test('@browser earlier data keeps the visible timestamp at the same pixel', async ({ page }) => {
+test('@browser earlier data locks pending scroll and keeps the visible timestamp at the same pixel', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	await page.evaluate(async (sourceWorkspace) => {
 		const { KLineChartsSceneAdapter } = await import('/src/index.ts');
@@ -54,7 +54,31 @@ test('@browser earlier data keeps the visible timestamp at the same pixel', asyn
 		(window as unknown as { __requests: readonly unknown[] }).__requests.length
 	))).toBe(1);
 
-	const result = await page.evaluate(() => {
+	const pendingReference = await page.evaluate(() => {
+		const adapter = (window as unknown as {
+			__adapter: {
+				projectToPixel(anchor: unknown, paneRole: string): { readonly x?: number };
+			};
+			__requests: Array<{ readonly beforeTimestamp: number }>;
+		}).__adapter;
+		const request = (window as unknown as {
+			__requests: Array<{ readonly beforeTimestamp: number }>;
+		}).__requests[0]!;
+		const timestamp = request.beforeTimestamp + 40 * 86_400_000;
+		const value = 10.4;
+		return {
+			timestamp,
+			value,
+			x: adapter.projectToPixel({ timestamp, value }, 'candle').x!,
+		};
+	});
+
+	await page.mouse.move(120, 280);
+	await page.mouse.down();
+	await page.mouse.move(900, 280, { steps: 12 });
+	await page.mouse.up();
+
+	const result = await page.evaluate((reference) => {
 		const adapter = (window as unknown as {
 			__adapter: {
 				projectToPixel(anchor: unknown, paneRole: string): { readonly x?: number };
@@ -70,10 +94,8 @@ test('@browser earlier data keeps the visible timestamp at the same pixel', asyn
 		const request = (window as unknown as {
 			__requests: Array<{ readonly requestId: string; readonly beforeTimestamp: number }>;
 		}).__requests[0]!;
-		const referenceTimestamp = request.beforeTimestamp + 40 * 86_400_000;
-		const referenceValue = 10.4;
-		const beforeX = adapter.projectToPixel(
-			{ timestamp: referenceTimestamp, value: referenceValue },
+		const pendingX = adapter.projectToPixel(
+			{ timestamp: reference.timestamp, value: reference.value },
 			'candle',
 		).x!;
 		const page = Array.from({ length: 100 }, (_, index) => {
@@ -90,16 +112,35 @@ test('@browser earlier data keeps the visible timestamp at the same pixel', asyn
 		});
 		const committed = adapter.commitHistoricalData(request.requestId, page, false);
 		const afterX = adapter.projectToPixel(
-			{ timestamp: referenceTimestamp, value: referenceValue },
+			{ timestamp: reference.timestamp, value: reference.value },
 			'candle',
 		).x!;
 		return {
 			addedCount: committed.addedCount,
 			dataCount: adapter.inspect().dataCount,
-			pixelDelta: Math.abs(afterX - beforeX),
+			pendingDragPixelDelta: Math.abs(pendingX - reference.x),
+			commitPixelDelta: Math.abs(afterX - reference.x),
 		};
-	});
+	}, pendingReference);
 	expect(result.addedCount).toBe(100);
 	expect(result.dataCount).toBe(420);
-	expect(result.pixelDelta).toBeLessThan(0.5);
+	expect(result.pendingDragPixelDelta).toBeLessThan(0.5);
+	expect(result.commitPixelDelta).toBeLessThan(0.5);
+
+	await page.mouse.move(500, 280);
+	await page.mouse.down();
+	await page.mouse.move(400, 280, { steps: 12 });
+	await page.mouse.up();
+	const restoredX = await page.evaluate((reference) => {
+		const adapter = (window as unknown as {
+			__adapter: {
+				projectToPixel(anchor: unknown, paneRole: string): { readonly x?: number };
+			};
+		}).__adapter;
+		return adapter.projectToPixel(
+			{ timestamp: reference.timestamp, value: reference.value },
+			'candle',
+		).x!;
+	}, pendingReference);
+	expect(Math.abs(restoredX - pendingReference.x)).toBeGreaterThan(1);
 });
