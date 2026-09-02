@@ -19,10 +19,10 @@ const publicPackageNames = [
 ];
 
 const publicPackageVersions = new Map([
-	['@baron1996/kline-scene-schema', '0.9.9'],
-	['@baron1996/klinecharts-adapter', '0.9.9'],
-	['@baron1996/klinecharts-runtime', '0.9.9'],
-	['@baron1996/klinecharts-cli', '0.9.9'],
+	['@baron1996/kline-scene-schema', '0.9.10'],
+	['@baron1996/klinecharts-adapter', '0.9.10'],
+	['@baron1996/klinecharts-runtime', '0.9.10'],
+	['@baron1996/klinecharts-cli', '0.9.10'],
 ]);
 
 test('builds exactly four ordered public npm tarballs with integrity metadata', async () => {

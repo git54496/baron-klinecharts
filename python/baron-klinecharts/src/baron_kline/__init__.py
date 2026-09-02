@@ -122,4 +122,4 @@ __all__ = [
     "hash_canonical_time_series_scene",
 ]
 
-__version__ = "0.9.9"
+__version__ = "0.9.10"
