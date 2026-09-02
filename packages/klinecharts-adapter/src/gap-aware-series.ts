@@ -100,6 +100,23 @@ export function engineDataForScene(scene: ChartScene): readonly KLineData[] {
 		: structuredClone(scene.data) as unknown as KLineData[];
 }
 
+/** 将分页追加的真实 Bar 转为与当前场景一致的引擎载体。 */
+export function engineHistoricalDataForScene(
+	scene: ChartScene,
+	data: readonly MarketData[],
+): KLineData[] {
+	if (!isGapAwareScene(scene)) {
+		return structuredClone(data) as unknown as KLineData[];
+	}
+	return data.map((bar) => {
+		const snapshot = structuredClone(bar);
+		return {
+			...snapshot,
+			__baronTimelineItem: { kind: 'bar', bar: snapshot },
+		} satisfies GapAwareCarrierData;
+	});
+}
+
 export function timelineItemOf(
 	data: KLineData | undefined,
 ): GapAwareTimelineItem | undefined {

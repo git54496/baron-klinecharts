@@ -3,6 +3,7 @@ import { parseChartScene } from '@baron1996/kline-scene-schema';
 import { describe, expect, it } from 'vitest';
 
 import {
+	engineHistoricalDataForScene,
 	gapAwareCandleIndicatorTemplate,
 	timelineItemOf,
 	timelineSlotCount,
@@ -86,5 +87,18 @@ describe('Gap-aware main series carrier', () => {
 			low: null,
 			close: null,
 		});
+	});
+
+	it('wraps prepended historical bars as visible Gap-aware carriers', () => {
+		const scene = gapScene();
+		const historical = [bar(scene.data[0]!.timestamp - 60_000, 9.7)];
+		const carriers = engineHistoricalDataForScene(scene, historical);
+		expect(carriers).toHaveLength(1);
+		expect(timelineItemOf(carriers[0])).toEqual({
+			kind: 'bar',
+			bar: historical[0],
+		});
+		const values = gapAwareCandleIndicatorTemplate.calc(carriers, {} as never);
+		expect(values[0]).toMatchObject({ open: 9.5, close: 9.7 });
 	});
 });

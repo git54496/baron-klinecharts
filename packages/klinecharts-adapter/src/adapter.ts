@@ -36,6 +36,7 @@ import { createStaticDataLoader } from './static-data-loader.js';
 import {
 	assertGapAwareSceneSupported,
 	engineDataForScene,
+	engineHistoricalDataForScene,
 	GAP_AWARE_CANDLE_INDICATOR_ID,
 	gapCount,
 	installGapAwareMainSeries,
@@ -2051,7 +2052,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#historicalDataLoading = { hasMore };
 		this.#scene = candidate;
 		try {
-			pending.callback(structuredClone(page) as unknown as import('klinecharts').KLineData[], {
+			pending.callback(engineHistoricalDataForScene(candidate, page), {
 				forward: hasMore,
 				backward: false,
 			});
