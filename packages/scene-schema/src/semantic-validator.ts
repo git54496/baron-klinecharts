@@ -98,7 +98,6 @@ function validateMarketData(scene: ChartScene, issues: SceneIssue[]): void {
 		previousTimestamp = bar.timestamp;
 		if (
 			bar.low > bar.high ||
-			bar.open < bar.low ||
 			bar.open > bar.high ||
 			bar.close < bar.low ||
 			bar.close > bar.high
@@ -107,7 +106,7 @@ function validateMarketData(scene: ChartScene, issues: SceneIssue[]): void {
 				issue(
 					'INVALID_MARKET_DATA',
 					path,
-					'OHLC values must satisfy low <= open/close <= high.',
+					'OHLC values must satisfy open <= high and low <= close <= high.',
 				),
 			);
 		}

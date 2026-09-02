@@ -1,5 +1,5 @@
 /** Adapter 包版本。 */
-export const ADAPTER_PACKAGE_VERSION = '0.9.10' as const;
+export const ADAPTER_PACKAGE_VERSION = '0.9.11' as const;
 
 /** 唯一允许加载的 KLineCharts 引擎版本。 */
 export const KLINECHARTS_ENGINE_VERSION = '10.0.0' as const;

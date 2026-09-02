@@ -80,6 +80,13 @@ describe('ChartScene semantic validation', () => {
 		});
 	});
 
+	it('accepts an open below the reported low', () => {
+		const scene = makeScene();
+		scene.data[0]!.open = scene.data[0]!.low - 1;
+
+		expect(parseChartScene(scene).data[0]!.open).toBe(scene.data[0]!.open);
+	});
+
 	it('rejects duplicate Pane IDs', () => {
 		const scene = makeScene();
 		const duplicate = structuredClone(scene.panes[0]!);

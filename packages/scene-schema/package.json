@@ -1,6 +1,6 @@
 {
   "name": "@baron1996/kline-scene-schema",
-  "version": "0.9.10",
+  "version": "0.9.11",
   "description": "Strict ChartScene schema, types, validation, and canonical serialization.",
   "type": "module",
   "license": "Apache-2.0",
