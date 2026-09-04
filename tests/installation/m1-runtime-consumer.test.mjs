@@ -26,10 +26,10 @@ const publicPackages = [
 ];
 
 const publicPackageVersions = new Map([
-	['@baron1996/kline-scene-schema', '0.9.11'],
-	['@baron1996/klinecharts-adapter', '0.9.11'],
-	['@baron1996/klinecharts-runtime', '0.9.11'],
-	['@baron1996/klinecharts-cli', '0.9.11'],
+	['@baron1996/kline-scene-schema', '0.9.12'],
+	['@baron1996/klinecharts-adapter', '0.9.12'],
+	['@baron1996/klinecharts-runtime', '0.9.12'],
+	['@baron1996/klinecharts-cli', '0.9.12'],
 ]);
 
 async function loadConsumerPackages() {
@@ -194,7 +194,7 @@ test('four public tarballs support the M1 and M2 Runtime journeys through packag
 		if (packageName === '@baron1996/klinecharts-runtime') {
 			assert.equal(
 				installedManifest.dependencies['@baron1996/klinecharts-adapter'],
-				'0.9.11',
+				'0.9.12',
 			);
 		}
 		for (const dependencySpec of Object.values(installedManifest.dependencies ?? {})) {
@@ -230,9 +230,9 @@ test('four public tarballs support the M1 and M2 Runtime journeys through packag
 			"const schema = await import('@baron1996/kline-scene-schema');",
 			"const adapter = await import('@baron1996/klinecharts-adapter');",
 			"const runtime = await import('@baron1996/klinecharts-runtime');",
-			"if (schema.SCENE_PACKAGE_VERSION !== '0.9.11') throw new Error('Schema root export failed.');",
-			"if (adapter.ADAPTER_PACKAGE_VERSION !== '0.9.11') throw new Error('Adapter root export failed.');",
-			"if (runtime.WEB_RUNTIME_PACKAGE_VERSION !== '0.9.11') throw new Error('Runtime root export failed.');",
+			"if (schema.SCENE_PACKAGE_VERSION !== '0.9.12') throw new Error('Schema root export failed.');",
+			"if (adapter.ADAPTER_PACKAGE_VERSION !== '0.9.12') throw new Error('Adapter root export failed.');",
+			"if (runtime.WEB_RUNTIME_PACKAGE_VERSION !== '0.9.12') throw new Error('Runtime root export failed.');",
 			'const adapterMethods = Object.getOwnPropertyNames(adapter.KLineChartsSceneAdapter.prototype);',
 			"if (adapterMethods.includes('getChart') || adapterMethods.includes('getEngine')) throw new Error('Adapter exposes its internal Chart.');",
 			'const timeSeriesAdapterMethods = Object.getOwnPropertyNames(adapter.TimeSeriesChartsAdapter.prototype);',
@@ -366,7 +366,7 @@ test('four public tarballs support the M1 and M2 Runtime journeys through packag
 		await page.goto(server.url);
 		await page.waitForFunction(() => window.__M1_CONSUMER__?.startedId !== undefined);
 		const readiness = await page.evaluate(() => window.__M1_CONSUMER__);
-		assert.equal(readiness.adapterVersion, '0.9.11');
+		assert.equal(readiness.adapterVersion, '0.9.12');
 		assert.equal(readiness.startedId, 'overlay-m1-consumer-horizontal');
 
 		const drawingCanvas = page.locator('#chart canvas').nth(1);

@@ -77,6 +77,11 @@ export interface DrawingFloatingToolbar {
     destroy(): void;
 }
 `,
+			`    /** 宿主需要整体只读时，独立禁用所有依赖真实数据的动作。 */
+    setDataActionsDisabled(disabled: boolean): void;
+    /** 只禁用画线创建与文本输入，保留已就绪历史 Scene 的轴和导出能力。 */
+    setDrawingActionsDisabled(disabled: boolean): void;
+`,
 			`    setHostActionState(actionId: string, state: {
         readonly pressed?: boolean;
         readonly disabled?: boolean;
@@ -109,6 +114,7 @@ export interface DrawingFloatingToolbar {
 		'packages/web-runtime/dist/drawing/workspace-runtime.d.ts',
 		[
 			'DrawingInteractionOptions, ',
+			'DrawingEnginePort, ',
 			' MarketData,',
 			' EngineHistoricalDataCommitResult,',
 			' HistoricalDataRuntimeCapability,',
@@ -135,6 +141,14 @@ export interface DrawingFloatingToolbar {
     get commitMode(): DrawableWorkspaceRuntimeOptions['commitMode'];
     /** 只暴露公共会话状态，不暴露 Adapter 或 Chart。 */
     getDrawingSessionState(): DrawingSessionController['state'];
+`,
+			`    /** 复用空运行态已经创建的 Adapter，不重新初始化图表容器。 */
+    static createFromEmptyAdapter(container: HTMLElement, value: unknown, engine: DrawingEnginePort, options: DrawableWorkspaceRuntimeOptions): DrawableWorkspaceRuntime;
+`,
+			`    /** 在首份正式 Scene 建立坐标系后，独立安装宿主加载的 DrawingDocument。 */
+    installDrawingDocument(value: unknown): DrawingDocument;
+    /** 在无交互事务时刷新宿主派生的 Drawing 投影，不产生保存候选。 */
+    replaceDrawingDocumentProjection(value: unknown): DrawingDocument;
 `,
 			'        readonly groupId?: string;\n',
 			"        readonly metadata?: NonNullable<Drawing['metadata']>;\n",
