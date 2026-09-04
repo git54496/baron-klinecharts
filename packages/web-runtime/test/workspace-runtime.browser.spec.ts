@@ -119,7 +119,8 @@ test('@browser empty Workspace Runtime keeps chart and toolbar nodes while insta
 			{
 				scopeKey: workspace.drawings.scopeKey,
 				symbol: structuredClone(scene.symbol),
-				period: structuredClone(scene.period),
+				// 属性顺序不是 Period 身份；宿主对象常按 type、span 构造。
+				period: { type: scene.period.type, span: scene.period.span },
 				chart: structuredClone(scene.chart),
 				panes: structuredClone(scene.panes),
 				viewport: viewport as never,

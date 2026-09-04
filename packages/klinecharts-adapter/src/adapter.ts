@@ -519,7 +519,10 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				'Initial Scene ticker must match the empty Runtime bootstrap.',
 			);
 		}
-		if (JSON.stringify(candidate.period) !== JSON.stringify(this.#scene.period)) {
+		if (
+			candidate.period.type !== this.#scene.period.type ||
+			candidate.period.span !== this.#scene.period.span
+		) {
 			throw new SceneError(
 				'INVALID_REFERENCE',
 				'/period',
