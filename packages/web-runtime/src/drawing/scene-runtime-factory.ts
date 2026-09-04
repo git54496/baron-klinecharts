@@ -12,6 +12,8 @@ import {
 	type DrawingInteractionOptions,
 	type DrawingEnginePort,
 	type DrawingProjectionPolicy,
+	type EmptyChartEnginePort,
+	type EmptyChartRuntimeBootstrap,
 } from '@baron1996/klinecharts-adapter';
 
 export interface SceneRuntimeRegistration {
@@ -22,6 +24,11 @@ export interface SceneRuntimeRegistration {
 		workspace: DrawableWorkspaceDocument,
 		options?: SceneRuntimeAdapterOptions,
 	): Promise<DrawingEnginePort>;
+	createEmptyAdapter?(
+		container: HTMLElement,
+		bootstrap: EmptyChartRuntimeBootstrap,
+		options?: SceneRuntimeAdapterOptions,
+	): Promise<EmptyChartEnginePort>;
 	createPolicy(): DrawingProjectionPolicy;
 	readonly defaultTarget: {
 		readonly paneRole: string;
@@ -60,6 +67,8 @@ registerSceneRuntime({
 	parseScene: (value) => parseChartScene(value),
 	createAdapter: (container, workspace, options) =>
 		KLineChartsSceneAdapter.createWorkspace(container, workspace, options),
+	createEmptyAdapter: (container, bootstrap, options) =>
+		KLineChartsSceneAdapter.createEmptyWorkspace(container, bootstrap, options),
 	createPolicy: () => new KLineDrawingProjectionPolicy(),
 	defaultTarget: { paneRole: 'candle', yAxisRole: 'primary' },
 });

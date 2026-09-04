@@ -113,6 +113,10 @@ export interface DrawingFloatingToolbar {
 
 export interface StandardToolbar {
 	readonly element: HTMLElement;
+	/** 宿主需要整体只读时，独立禁用所有依赖真实数据的动作。 */
+	setDataActionsDisabled(disabled: boolean): void;
+	/** 只禁用画线创建与文本输入，保留已就绪历史 Scene 的轴和导出能力。 */
+	setDrawingActionsDisabled(disabled: boolean): void;
 	setHostActionState(
 		actionId: string,
 		state: {

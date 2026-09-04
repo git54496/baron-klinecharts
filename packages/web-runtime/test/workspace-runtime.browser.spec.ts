@@ -102,6 +102,162 @@ test('@browser Workspace Runtime creates a Drawing and commits immediately', asy
 	expect(result.committed).toBe(true);
 });
 
+test('@browser empty Workspace Runtime keeps chart and toolbar nodes while installing Scene and Drawings', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const before = await page.evaluate(async (workspace) => {
+		const {
+			createEmptyDrawableWorkspaceRuntime,
+			createStandardToolbar,
+		} = await import('/src/index.ts');
+		const scene = structuredClone(workspace.scene.document);
+		const viewport = structuredClone(scene.viewport) as Record<string, unknown>;
+		delete viewport.anchorTimestamp;
+		const container = document.querySelector<HTMLElement>('#chart')!;
+		const toolbarContainer = document.querySelector<HTMLElement>('#toolbar')!;
+		const runtime = await createEmptyDrawableWorkspaceRuntime(
+			container,
+			{
+				scopeKey: workspace.drawings.scopeKey,
+				symbol: structuredClone(scene.symbol),
+				period: structuredClone(scene.period),
+				chart: structuredClone(scene.chart),
+				panes: structuredClone(scene.panes),
+				viewport: viewport as never,
+				render: structuredClone(scene.render),
+			},
+			{
+				commitMode: 'host-confirmed',
+				hostActions: [{ actionId: 'retry-history', label: '重试' }],
+			},
+		);
+		const toolbar = createStandardToolbar(toolbarContainer, runtime, {
+			hostActions: [{ actionId: 'retry-history', label: '重试' }],
+		});
+		let exportError = '';
+		try {
+			runtime.exportWorkspace();
+		} catch (error) {
+			exportError = String(error);
+		}
+		(window as unknown as Record<string, unknown>).__runtime = runtime;
+		(window as unknown as Record<string, unknown>).__toolbar = toolbar;
+		(window as unknown as Record<string, unknown>).__chartRoot = container.firstElementChild;
+		return {
+			state: runtime.getRuntimeState(),
+			emptyText: container.querySelector<HTMLElement>('.baron-progressive-runtime-state')?.textContent,
+			drawingDisabled: toolbar.element.querySelector<HTMLButtonElement>('[data-overlay-type]')?.disabled,
+			exportDisabled: toolbar.element.querySelector<HTMLButtonElement>('[data-action="export"]')?.disabled,
+			hostDisabled: toolbar.element.querySelector<HTMLButtonElement>('[data-host-action="retry-history"]')?.disabled,
+			exportError,
+		};
+	}, chartWorkspace);
+
+	expect(before).toMatchObject({
+		state: 'empty',
+		emptyText: '暂无历史 K 线',
+		drawingDisabled: true,
+		exportDisabled: true,
+		hostDisabled: false,
+	});
+	expect(before.exportError).toContain('EMPTY_RUNTIME_NOT_READY');
+
+	const after = await page.evaluate((workspace) => {
+		const state = window as unknown as {
+			__runtime: {
+				setLoadingState(state: 'loading-history' | 'error'): void;
+				installInitialScene(scene: unknown): unknown;
+				installDrawingDocument(document: unknown): unknown;
+				getRuntimeState(): string;
+				listDrawings(): readonly unknown[];
+				exportWorkspace(): typeof workspace;
+			};
+			__toolbar: {
+				readonly element: HTMLElement;
+				setDataActionsDisabled(disabled: boolean): void;
+				setDrawingActionsDisabled(disabled: boolean): void;
+			};
+			__chartRoot: Element;
+		};
+		state.__runtime.setLoadingState('loading-history');
+		state.__runtime.installInitialScene(workspace.scene.document);
+		state.__runtime.installDrawingDocument(workspace.drawings);
+		const container = document.querySelector<HTMLElement>('#chart')!;
+		return {
+			state: state.__runtime.getRuntimeState(),
+			sameChartRoot: container.firstElementChild === state.__chartRoot,
+			toolbarConnected: state.__toolbar.element.isConnected,
+			drawingDisabled: state.__toolbar.element.querySelector<HTMLButtonElement>('[data-overlay-type]')?.disabled,
+			exportDisabled: state.__toolbar.element.querySelector<HTMLButtonElement>('[data-action="export"]')?.disabled,
+			drawings: state.__runtime.listDrawings().length,
+			bars: state.__runtime.exportWorkspace().scene.document.data.length,
+			emptyHidden: container.querySelector<HTMLElement>('.baron-progressive-runtime-state')?.hidden,
+		};
+	}, chartWorkspace);
+
+	expect(after).toEqual({
+		state: 'ready',
+		sameChartRoot: true,
+		toolbarConnected: true,
+		drawingDisabled: false,
+		exportDisabled: false,
+		drawings: 22,
+		bars: 3,
+		emptyHidden: true,
+	});
+
+	const hostDisabled = await page.evaluate(() => {
+		const toolbar = (window as unknown as {
+			__toolbar: {
+				readonly element: HTMLElement;
+				setDataActionsDisabled(disabled: boolean): void;
+			};
+		}).__toolbar;
+		toolbar.setDataActionsDisabled(true);
+		const disabled = toolbar.element.querySelector<HTMLButtonElement>('[data-overlay-type]')?.disabled;
+		toolbar.setDataActionsDisabled(false);
+		const enabled = toolbar.element.querySelector<HTMLButtonElement>('[data-overlay-type]')?.disabled;
+		return { disabled, enabled };
+	});
+	expect(hostDisabled).toEqual({ disabled: true, enabled: false });
+
+	const drawingOnlyDisabled = await page.evaluate(() => {
+		const toolbar = (window as unknown as {
+			__toolbar: {
+				readonly element: HTMLElement;
+				setDrawingActionsDisabled(disabled: boolean): void;
+			};
+		}).__toolbar;
+		toolbar.setDrawingActionsDisabled(true);
+		const result = {
+			drawingDisabled: toolbar.element.querySelector<HTMLButtonElement>('[data-overlay-type]')?.disabled,
+			exportDisabled: toolbar.element.querySelector<HTMLButtonElement>('[data-action="export"]')?.disabled,
+		};
+		toolbar.setDrawingActionsDisabled(false);
+		return result;
+	});
+	expect(drawingOnlyDisabled).toEqual({ drawingDisabled: true, exportDisabled: false });
+
+	const reprojected = await page.evaluate(() => {
+		const state = window as unknown as {
+			__runtime: {
+				exportDrawingDocument(): { drawings: unknown[] };
+				replaceDrawingDocumentProjection(document: unknown): { drawings: unknown[] };
+				listDrawings(): readonly unknown[];
+			};
+			__chartRoot: Element;
+		};
+		const drawingDocument = state.__runtime.exportDrawingDocument();
+		drawingDocument.drawings = drawingDocument.drawings.slice(0, 2);
+		state.__runtime.replaceDrawingDocumentProjection(drawingDocument);
+		return {
+			drawings: state.__runtime.listDrawings().length,
+			sameChartRoot: document.querySelector<HTMLElement>('#chart')?.firstElementChild ===
+				state.__chartRoot,
+		};
+	});
+	expect(reprojected).toEqual({ drawings: 2, sameChartRoot: true });
+});
+
 test('@browser Workspace Runtime host-confirmed commit and reject', async ({ page }) => {
 	await installRuntime(page, chartWorkspace, 'host-confirmed');
 	await page.evaluate(() => {

@@ -55,6 +55,7 @@ import type {
 	EngineDrawingEvent,
 	EngineDrawingSnapshot,
 	EngineDrawingStartRequest,
+	EmptyChartRuntimeBootstrap,
 	EngineHistoricalDataCommitResult,
 	EngineHistoricalDataRequest,
 	EnginePixelCoordinate,
@@ -93,6 +94,10 @@ import {
 	type TouchPrecisionDrawingPhase,
 	type TouchPrecisionPoint,
 } from './interaction/touch-precision-drawing.js';
+import {
+	KLINECHARTS_ENGINE_VERSION,
+	KLINECHARTS_RUNTIME_VERSION,
+} from './version.js';
 
 export type PriceScale = 'linear' | 'logarithmic';
 export type AdapterDragTarget = 'body' | 'anchor';
@@ -223,6 +228,24 @@ function isControlledInteractionOverlay(overlay: SceneOverlay): boolean {
 	return overlay.type === 'horizontalStraightLine' || overlay.type === 'priceMeasurement';
 }
 
+/** Schema 解析可以补充默认字段；安装时只要求空壳显式配置保持一致。 */
+function containsBootstrapConfig(expected: unknown, actual: unknown): boolean {
+	if (Array.isArray(expected)) {
+		return Array.isArray(actual) &&
+			expected.length === actual.length &&
+			expected.every((item, index) => containsBootstrapConfig(item, actual[index]));
+	}
+	if (expected !== null && typeof expected === 'object') {
+		if (actual === null || typeof actual !== 'object' || Array.isArray(actual)) {
+			return false;
+		}
+		return Object.entries(expected).every(([key, value]) =>
+			containsBootstrapConfig(value, (actual as Record<string, unknown>)[key]),
+		);
+	}
+	return Object.is(expected, actual);
+}
+
 /**
  * ChartScene 与 KLineCharts 之间的唯一边界。
  * 引擎对象和内部 ID 永不从该类的公共接口泄露。
@@ -311,6 +334,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	readonly #idMap: EngineIdMap;
 	/** 当前最后一次成功提交、可导出的规范化场景。 */
 	#scene: ChartScene;
+	/** 空图表只属于浏览器加载生命周期；安装首份正式 Scene 后永久关闭。 */
+	#emptyRuntime: boolean;
 	/** 当前引擎容器。 */
 	readonly #container: HTMLElement;
 	/** 创建前容器的内联背景，销毁后恢复。 */
@@ -383,6 +408,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		idMap: EngineIdMap,
 		originalBackground: string,
 		drawingInteraction: DrawingInteractionOptions = {},
+		emptyRuntime = false,
 	) {
 		this.#container = container;
 		this.#scene = scene;
@@ -394,6 +420,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#idMap = idMap;
 		this.#originalBackground = originalBackground;
 		this.#drawingInteraction = structuredClone(drawingInteraction);
+		this.#emptyRuntime = emptyRuntime;
+		this.#mutationsEnabled = !emptyRuntime;
 		this.#hitTolerance('mouse');
 		this.#hitTolerance('touch');
 		this.#installInteractionListeners();
@@ -401,6 +429,128 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#unsubscribeCrosshair = () => {
 			this.#chart.unsubscribeAction('onCrosshairChange', this.#handleCrosshairChange);
 		};
+	}
+
+	/**
+	 * 创建真正无行情数据的浏览器图表。内部空 Scene 从不经过解析、导出或持久化，
+	 * 正式 ChartScene 仍必须满足 data 至少一根 K 的契约。
+	 */
+	public static async createEmptyWorkspace(
+		container: HTMLElement,
+		bootstrap: EmptyChartRuntimeBootstrap,
+		options?: {
+			readonly displayTimezone?: string;
+			readonly drawingInteraction?: DrawingInteractionOptions;
+		},
+	): Promise<KLineChartsSceneAdapter> {
+		const internalScene = {
+			schema: '@baron1996/kline-scene',
+			version: 1,
+			runtime: {
+				engine: 'klinecharts',
+				engineVersion: KLINECHARTS_ENGINE_VERSION,
+				runtimeVersion: KLINECHARTS_RUNTIME_VERSION,
+			},
+			symbol: structuredClone(bootstrap.symbol),
+			period: structuredClone(bootstrap.period),
+			data: [],
+			gaps: [],
+			chart: structuredClone(bootstrap.chart),
+			panes: structuredClone(bootstrap.panes),
+			overlays: [],
+			viewport: {
+				...structuredClone(bootstrap.viewport),
+				anchorTimestamp: 0,
+			},
+			render: structuredClone(bootstrap.render),
+			metadata: {},
+		} as unknown as ChartScene;
+		const originalBackground = container.style.backgroundColor;
+		let handle: EngineHandle | undefined;
+		let adapter: KLineChartsSceneAdapter | undefined;
+		try {
+			handle = await createEngine(container, internalScene, {
+				...(options?.displayTimezone === undefined
+					? {}
+					: { displayTimezone: options.displayTimezone }),
+			});
+			registerProjectOverlays(handle.module.registerOverlay);
+			const idMap = createEngineIdMap(internalScene, handle.chart);
+			applyPanes(internalScene, handle.chart, idMap);
+			adapter = new KLineChartsSceneAdapter(
+				container,
+				internalScene,
+				handle,
+				idMap,
+				originalBackground,
+				options?.drawingInteraction,
+				true,
+			);
+			adapter.#workspaceMode = true;
+			container.style.backgroundColor = internalScene.chart.layout.backgroundColor;
+			return adapter;
+		} catch (error) {
+			if (adapter !== undefined) {
+				adapter.dispose();
+			} else if (handle !== undefined) {
+				handle.module.dispose(container);
+			}
+			container.replaceChildren();
+			container.style.backgroundColor = originalBackground;
+			throw error;
+		}
+	}
+
+	/** 在同一 KLineCharts 实例中安装首份正式非空 Scene。 */
+	public installInitialScene(value: ChartScene): ChartScene {
+		this.#assertActive();
+		if (!this.#emptyRuntime) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/',
+				'Initial Scene can only be installed once on an empty browser Runtime.',
+			);
+		}
+		const candidate = parseChartScene(value);
+		if (candidate.symbol.ticker !== this.#scene.symbol.ticker) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/symbol/ticker',
+				'Initial Scene ticker must match the empty Runtime bootstrap.',
+			);
+		}
+		if (JSON.stringify(candidate.period) !== JSON.stringify(this.#scene.period)) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/period',
+				'Initial Scene period must match the empty Runtime bootstrap.',
+			);
+		}
+		if (
+			!containsBootstrapConfig(this.#scene.chart, candidate.chart) ||
+			!containsBootstrapConfig(this.#scene.panes, candidate.panes)
+		) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/chart',
+				'Initial Scene chart and Pane configuration must match the empty Runtime bootstrap.',
+			);
+		}
+		assertGapAwareSceneSupported(candidate);
+		this.#chart.setSymbol({
+			ticker: candidate.symbol.ticker,
+			pricePrecision: candidate.symbol.pricePrecision,
+			volumePrecision: candidate.symbol.volumePrecision,
+			...(candidate.symbol.name === undefined ? {} : { name: candidate.symbol.name }),
+		});
+		this.#chart.setPeriod(structuredClone(candidate.period));
+		this.#chart.setDataLoader(createStaticDataLoader(engineDataForScene(candidate)));
+		this.#chart.resetData();
+		applyViewport(this.#chart, candidate.viewport);
+		this.#scene = candidate;
+		this.#emptyRuntime = false;
+		this.#mutationsEnabled = true;
+		return structuredClone(candidate);
 	}
 
 	public static async create(
@@ -1840,6 +1990,13 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 
 	public exportScene(): ChartScene {
 		this.#assertActive();
+		if (this.#emptyRuntime) {
+			throw new SceneError(
+				'EXPORT_INVALID',
+				'/',
+				'An empty browser Runtime cannot export a ChartScene.',
+			);
+		}
 		for (let index = 0; index < this.#scene.overlays.length; index++) {
 			const overlay = this.#scene.overlays[index]!;
 			if (!this.#engineOverlays().some((engine) => engine.id === overlay.id)) {
@@ -1898,6 +2055,13 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	/** 同结构场景替换：symbol/period/data/viewport 原子更新，失败恢复旧场景。 */
 	public replaceScene(value: ChartScene): ChartScene {
 		this.#assertActive();
+		if (this.#emptyRuntime) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/',
+				'Use installInitialScene() before replacing an empty Runtime Scene.',
+			);
+		}
 		const candidate = parseChartScene(value);
 		if (candidate.version !== this.#scene.version) {
 			throw new SceneError(

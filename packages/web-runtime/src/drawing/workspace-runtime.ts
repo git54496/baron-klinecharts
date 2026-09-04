@@ -109,7 +109,7 @@ function snapshotToDrawing(snapshot: EngineDrawingSnapshot): Drawing {
  */
 export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle {
 	readonly #container: HTMLElement;
-	readonly #workspace: DrawableWorkspaceDocument;
+	#workspace: DrawableWorkspaceDocument;
 	readonly #engine: DrawingEnginePort;
 	readonly #session: DrawingSessionController;
 	readonly #projectionService = new DrawingProjectionService();
@@ -124,12 +124,17 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 	#sequence = 0;
 	#destroyed = false;
 	#scene: ChartScene | TimeSeriesScene;
+	/** 渐进 Runtime 只允许安装一次首份 DrawingDocument。 */
+	#drawingDocumentInstalled: boolean;
+	/** 首次 Scene 建立时固定的 Drawing 业务身份，不随投影 metadata 变化。 */
+	readonly #drawingMetadataIdentity: DrawingDocument['metadata'];
 
 	private constructor(
 		container: HTMLElement,
 		workspace: DrawableWorkspaceDocument,
 		engine: DrawingEnginePort,
 		options: DrawableWorkspaceRuntimeOptions,
+		drawingDocumentInstalled = true,
 	) {
 		this.#container = container;
 		this.#workspace = workspace;
@@ -139,6 +144,8 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		this.#scene = workspace.scene.document as unknown as
 			| ChartScene
 			| TimeSeriesScene;
+		this.#drawingDocumentInstalled = drawingDocumentInstalled;
+		this.#drawingMetadataIdentity = structuredClone(workspace.drawings.metadata);
 		this.#registration = getSceneRuntime(workspace.scene.kind);
 		this.#session = new DrawingSessionController({
 			runtimeId: this.#runtimeId,
@@ -198,6 +205,30 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 				: { drawingInteraction: options.drawingInteraction }),
 		});
 		return new DrawableWorkspaceRuntime(container, workspace, engine, options);
+	}
+
+	/** 复用空运行态已经创建的 Adapter，不重新初始化图表容器。 */
+	public static createFromEmptyAdapter(
+		container: HTMLElement,
+		value: unknown,
+		engine: DrawingEnginePort,
+		options: DrawableWorkspaceRuntimeOptions,
+	): DrawableWorkspaceRuntime {
+		const workspace = parseDrawableWorkspaceDocument(value);
+		if (workspace.scene.kind !== 'chart' || engine.sceneKind !== 'chart') {
+			throw new Error('DRAWABLE_SCENE_KIND_UNSUPPORTED: empty Runtime only supports chart Workspaces.');
+		}
+		if (options.historicalDataLoading !== undefined) {
+			const port = engine as DrawingEnginePort & HistoricalDataEnginePort;
+			port.configureHistoricalDataLoading(options.historicalDataLoading.hasMore);
+		}
+		return new DrawableWorkspaceRuntime(
+			container,
+			workspace,
+			engine,
+			options,
+			false,
+		);
 	}
 
 	/** 跨周期等宿主编排只能连接显式 host-confirmed Runtime。 */
@@ -337,6 +368,92 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		return parseDrawingDocument(
 			this.#buildDocument(this.#session.confirmedDrawings),
 		);
+	}
+
+	/** 在首份正式 Scene 建立坐标系后，独立安装宿主加载的 DrawingDocument。 */
+	public installDrawingDocument(value: unknown): DrawingDocument {
+		this.#assertUsable();
+		if (this.#drawingDocumentInstalled) {
+			throw new DrawingSessionError(
+				'DRAWING_CHANGE_IN_PROGRESS',
+				'/drawings',
+				'The initial DrawingDocument has already been installed.',
+			);
+		}
+		const installed = this.#applyDrawingDocumentProjection(
+			this.#validateDrawingDocumentProjection(value),
+		);
+		this.#drawingDocumentInstalled = true;
+		return installed;
+	}
+
+	/** 在无交互事务时刷新宿主派生的 Drawing 投影，不产生保存候选。 */
+	public replaceDrawingDocumentProjection(value: unknown): DrawingDocument {
+		this.#assertUsable();
+		if (!this.#drawingDocumentInstalled || this.#session.state !== 'ready') {
+			throw new DrawingSessionError(
+				'DRAWING_CHANGE_IN_PROGRESS',
+				'/drawings',
+				'Drawing projection can only be replaced after installation and outside interactions.',
+			);
+		}
+		return this.#applyDrawingDocumentProjection(
+			this.#validateDrawingDocumentProjection(value),
+		);
+	}
+
+	#validateDrawingDocumentProjection(value: unknown): DrawingDocument {
+		const document = parseDrawingDocument(value);
+		const expected = this.#workspace.drawings;
+		if (
+			document.scopeKey !== expected.scopeKey ||
+			document.coordinateSystem.timezone !== expected.coordinateSystem.timezone ||
+			JSON.stringify(document.coordinateSystem.valueAxes) !==
+				JSON.stringify(expected.coordinateSystem.valueAxes) ||
+			!containsMetadataIdentity(document.metadata, this.#drawingMetadataIdentity)
+		) {
+			throw new DrawingSessionError(
+				'DRAWING_PROJECTION_INVALID',
+				'/drawings',
+				'DrawingDocument identity or coordinate system does not match the installed Scene.',
+			);
+		}
+		this.#projectionService.projectDocument({
+			scene: this.#projectionScene(),
+			drawings: document,
+		});
+		return document;
+	}
+
+	#applyDrawingDocumentProjection(document: DrawingDocument): DrawingDocument {
+		const previousDrawings = this.#session.confirmedDrawings;
+		const previousWorkspace = this.#workspace;
+		try {
+			this.#session.restoreConfirmed(
+				document.drawings.map((drawing) => drawingToSnapshot(drawing)),
+			);
+			this.#workspace = parseDrawableWorkspaceDocument({
+				...structuredClone(this.#workspace),
+				drawings: structuredClone(document),
+				binding: {
+					scopeKey: document.scopeKey,
+					timezone: document.coordinateSystem.timezone,
+					valueAxes: structuredClone(document.coordinateSystem.valueAxes),
+				},
+			});
+		} catch (error) {
+			this.#session.restoreConfirmed(previousDrawings);
+			this.#workspace = previousWorkspace;
+			throw error;
+		}
+		for (const listener of this.#drawingChangeListeners) {
+			try {
+				listener();
+			} catch {
+				// 宿主投影刷新已经提交；单个 UI 监听失败不能回滚 Drawing。
+			}
+		}
+		return structuredClone(document);
 	}
 
 	public exportWorkspace(): DrawableWorkspaceDocument {
@@ -637,6 +754,20 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 			);
 		}
 	}
+}
+
+function containsMetadataIdentity(
+	actual: DrawingDocument['metadata'],
+	expected: DrawingDocument['metadata'],
+): boolean {
+	if (expected === undefined) {
+		return true;
+	}
+	if (actual === undefined) {
+		return false;
+	}
+	return Object.entries(expected).every(([key, value]) =>
+		JSON.stringify(actual[key]) === JSON.stringify(value));
 }
 
 export async function createDrawableWorkspaceRuntime(

@@ -15,6 +15,15 @@ describe('ChartScene foundation', () => {
 		);
 	});
 
+	it('keeps the persisted ChartScene data non-empty contract', () => {
+		const scene = structuredClone(minimalScene);
+		scene.data = [];
+
+		expect(() => parseChartScene(scene)).toThrowError(
+			expect.objectContaining({ code: 'INVALID_MARKET_DATA', path: '/data' }),
+		);
+	});
+
 	it('preserves independently missing volume and turnover', () => {
 		const scene = structuredClone(minimalScene);
 		delete scene.data[0].volume;

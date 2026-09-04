@@ -75,6 +75,21 @@ function applyHostActionState(
 
 type StandardDrawingRuntime = DrawingRuntimeCapability & RuntimeAuxiliaryCapability;
 
+interface RuntimeStateAware {
+	getRuntimeState(): 'empty' | 'loading-history' | 'error' | 'ready';
+	subscribeRuntimeState(listener: (state: 'empty' | 'loading-history' | 'error' | 'ready') => void): () => void;
+}
+
+function runtimeStateCapability(
+	runtime: StandardDrawingRuntime,
+): RuntimeStateAware | undefined {
+	const candidate = runtime as StandardDrawingRuntime & Partial<RuntimeStateAware>;
+	return typeof candidate.getRuntimeState === 'function' &&
+		typeof candidate.subscribeRuntimeState === 'function'
+		? candidate as RuntimeStateAware
+		: undefined;
+}
+
 function downloadArtifact(
 	runtime: StandardDrawingRuntime,
 	fileName: string,
@@ -282,6 +297,8 @@ export function createStandardToolbar(
 		`baron-kline-toolbar-tooltip-${toolbarId}`,
 	);
 	const cleanupCallbacks: Array<() => void> = [];
+	const dataDependentControls: Array<HTMLButtonElement | HTMLInputElement | HTMLSelectElement> = [];
+	const drawingDependentControls: Array<HTMLButtonElement | HTMLInputElement> = [];
 	const handleViewportWheel = (event: WheelEvent): void => {
 		if (
 			event.ctrlKey ||
@@ -309,6 +326,8 @@ export function createStandardToolbar(
 	textInput.dataset.action = 'overlay-text';
 	textInput.setAttribute('aria-label', '标注文本');
 	textInput.placeholder = '输入标注文本';
+	dataDependentControls.push(textInput);
+	drawingDependentControls.push(textInput);
 	const scaleControl = createSelectControl('价格轴', 'price-scale', [
 		{ value: 'linear', label: '线性' },
 		{ value: 'logarithmic', label: '对数' },
@@ -342,6 +361,10 @@ export function createStandardToolbar(
 		mainSeriesControl.select.value = mainSeries.activeType;
 	}
 	scaleControl.select.value = descriptor.valueAxis.activeScale;
+	dataDependentControls.push(scaleControl.select);
+	if (mainSeriesControl !== null) {
+		dataDependentControls.push(mainSeriesControl.select);
+	}
 
 	const handleScaleChange = async (): Promise<void> => {
 		await runtime.setValueAxisScale(scaleControl.select.value as 'linear' | 'logarithmic');
@@ -420,6 +443,7 @@ export function createStandardToolbar(
 						};
 				const button = createIconButton(presentation, action);
 				button.element.dataset.action = presentation.action;
+				dataDependentControls.push(button.element);
 				groupElement.append(button.element);
 				cleanupCallbacks.push(
 					button.cleanup,
@@ -480,6 +504,8 @@ export function createStandardToolbar(
 				buttonElement.dataset.overlayType = overlayType;
 				buttonElement.setAttribute('aria-pressed', 'false');
 				overlayButtons.push(buttonElement);
+				dataDependentControls.push(buttonElement);
+				drawingDependentControls.push(buttonElement);
 				groupElement.append(buttonElement);
 				cleanupCallbacks.push(
 					button.cleanup,
@@ -503,11 +529,49 @@ export function createStandardToolbar(
 	textField.append(textLabel, textInput);
 	content.append(textField);
 
+	const stateCapability = runtimeStateCapability(runtime);
+	let runtimeReady = stateCapability === undefined;
+	let hostDataActionsDisabled = false;
+	let hostDrawingActionsDisabled = false;
+	const applyDataActionState = (): void => {
+		for (const control of dataDependentControls) {
+			control.disabled = !runtimeReady || hostDataActionsDisabled;
+		}
+		if (hostDrawingActionsDisabled) {
+			for (const control of drawingDependentControls) {
+				control.disabled = true;
+			}
+		}
+	};
+	if (stateCapability !== undefined) {
+		const applyRuntimeState = (state: ReturnType<RuntimeStateAware['getRuntimeState']>): void => {
+			runtimeReady = state === 'ready';
+			applyDataActionState();
+			root.dataset.runtimeState = state;
+		};
+		applyRuntimeState(stateCapability.getRuntimeState());
+		cleanupCallbacks.push(stateCapability.subscribeRuntimeState(applyRuntimeState));
+	}
+
 	container.append(root);
 	let destroyed = false;
 	let unregisterRuntime = (): void => {};
 	const toolbar: StandardToolbar = {
 		element: root,
+		setDataActionsDisabled(disabled): void {
+			if (destroyed) {
+				throw new Error('STANDARD_TOOLBAR_DESTROYED');
+			}
+			hostDataActionsDisabled = disabled;
+			applyDataActionState();
+		},
+		setDrawingActionsDisabled(disabled): void {
+			if (destroyed) {
+				throw new Error('STANDARD_TOOLBAR_DESTROYED');
+			}
+			hostDrawingActionsDisabled = disabled;
+			applyDataActionState();
+		},
 		setHostActionState(actionId, state): void {
 			if (destroyed) {
 				throw new Error('STANDARD_TOOLBAR_DESTROYED');

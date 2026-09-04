@@ -96,6 +96,21 @@ export interface EngineHistoricalDataCommitResult {
 	readonly hasMore: boolean;
 }
 
+/** 浏览器空运行态初始化所需的非持久化图表外壳。 */
+export interface EmptyChartRuntimeBootstrap {
+	readonly symbol: ChartScene['symbol'];
+	readonly period: ChartScene['period'];
+	readonly chart: ChartScene['chart'];
+	readonly panes: ChartScene['panes'];
+	readonly viewport: Omit<ChartScene['viewport'], 'anchorTimestamp'>;
+	readonly render: ChartScene['render'];
+}
+
+/** 只在浏览器加载生命周期内存在的空图表引擎端口。 */
+export interface EmptyChartEnginePort extends DrawingEnginePort {
+	installInitialScene(scene: ChartScene): ChartScene;
+}
+
 /** Chart Adapter 可选实现的历史行情端口。 */
 export interface HistoricalDataEnginePort {
 	configureHistoricalDataLoading(hasMore: boolean): void;

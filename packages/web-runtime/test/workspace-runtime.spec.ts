@@ -22,7 +22,10 @@ import {
 	registerSceneRuntime,
 	type SceneRuntimeAdapterOptions,
 } from '../src/drawing/scene-runtime-factory.js';
-import { createDrawableWorkspaceRuntime } from '../src/drawing/workspace-runtime.js';
+import {
+	DrawableWorkspaceRuntime,
+	createDrawableWorkspaceRuntime,
+} from '../src/drawing/workspace-runtime.js';
 import type { WorkspaceRuntimeEvent } from '../src/drawing/workspace-events.js';
 
 class MockEngine implements DrawingEnginePort {
@@ -371,6 +374,50 @@ describe('DrawableWorkspaceRuntime', () => {
 		expect(artifact.mediaType).toBe('application/json');
 		expect(new TextDecoder().decode(artifact.bytes)).toContain(
 			'"schema":"@baron1996/drawable-workspace"',
+		);
+	});
+
+	it('installs the first DrawingDocument independently on a reused empty Adapter', () => {
+		const workspace = structuredClone(chartWorkspaceFixture) as unknown as DrawableWorkspaceDocument;
+		const document = {
+			...structuredClone(workspace.drawings),
+			metadata: { adjustment: 'qfq' },
+		};
+		workspace.drawings = {
+			...structuredClone(document),
+			drawings: [],
+		};
+		const engine = new MockEngine();
+		const runtime = DrawableWorkspaceRuntime.createFromEmptyAdapter(
+			{} as HTMLElement,
+			workspace,
+			engine,
+			{ commitMode: 'host-confirmed' },
+		);
+
+		expect(runtime.listDrawings()).toHaveLength(0);
+		expect(() => runtime.installDrawingDocument({
+			...structuredClone(document),
+			scopeKey: 'other-scope',
+		})).toThrowError(expect.objectContaining({ code: 'DRAWING_PROJECTION_INVALID' }));
+		expect(() => runtime.installDrawingDocument({
+			...structuredClone(document),
+			metadata: { ...document.metadata, adjustment: 'hfq' },
+		})).toThrowError(expect.objectContaining({ code: 'DRAWING_PROJECTION_INVALID' }));
+
+		const installed = runtime.installDrawingDocument(document);
+		expect(installed.drawings).toHaveLength(22);
+		expect(runtime.listDrawings()).toHaveLength(22);
+		expect(runtime.exportWorkspace().drawings).toEqual(document);
+		const projected = {
+			...structuredClone(document),
+			drawings: structuredClone(document.drawings.slice(0, 3)),
+		};
+		expect(runtime.replaceDrawingDocumentProjection(projected).drawings).toHaveLength(3);
+		expect(runtime.listDrawings()).toHaveLength(3);
+		expect(runtime.exportDrawingDocument()).toEqual(projected);
+		expect(() => runtime.installDrawingDocument(document)).toThrowError(
+			expect.objectContaining({ code: 'DRAWING_CHANGE_IN_PROGRESS' }),
 		);
 	});
 

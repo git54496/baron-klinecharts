@@ -5,6 +5,7 @@ export { SUPPORTED_OVERLAYS } from '@baron1996/klinecharts-adapter';
 export * from './cross-period/coordinator.js';
 export * from './drawing/capabilities.js';
 export * from './drawing/projection-service.js';
+export * from './drawing/progressive-workspace-runtime.js';
 export * from './drawing/runtime-capability-descriptor.js';
 export * from './drawing/scene-runtime-factory.js';
 export * from './drawing/session-controller.js';
