@@ -21,7 +21,6 @@ import { deepFreeze } from './workspace-events.js';
 export type DrawingSessionState =
 	| 'ready'
 	| 'interacting'
-	| 'preparing-candidate'
 	| 'awaiting-host-confirmation'
 	| 'reprojecting'
 	| 'terminal-error'
@@ -221,7 +220,7 @@ export class DrawingSessionController {
 		const confirmedAfter = rollbackDrawings.filter((drawing) =>
 			!requestedIds.has(drawing.id),
 		);
-		this.#state = 'preparing-candidate';
+		this.#state = 'interacting';
 		this.#suppressEngineEvents = true;
 		try {
 			this.#options.engine.restoreDrawings(confirmedAfter);

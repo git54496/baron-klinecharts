@@ -95,6 +95,7 @@ export interface DrawingFloatingToolbar {
 		'packages/web-runtime/dist/runtime.d.ts',
 		[
 			'    updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot;\n',
+			'    removeDrawings(ids: readonly string[]): boolean;\n',
 			`    getDrawingMutationState(): 'ready';
     subscribeDrawingChanges(listener: () => void): () => void;
 `,
@@ -140,6 +141,7 @@ export interface DrawingFloatingToolbar {
 `,
 			"import { DrawingSessionController } from './session-controller.js';\n",
 			'    updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot;\n',
+			'    removeDrawings(ids: readonly string[]): boolean;\n',
 			`    getDrawingMutationState(): 'ready' | 'busy';
     subscribeDrawingChanges(listener: () => void): () => void;
 `,
@@ -175,6 +177,12 @@ export interface DrawingFloatingToolbar {
 			'        readonly groupId?: string;\n',
 			"        readonly metadata?: NonNullable<EngineDrawingSnapshot['metadata']>;\n",
 			'    updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot;\n',
+			`    /**
+     * 原子删除多个 Drawing：引擎只应用一次完整后态，会话只发布一个候选文档。
+     * 调用方负责决定业务上允许删除的 ID（例如工具栏会排除锁定标注）。
+     */
+    removeDrawings(ids: readonly string[]): boolean;
+`,
 			`    /** 当前已确认的投影 Scene；仅返回深拷贝，协调层不能取得引擎对象。 */
     get projectionScene(): ProjectionScene;
 `,
@@ -202,6 +210,9 @@ export interface HistoricalDataRuntimeCapability {
 }
 `,
 			'    updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot;\n',
+			`    /** 将多个 Drawing 的删除收敛为一次 Runtime 变更。 */
+    removeDrawings(ids: readonly string[]): boolean;
+`,
 			`    getDrawingMutationState(): 'ready' | 'busy';
     subscribeDrawingChanges(listener: () => void): () => void;
 `,

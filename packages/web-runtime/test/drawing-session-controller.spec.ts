@@ -318,7 +318,7 @@ describe('DrawingSessionController', () => {
 		]);
 
 		expect(controller.removeDrawings(['drawing-a', 'drawing-b'])).toBe(true);
-		expect(controller.state).toBe('preparing-candidate');
+		expect(controller.state).toBe('interacting');
 		expect([...engine.drawings.keys()]).toEqual(['locked']);
 		expect(controller.confirmedDrawings).toHaveLength(3);
 
