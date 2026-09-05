@@ -152,6 +152,46 @@ function createSection(label: string, end = false): HTMLDivElement {
 	return section;
 }
 
+function createSettingsRow(
+	labelText: string,
+	settingName: string,
+): {
+	readonly row: HTMLDivElement;
+	readonly control: HTMLDivElement;
+} {
+	const row = document.createElement('div');
+	row.className = 'baron-chart-workspace-popover__row';
+	row.dataset.settingName = settingName;
+	const label = document.createElement('span');
+	label.className = 'baron-chart-workspace-popover__label';
+	label.textContent = labelText;
+	const control = document.createElement('div');
+	control.className = 'baron-chart-workspace-popover__control';
+	row.append(label, control);
+	return { row, control };
+}
+
+function createSegmentedControl(
+	label: string,
+	action: string,
+): HTMLDivElement {
+	const control = document.createElement('div');
+	control.className = 'baron-chart-workspace-popover__segmented';
+	control.dataset.action = action;
+	control.setAttribute('role', 'group');
+	control.setAttribute('aria-label', label);
+	return control;
+}
+
+function selectSegment<Value extends string>(
+	buttons: ReadonlyMap<Value, HTMLButtonElement>,
+	activeValue: Value,
+): void {
+	for (const [value, button] of buttons) {
+		button.setAttribute('aria-pressed', String(value === activeValue));
+	}
+}
+
 function createPopover(
 	button: HTMLButtonElement,
 	id: string,
@@ -582,75 +622,76 @@ export function createChartWorkspaceToolbar(
 	);
 	openPopovers.push(settingsPopover);
 
+	const settingsList = document.createElement('div');
+	settingsList.className = 'baron-chart-workspace-popover__settings';
 	if ((options.settingsHostActions?.length ?? 0) > 0) {
-		const group = document.createElement('div');
-		group.className = 'baron-chart-workspace-popover__group';
-		const title = document.createElement('div');
-		title.className = 'baron-chart-workspace-popover__title';
-		title.textContent = '宿主设置';
-		const grid = document.createElement('div');
-		grid.className = 'baron-chart-workspace-popover__grid';
+		const { row, control } = createSettingsRow('复权', 'adjustment');
+		const segmented = createSegmentedControl('复权', 'host-settings');
 		for (const action of options.settingsHostActions ?? []) {
-			const control = hostActionControls.get(action.actionId)!;
-			grid.append(control.button);
-			group.append(control.error);
+			const hostControl = hostActionControls.get(action.actionId)!;
+			hostControl.button.classList.add(
+				'baron-chart-workspace-popover__segment',
+			);
+			segmented.append(hostControl.button);
+			control.append(hostControl.error);
 		}
-		group.prepend(title, grid);
-		settingsPopover.element.append(group);
+		control.prepend(segmented);
+		settingsList.append(row);
 	}
 
-	const chartSettingsGroup = document.createElement('div');
-	chartSettingsGroup.className = 'baron-chart-workspace-popover__group';
-	const chartSettingsTitle = document.createElement('div');
-	chartSettingsTitle.className = 'baron-chart-workspace-popover__title';
-	chartSettingsTitle.textContent = '图表显示';
-	chartSettingsGroup.append(chartSettingsTitle);
 	if (descriptor.valueAxis.mutable) {
-		const row = document.createElement('label');
-		row.className = 'baron-chart-workspace-popover__row';
-		const label = document.createElement('span');
-		label.className = 'baron-chart-workspace-popover__label';
-		label.textContent = '价格轴';
-		const select = document.createElement('select');
-		select.className = 'baron-chart-workspace-toolbar__select';
-		select.dataset.action = 'price-scale';
+		const { row, control } = createSettingsRow('价格轴', 'price-scale');
+		const segmented = createSegmentedControl('价格轴', 'price-scale');
+		const scaleButtons = new Map<
+			'linear' | 'logarithmic',
+			HTMLButtonElement
+		>();
 		for (const scale of descriptor.valueAxis.supportedScales) {
-			const option = document.createElement('option');
-			option.value = scale;
-			option.textContent = scale === 'linear' ? '线性' : '对数';
-			select.append(option);
+			const label = scale === 'linear' ? '线性' : '对数';
+			const button = createButton({
+				label: `${label}价格轴`,
+				text: label,
+				className: 'baron-chart-workspace-popover__segment',
+			});
+			button.dataset.priceScale = scale;
+			button.setAttribute(
+				'aria-pressed',
+				String(scale === descriptor.valueAxis.activeScale),
+			);
+			scaleButtons.set(scale, button);
+			segmented.append(button);
 		}
-		select.value = descriptor.valueAxis.activeScale;
 		let committedScale = descriptor.valueAxis.activeScale;
-		const changeScale = async (): Promise<void> => {
-			try {
-				await runtime.setValueAxisScale(
-					select.value as 'linear' | 'logarithmic',
-				);
-				committedScale = select.value as 'linear' | 'logarithmic';
-			} catch (error) {
-				select.value = committedScale;
-				throw error;
-			}
-		};
-		select.addEventListener('change', changeScale);
-		cleanupCallbacks.push(() =>
-			select.removeEventListener('change', changeScale),
-		);
-		dataControls.push(select);
-		row.append(label, select);
-		chartSettingsGroup.append(row);
+		for (const [scale, button] of scaleButtons) {
+			const changeScale = async (): Promise<void> => {
+				if (scale === committedScale) {
+					return;
+				}
+				try {
+					await runtime.setValueAxisScale(scale);
+					committedScale = scale;
+					selectSegment(scaleButtons, committedScale);
+				} catch (error) {
+					selectSegment(scaleButtons, committedScale);
+					throw error;
+				}
+			};
+			button.addEventListener('click', changeScale);
+			cleanupCallbacks.push(() =>
+				button.removeEventListener('click', changeScale),
+			);
+			dataControls.push(button);
+		}
+		control.append(segmented);
+		settingsList.append(row);
 	}
 	if (descriptor.mainSeriesPresentation !== null) {
 		const mainSeries = descriptor.mainSeriesPresentation;
-		const row = document.createElement('label');
-		row.className = 'baron-chart-workspace-popover__row';
-		const label = document.createElement('span');
-		label.className = 'baron-chart-workspace-popover__label';
-		label.textContent = '主序列';
+		const { row, control } = createSettingsRow('主序列', 'main-series');
 		const select = document.createElement('select');
 		select.className = 'baron-chart-workspace-toolbar__select';
 		select.dataset.action = 'main-series';
+		select.setAttribute('aria-label', '主序列');
 		for (const presentation of mainSeries.presentations) {
 			const option = document.createElement('option');
 			option.value = presentation.type;
@@ -672,10 +713,10 @@ export function createChartWorkspaceToolbar(
 			select.removeEventListener('change', changeMainSeries),
 		);
 		dataControls.push(select);
-		row.append(label, select);
-		chartSettingsGroup.append(row);
+		control.append(select);
+		settingsList.append(row);
 	}
-	settingsPopover.element.append(chartSettingsGroup);
+	settingsPopover.element.append(settingsList);
 
 	if (options.fullscreenControl !== 'hidden') {
 		const fullscreenTarget =

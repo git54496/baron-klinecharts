@@ -166,9 +166,37 @@ export const CHART_WORKSPACE_TOOLBAR_STYLES = String.raw`
 .baron-chart-workspace-popover__grid { display: grid; grid-template-columns: repeat(3, minmax(58px, 1fr)); gap: 5px; }
 .baron-chart-workspace-popover__grid .baron-chart-workspace-toolbar__button { width: 100%; border: 1px solid rgba(231, 233, 238, 1); }
 .baron-chart-workspace-popover__group + .baron-chart-workspace-popover__group { padding-top: 10px; margin-top: 10px; border-top: 1px solid rgba(233, 235, 239, 1); }
-.baron-chart-workspace-popover__row { display: grid; grid-template-columns: 76px minmax(120px, 1fr); align-items: center; gap: 10px; min-height: 34px; }
+.baron-chart-workspace-popover__settings { display: grid; gap: 8px; }
+.baron-chart-workspace-popover__row { display: grid; grid-template-columns: 56px minmax(152px, 1fr); align-items: center; gap: 12px; min-height: 32px; }
 .baron-chart-workspace-popover__label { color: rgba(102, 108, 122, 1); font-size: 11px; }
+.baron-chart-workspace-popover__control { display: grid; min-width: 0; gap: 4px; }
 .baron-chart-workspace-popover__row .baron-chart-workspace-toolbar__select { width: 100%; max-width: none; background: rgba(247, 248, 250, 1); border: 1px solid rgba(226, 228, 233, 1); border-radius: 6px; }
+.baron-chart-workspace-popover__segmented {
+	display: inline-flex;
+	width: 100%;
+	padding: 2px;
+	background: rgba(244, 246, 249, 1);
+	border: 1px solid rgba(226, 228, 233, 1);
+	border-radius: 999px;
+}
+.baron-chart-workspace-popover__segmented .baron-chart-workspace-popover__segment {
+	flex: 1 1 0;
+	min-width: 0;
+	height: 26px;
+	padding: 0 10px;
+	border-radius: 999px;
+	font-size: 11px;
+	transition: color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+}
+.baron-chart-workspace-popover__segmented .baron-chart-workspace-popover__segment:hover:not(:disabled) {
+	color: rgba(41, 98, 255, 1);
+	background: rgba(41, 98, 255, .06);
+}
+.baron-chart-workspace-popover__segmented .baron-chart-workspace-popover__segment[aria-pressed="true"] {
+	color: rgba(41, 98, 255, 1);
+	background: rgba(255, 255, 255, 1);
+	box-shadow: 0 1px 3px rgba(20, 23, 31, .14);
+}
 .baron-chart-workspace-popover__text-form { display: flex; gap: 6px; }
 .baron-chart-workspace-popover__text-form input {
 	width: 180px;
@@ -204,10 +232,12 @@ export const CHART_WORKSPACE_TOOLBAR_STYLES = String.raw`
 	.baron-chart-workspace-toolbar--top { height: 42px; padding: 0 4px; }
 	.baron-chart-workspace-toolbar__timezone { padding-left: 3px; }
 	.baron-chart-workspace-toolbar__select { max-width: 112px; }
+	.baron-chart-workspace-popover__row { grid-template-columns: 50px minmax(146px, 1fr); gap: 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
 	.baron-chart-workspace-toolbar__button,
-	.baron-chart-workspace-popover { transition: none; }
+	.baron-chart-workspace-popover,
+	.baron-chart-workspace-popover__segmented .baron-chart-workspace-popover__segment { transition: none; }
 }
 `;

@@ -608,7 +608,8 @@ test('@browser composite chart toolbar separates market, settings, and Drawing c
 					{ actionId: 'period.1d', label: '日' },
 				],
 				settingsHostActions: [
-					{ actionId: 'adjustment.qfq', label: '前复权', pressed: true },
+					{ actionId: 'adjustment.none', label: '不复权', pressed: true },
+					{ actionId: 'adjustment.qfq', label: '前复权' },
 				],
 				displayTimezoneChoices: [
 					{ value: 'instrument', label: '标的时区', timezone: workspace.scene.document.chart.timezone },
@@ -632,6 +633,24 @@ test('@browser composite chart toolbar separates market, settings, and Drawing c
 		const timezone = toolbar.topElement.querySelector<HTMLSelectElement>('[data-action="display-timezone"]')!;
 		timezone.value = 'utc';
 		timezone.dispatchEvent(new Event('change'));
+		const settingsButton = toolbar.topElement.querySelector<HTMLButtonElement>(
+			'[data-action="settings"]',
+		)!;
+		settingsButton.click();
+		const settingsPopover = document.querySelector<HTMLElement>('[id^="baron-workspace-settings-"]')!;
+		settingsPopover.querySelector<HTMLButtonElement>(
+			'[data-host-action="adjustment.qfq"]',
+		)!.click();
+		settingsPopover.querySelector<HTMLButtonElement>(
+			'[data-price-scale="logarithmic"]',
+		)!.click();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const mainSeriesSelect = settingsPopover.querySelector<HTMLSelectElement>(
+			'[data-action="main-series"]',
+		)!;
+		mainSeriesSelect.value = 'area';
+		mainSeriesSelect.dispatchEvent(new Event('change'));
+		settingsButton.click();
 		const annotationButton = toolbar.leftElement.querySelector<HTMLButtonElement>(
 			'[data-overlay-type="simpleAnnotation"]',
 		)!;
@@ -641,8 +660,6 @@ test('@browser composite chart toolbar separates market, settings, and Drawing c
 		)!;
 		textPopover.querySelector<HTMLInputElement>('input')!.value = '压力位';
 		textPopover.querySelector<HTMLFormElement>('form')!.requestSubmit();
-		toolbar.topElement.querySelector<HTMLButtonElement>('[data-action="settings"]')!.click();
-		const settingsPopover = document.querySelector<HTMLElement>('[id^="baron-workspace-settings-"]')!;
 		const exported = runtime.exportWorkspace();
 		const scene = exported.scene.document as typeof workspace.scene.document;
 		const snapshot = {
@@ -654,13 +671,38 @@ test('@browser composite chart toolbar separates market, settings, and Drawing c
 			displayTimezone: runtime.getDisplayTimezone(),
 			sceneTimezone: scene.chart.timezone,
 			originalSceneTimezone: workspace.scene.document.chart.timezone,
+			settingRows: [...settingsPopover.querySelectorAll<HTMLElement>('[data-setting-name]')]
+				.map((row) => row.dataset.settingName),
+			settingLabels: [...settingsPopover.querySelectorAll<HTMLElement>(
+				'.baron-chart-workspace-popover__label',
+			)].map((label) => label.textContent),
+			groupTitles: settingsPopover.querySelectorAll(
+				'.baron-chart-workspace-popover__title',
+			).length,
 			hasAdjustment: settingsPopover.querySelector('[data-host-action="adjustment.qfq"]') !== null,
 			hasPriceScale: settingsPopover.querySelector('[data-action="price-scale"]') !== null,
 			hasMainSeries: settingsPopover.querySelector('[data-action="main-series"]') !== null,
+			adjustmentOptions: [...settingsPopover.querySelectorAll<HTMLButtonElement>(
+				'[data-action="host-settings"] [data-host-action]',
+			)].map((button) => ({
+				label: button.textContent,
+				pressed: button.getAttribute('aria-pressed'),
+			})),
+			priceScaleOptions: [...settingsPopover.querySelectorAll<HTMLButtonElement>(
+				'[data-action="price-scale"] [data-price-scale]',
+			)].map((button) => ({
+				label: button.textContent,
+				pressed: button.getAttribute('aria-pressed'),
+			})),
+			mainSeriesTag: mainSeriesSelect.tagName,
+			priceScale: scene.panes[0].yAxes[0].scale,
+			mainSeries: scene.chart.candle.type,
 			annotationPressed: annotationButton.getAttribute('aria-pressed'),
 			textPopoverHidden: textPopover.hidden,
 			periodRequested: events.some((event) =>
 				event.type === 'host-action-requested' && event.actionId === 'period.1d'),
+			adjustmentRequested: events.some((event) =>
+				event.type === 'host-action-requested' && event.actionId === 'adjustment.qfq'),
 		};
 		toolbar.destroy();
 		const remaining = document.querySelectorAll(
@@ -679,12 +721,27 @@ test('@browser composite chart toolbar separates market, settings, and Drawing c
 		displayTimezone: 'UTC',
 		sceneTimezone: result.originalSceneTimezone,
 		originalSceneTimezone: result.originalSceneTimezone,
+		settingRows: ['adjustment', 'price-scale', 'main-series'],
+		settingLabels: ['复权', '价格轴', '主序列'],
+		groupTitles: 0,
 		hasAdjustment: true,
 		hasPriceScale: true,
 		hasMainSeries: true,
+		adjustmentOptions: [
+			{ label: '不复权', pressed: 'true' },
+			{ label: '前复权', pressed: 'false' },
+		],
+		priceScaleOptions: [
+			{ label: '线性', pressed: 'false' },
+			{ label: '对数', pressed: 'true' },
+		],
+		mainSeriesTag: 'SELECT',
+		priceScale: 'logarithmic',
+		mainSeries: 'area',
 		annotationPressed: 'true',
 		textPopoverHidden: true,
 		periodRequested: true,
+		adjustmentRequested: true,
 		remaining: 0,
 	});
 });
