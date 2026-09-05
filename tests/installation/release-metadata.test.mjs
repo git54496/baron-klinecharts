@@ -84,7 +84,7 @@ test('Python metadata exposes the same release and public repository', async () 
 		'python/baron-klinecharts/pyproject.toml',
 		'utf8',
 	);
-	assert.match(pyproject, /^version = "0\.9\.19"$/m);
+	assert.match(pyproject, /^version = "0\.9\.20"$/m);
 	assert.match(
 		pyproject,
 		/^Source = "https:\/\/github\.com\/git54496\/baron-klinecharts"$/m,
