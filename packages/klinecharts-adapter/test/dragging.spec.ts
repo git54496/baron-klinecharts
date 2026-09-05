@@ -114,6 +114,70 @@ describe('M2 drag candidate semantics', () => {
 		]);
 	});
 
+	it('moves a future segment anchor on the extrapolated chart timeline', () => {
+		const day = 24 * 60 * 60 * 1000;
+		const first = Date.UTC(2026, 8, 1);
+		const dailyTimestamps = [first, first + day, first + day * 2];
+		const segment: SceneOverlay = {
+			...measurement,
+			id: 'future-segment',
+			type: 'segment',
+			start: undefined,
+			end: undefined,
+			points: [
+				{ timestamp: first, value: 300 },
+				{ timestamp: first + day * 4, value: 330 },
+			],
+		};
+
+		const candidate = createDragCandidate(
+			segment,
+			{ target: 'anchor', anchorIndex: 1 },
+			{ dataIndex: 4, timestamp: first + day * 4, value: 330 },
+			{ dataIndex: 5, timestamp: first + day * 5, value: 342.345 },
+			dailyTimestamps,
+			2,
+			{ type: 'day', span: 1 },
+		);
+
+		expect(candidate.points).toEqual([
+			{ timestamp: first, value: 300 },
+			{ timestamp: first + day * 5, value: 342.35 },
+		]);
+	});
+
+	it('moves a segment body while preserving a future endpoint offset', () => {
+		const day = 24 * 60 * 60 * 1000;
+		const first = Date.UTC(2026, 8, 1);
+		const dailyTimestamps = [first, first + day, first + day * 2];
+		const segment: SceneOverlay = {
+			...measurement,
+			id: 'future-segment-body',
+			type: 'segment',
+			start: undefined,
+			end: undefined,
+			points: [
+				{ timestamp: first + day, value: 300 },
+				{ timestamp: first + day * 4, value: 330 },
+			],
+		};
+
+		const candidate = createDragCandidate(
+			segment,
+			{ target: 'body', anchorIndex: null },
+			{ dataIndex: 1, timestamp: first + day, value: 310 },
+			{ dataIndex: 2, timestamp: first + day * 2, value: 315.555 },
+			dailyTimestamps,
+			2,
+			{ type: 'day', span: 1 },
+		);
+
+		expect(candidate.points).toEqual([
+			{ timestamp: first + day * 2, value: 305.56 },
+			{ timestamp: first + day * 5, value: 335.56 },
+		]);
+	});
+
 	it('moves annotations and constrained horizontal segments without changing unrelated fields', () => {
 		const annotation: SceneOverlay = {
 			...measurement,

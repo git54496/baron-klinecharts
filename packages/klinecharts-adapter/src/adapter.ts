@@ -88,6 +88,7 @@ import {
 } from './interaction/hit-testing.js';
 import { projectOverlayGeometry } from './interaction/overlay-geometry.js';
 import { shouldIgnoreStaleOverlayDeselection } from './interaction/selection-arbitration.js';
+import { SelectionAnchorLayer } from './interaction/selection-anchors.js';
 import {
 	isTouchPrecisionTap,
 	resolveTouchPrecisionCursor,
@@ -359,6 +360,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	#drawingInProgressId: string | null = null;
 	/** 宿主显式开启的 Drawing 输入策略；未配置时保持引擎原生行为。 */
 	readonly #drawingInteraction: DrawingInteractionOptions;
+	/** 独占交互下由 Baron 持续维护的选中 Drawing 锚点层。 */
+	#selectionAnchors: SelectionAnchorLayer | undefined;
 	/** 触摸精确绘制的通用提示与虚拟光标层。 */
 	#touchPrecisionGuide: TouchPrecisionDrawingGuide | undefined;
 	/** 当前允许切换到触摸精确交互的线段绘制。 */
@@ -424,6 +427,12 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#idMap = idMap;
 		this.#originalBackground = originalBackground;
 		this.#drawingInteraction = structuredClone(drawingInteraction);
+		if (this.#drawingInteraction.exclusiveSelection === true) {
+			this.#selectionAnchors = new SelectionAnchorLayer(
+				container,
+				() => this.#renderSelectionAnchors(),
+			);
+		}
 		this.#emptyRuntime = emptyRuntime;
 		this.#displayTimezone = displayTimezone;
 		this.#mutationsEnabled = !emptyRuntime;
@@ -563,6 +572,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#scene = candidate;
 		this.#emptyRuntime = false;
 		this.#mutationsEnabled = true;
+		this.#renderSelectionAnchors();
 		return structuredClone(candidate);
 	}
 
@@ -708,12 +718,14 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		if (this.#workspaceMode) {
 			this.#workspaceOverlays = structuredClone(next) as SceneOverlay[];
 			this.#syncWorkspaceSources();
+			this.#renderSelectionAnchors();
 			return;
 		}
 		this.#scene = parseChartScene({
 			...structuredClone(this.#scene),
 			overlays: structuredClone(next),
 		});
+		this.#renderSelectionAnchors();
 	}
 
 	#syncWorkspaceSources(): void {
@@ -844,6 +856,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	}
 
 	#restoreWorkspaceDrawings(drawings: readonly EngineDrawingSnapshot[]): void {
+		const selectionBefore = this.#selectedOverlayId;
 		for (const overlay of this.#workspaceOverlays) {
 			this.#chart.removeOverlay({ id: overlay.id });
 		}
@@ -872,6 +885,14 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				);
 			}
 			this.#workspaceOverlays.push(structuredClone(overlay));
+		}
+		if (
+			selectionBefore !== null &&
+			this.#workspaceOverlays.some((overlay) => overlay.id === selectionBefore)
+		) {
+			this.#selectOverlay(selectionBefore);
+		} else {
+			this.#renderSelectionAnchors();
 		}
 	}
 
@@ -904,6 +925,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	#selectOverlay(id: string | null): void {
 		const previousId = this.#selectedOverlayId;
 		if (previousId === id) {
+			this.#renderSelectionAnchors();
 			return;
 		}
 		if (previousId === null && id !== null) {
@@ -912,6 +934,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			this.#leaveExclusiveSelection();
 		}
 		this.#selectedOverlayId = id;
+		this.#renderSelectionAnchors();
 		if (this.#workspaceMode) {
 			this.#emitPort({
 				type: id === null ? 'deselected' : 'selected',
@@ -1421,7 +1444,11 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		if (!Number.isFinite(value?.dataIndex) || !Number.isFinite(value?.value)) {
 			throw new SceneError('INVALID_REFERENCE', '/overlays', 'Pointer does not map to finite chart data.');
 		}
-		return { dataIndex: value!.dataIndex!, value: value!.value! };
+		return {
+			dataIndex: value!.dataIndex!,
+			...(Number.isSafeInteger(value?.timestamp) ? { timestamp: value!.timestamp! } : {}),
+			value: value!.value!,
+		};
 	}
 
 	#measurementAnchor(
@@ -1546,6 +1573,29 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		return geometries;
 	}
 
+	#renderSelectionAnchors(): void {
+		if (this.#selectionAnchors === undefined || this.#selectedOverlayId === null) {
+			this.#selectionAnchors?.render(null, [], 'rgba(41, 98, 255, 1)', false);
+			return;
+		}
+		const selected = this.#activeOverlays().find(
+			(overlay) => overlay.id === this.#selectedOverlayId,
+		);
+		const geometry = this.#overlayGeometries().find(
+			(candidate) => candidate.overlayId === this.#selectedOverlayId,
+		);
+		if (selected === undefined || geometry === undefined) {
+			this.#selectionAnchors.render(null, [], 'rgba(41, 98, 255, 1)', false);
+			return;
+		}
+		this.#selectionAnchors.render(
+			selected.id,
+			geometry.anchors,
+			selected.styles.line.color,
+			selected.locked,
+		);
+	}
+
 	#interactionIdentity(interaction: PointerInteraction): AdapterDragEventIdentity {
 		return {
 			interactionId: interaction.interactionId,
@@ -1599,6 +1649,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		if (reason === 'validation-error' && error !== undefined) {
 			this.#emit({ type: 'scene-error', issues: structuredClone(error.issues) });
 		}
+		this.#renderSelectionAnchors();
 	}
 
 	#routeTouchPrecisionPointerDown(event: PointerEvent): boolean {
@@ -1841,6 +1892,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				this.#fromPixel(coordinate, interaction.before.paneId),
 				this.#scene.data.map((bar) => bar.timestamp),
 				this.#scene.symbol.pricePrecision,
+				this.#scene.period,
 			);
 			const active = this.#activeOverlays();
 			const index = active.findIndex((overlay) => overlay.id === candidate.id);
@@ -2096,6 +2148,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		}
 		this.#displayTimezone = timezone;
 		this.#applyDatePresentation(this.#scene.chart);
+		this.#renderSelectionAnchors();
 	}
 
 	/** 同结构 Scene 替换时同步主图指标；副图结构仍由更高层单独管理。 */
@@ -2210,6 +2263,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			this.#scene = candidate;
 			this.#container.style.backgroundColor =
 				candidate.chart.layout.backgroundColor;
+			this.#renderSelectionAnchors();
 			return structuredClone(candidate);
 		} catch (error) {
 			try {
@@ -2460,6 +2514,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				? drawingToSceneOverlay(updated, candidate.paneId)
 				: candidate,
 		);
+		this.#renderSelectionAnchors();
 		this.#emitPort({
 			type: 'updated',
 			id,
@@ -2495,6 +2550,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				? drawingToSceneOverlay(updated, candidate.paneId)
 				: candidate,
 		);
+		this.#renderSelectionAnchors();
 		this.#emitPort({
 			type: 'updated',
 			id,
@@ -2532,6 +2588,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				? drawingToSceneOverlay(updated, candidate.paneId)
 				: candidate,
 		);
+		this.#renderSelectionAnchors();
 		const snapshot = snapshotOfDrawing(updated);
 		this.#emitPort({
 			type: 'updated',
@@ -3101,6 +3158,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#cancelTouchPrecisionDrawing(false);
 		this.#touchPrecisionGuide?.destroy();
 		this.#touchPrecisionGuide = undefined;
+		this.#selectionAnchors?.destroy();
+		this.#selectionAnchors = undefined;
 		this.#interactivePriceMeasurement = undefined;
 		this.#drawingInProgressId = null;
 		this.#disposed = true;

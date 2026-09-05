@@ -644,6 +644,104 @@ test.describe('DrawingEnginePort precision touch Drawing', () => {
 });
 
 test.describe('DrawingEnginePort exclusive Drawing selection', () => {
+	test('@browser selected segment keeps Baron anchor handles after pointer leaves', async ({ page }) => {
+		await installWorkspace(page, 'chart', { exclusiveSelection: true });
+		const hit = await page.evaluate(() => {
+			const adapter = (window as unknown as {
+				__adapter: {
+					restoreDrawings(drawings: readonly unknown[]): void;
+					projectToPixel(
+						anchor: { readonly timestamp: number; readonly value: number },
+						paneRole: string,
+					): { readonly x: number; readonly y: number };
+				};
+			}).__adapter;
+			adapter.restoreDrawings(
+				(window as unknown as {
+					__baronSnapshots(types: string[], paneRole: string): unknown[];
+				}).__baronSnapshots(['segment'], 'candle'),
+			);
+			const start = adapter.projectToPixel(
+				{ timestamp: 1784736000000, value: 12.34 },
+				'candle',
+			);
+			const end = adapter.projectToPixel(
+				{ timestamp: 1784822400000, value: 12.55 },
+				'candle',
+			);
+			return { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+		});
+
+		await page.mouse.click(hit.x, hit.y);
+		const anchors = page.locator('[data-drawing-selection-anchors]');
+		await expect(anchors).toBeVisible();
+		await expect(anchors).toHaveAttribute('data-drawing-id', 'port-segment-0');
+		await expect(anchors.locator('circle')).toHaveCount(2);
+
+		await page.mouse.move(850, 500);
+		await expect(anchors).toBeVisible();
+		await expect(anchors.locator('circle')).toHaveCount(2);
+
+		await page.mouse.click(850, 500);
+		await expect(anchors).toBeHidden();
+	});
+
+	test('@browser future segment endpoint remains draggable in the blank timeline', async ({ page }) => {
+		await installWorkspace(page, 'chart', { exclusiveSelection: true });
+		const setup = await page.evaluate(() => {
+			const adapter = (window as unknown as {
+				__adapter: {
+					restoreDrawings(drawings: readonly unknown[]): void;
+					projectToPixel(
+						anchor: { readonly timestamp: number; readonly value: number },
+						paneRole: string,
+					): { readonly x: number; readonly y: number };
+					getDrawing(id: string): { readonly geometry: unknown } | undefined;
+					subscribeDrawingEvents(
+						listener: (event: { readonly type: string; readonly id: string }) => void,
+					): () => void;
+				};
+			}).__adapter;
+			const drawing = (window as unknown as {
+				__baronSnapshots(types: string[], paneRole: string): Array<{
+					geometry: { points: Array<{ timestamp: number; value: number }> };
+				}>;
+			}).__baronSnapshots(['segment'], 'candle')[0]!;
+			const futureTimestamp = 1785168000000;
+			drawing.geometry.points[1] = { timestamp: futureTimestamp, value: 12.55 };
+			adapter.restoreDrawings([drawing]);
+			const events: string[] = [];
+			adapter.subscribeDrawingEvents((event) => events.push(`${event.type}:${event.id}`));
+			(window as unknown as { __drawingEvents: string[] }).__drawingEvents = events;
+			return {
+				futureTimestamp,
+				end: adapter.projectToPixel(
+					{ timestamp: futureTimestamp, value: 12.55 },
+					'candle',
+				),
+				before: adapter.getDrawing('port-segment-0'),
+			};
+		});
+
+		await page.mouse.move(setup.end.x, setup.end.y);
+		await page.mouse.down();
+		await page.mouse.move(setup.end.x, setup.end.y - 30, { steps: 3 });
+		await page.mouse.up();
+		await settle(page);
+
+		const result = await page.evaluate(() => ({
+			drawing: (window as unknown as {
+				__adapter: { getDrawing(id: string): { readonly geometry: unknown } | undefined };
+			}).__adapter.getDrawing('port-segment-0'),
+			events: (window as unknown as { __drawingEvents: string[] }).__drawingEvents,
+		}));
+		expect(result.events).toContain('updated:port-segment-0');
+		expect(result.drawing?.geometry).not.toEqual(setup.before?.geometry);
+		expect((result.drawing?.geometry as {
+			points: Array<{ timestamp: number }>;
+		}).points[1]!.timestamp).toBe(setup.futureTimestamp);
+	});
+
 	test('@browser touch hit band selects and drags a segment without moving the chart', async ({ browser }) => {
 		const context = await browser.newContext({
 			hasTouch: true,

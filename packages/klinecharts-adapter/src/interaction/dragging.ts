@@ -1,10 +1,11 @@
-import type { SceneOverlay } from '@baron1996/kline-scene-schema';
+import type { Period, SceneOverlay } from '@baron1996/kline-scene-schema';
 import { SceneError } from '@baron1996/kline-scene-schema';
 
 import { normalizePriceValue } from '../conversion/price.js';
 
 export interface DragDataPoint {
 	readonly dataIndex: number;
+	readonly timestamp?: number;
 	readonly value: number;
 }
 
@@ -24,24 +25,114 @@ function requireTimestamp(
 	timestamps: readonly number[],
 	index: number,
 	path: string,
+	period?: Period,
 ): number {
 	const timestamp = timestamps[index];
-	if (timestamp === undefined) {
-		throw new SceneError(
-			'INVALID_REFERENCE',
-			path,
-			'Drag candidate must remain on an embedded market-data bar.',
-		);
+	if (timestamp !== undefined) {
+		return timestamp;
 	}
-	return timestamp;
+	const first = timestamps[0];
+	const last = timestamps[timestamps.length - 1];
+	if (period !== undefined && first !== undefined && last !== undefined) {
+		if (index < 0) {
+			return extrapolateTimestamp(first, index, period);
+		}
+		if (index >= timestamps.length) {
+			return extrapolateTimestamp(last, index - (timestamps.length - 1), period);
+		}
+	}
+	throw new SceneError(
+		'INVALID_REFERENCE',
+		path,
+		'Drag candidate must remain on the chart timeline.',
+	);
 }
 
-function normalizedValue(value: number, pricePrecision: number, path: string): number {
-	return normalizePriceValue(value, pricePrecision, path);
+function extrapolateTimestamp(reference: number, diff: number, period: Period): number {
+	const { type, span } = period;
+	const multiplier = type === 'second'
+		? 1000
+		: type === 'minute'
+			? 60 * 1000
+			: type === 'hour'
+				? 60 * 60 * 1000
+				: type === 'day'
+					? 24 * 60 * 60 * 1000
+					: type === 'week'
+						? 7 * 24 * 60 * 60 * 1000
+						: null;
+	if (multiplier !== null) {
+		return reference + span * multiplier * diff;
+	}
+	const date = new Date(reference);
+	if (type === 'month') {
+		const referenceDay = date.getDate();
+		date.setDate(1);
+		date.setMonth(date.getMonth() + span * diff);
+		const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+		date.setDate(Math.min(referenceDay, lastDay));
+		return date.getTime();
+	}
+	date.setFullYear(date.getFullYear() + span * diff);
+	return date.getTime();
 }
 
-function timestampAtCurrentPoint(current: DragDataPoint, timestamps: readonly number[], path: string): number {
-	return requireTimestamp(timestamps, requireDataIndex(current.dataIndex, `${path}/dataIndex`), path);
+function outsideDataIndex(
+	timestamp: number,
+	timestamps: readonly number[],
+	period: Period,
+): number | null {
+	const first = timestamps[0];
+	const last = timestamps[timestamps.length - 1];
+	if (first === undefined || last === undefined) {
+		return null;
+	}
+	const reference = timestamp > last
+		? { timestamp: last, index: timestamps.length - 1 }
+		: timestamp < first
+			? { timestamp: first, index: 0 }
+			: null;
+	if (reference === null) {
+		return null;
+	}
+	const { type, span } = period;
+	const divisor = type === 'second'
+		? span * 1000
+		: type === 'minute'
+			? span * 60 * 1000
+			: type === 'hour'
+				? span * 60 * 60 * 1000
+				: type === 'day'
+					? span * 24 * 60 * 60 * 1000
+					: type === 'week'
+						? span * 7 * 24 * 60 * 60 * 1000
+						: null;
+	if (divisor !== null) {
+		return reference.index + Math.floor((timestamp - reference.timestamp) / divisor);
+	}
+	const referenceDate = new Date(reference.timestamp);
+	const currentDate = new Date(timestamp);
+	const units = type === 'month'
+		? (currentDate.getFullYear() - referenceDate.getFullYear()) * 12 +
+			(currentDate.getMonth() - referenceDate.getMonth())
+		: currentDate.getFullYear() - referenceDate.getFullYear();
+	return reference.index + Math.floor(units / span);
+}
+
+function timestampAtCurrentPoint(
+	current: DragDataPoint,
+	timestamps: readonly number[],
+	path: string,
+	period?: Period,
+): number {
+	const index = requireDataIndex(current.dataIndex, `${path}/dataIndex`);
+	if (
+		(index < 0 || index >= timestamps.length) &&
+		Number.isSafeInteger(current.timestamp)
+	) {
+		return current.timestamp!;
+	}
+	return requireTimestamp(timestamps, index, path, period);
 }
 
 function translatedTimestamp(
@@ -49,12 +140,24 @@ function translatedTimestamp(
 	deltaIndex: number,
 	timestamps: readonly number[],
 	path: string,
+	period?: Period,
 ): number {
-	const sourceIndex = timestamps.indexOf(timestamp);
-	if (sourceIndex < 0) {
-		throw new SceneError('INVALID_REFERENCE', path, 'Overlay point must reference an embedded bar before dragging.');
+	let sourceIndex = timestamps.indexOf(timestamp);
+	if (sourceIndex < 0 && period !== undefined) {
+		sourceIndex = outsideDataIndex(timestamp, timestamps, period) ?? -1;
 	}
-	return requireTimestamp(timestamps, sourceIndex + deltaIndex, path);
+	if (sourceIndex < 0) {
+		throw new SceneError(
+			'INVALID_REFERENCE',
+			path,
+			'Overlay point must reference the chart timeline before dragging.',
+		);
+	}
+	return requireTimestamp(timestamps, sourceIndex + deltaIndex, path, period);
+}
+
+function normalizedValue(value: number, pricePrecision: number, path: string): number {
+	return normalizePriceValue(value, pricePrecision, path);
 }
 
 function translatedPoint(
@@ -64,9 +167,10 @@ function translatedPoint(
 	timestamps: readonly number[],
 	pricePrecision: number,
 	path: string,
+	period?: Period,
 ): { readonly timestamp: number; readonly value: number } {
 	return {
-		timestamp: translatedTimestamp(point.timestamp, deltaIndex, timestamps, `${path}/timestamp`),
+		timestamp: translatedTimestamp(point.timestamp, deltaIndex, timestamps, `${path}/timestamp`, period),
 		value: normalizedValue(point.value + deltaValue, pricePrecision, `${path}/value`),
 	};
 }
@@ -76,9 +180,10 @@ function currentPoint(
 	timestamps: readonly number[],
 	pricePrecision: number,
 	path: string,
+	period?: Period,
 ): { readonly timestamp: number; readonly value: number } {
 	return {
-		timestamp: timestampAtCurrentPoint(current, timestamps, `${path}/timestamp`),
+		timestamp: timestampAtCurrentPoint(current, timestamps, `${path}/timestamp`, period),
 		value: normalizedValue(current.value, pricePrecision, `${path}/value`),
 	};
 }
@@ -91,6 +196,7 @@ export function createDragCandidate(
 	current: DragDataPoint,
 	timestamps: readonly number[],
 	pricePrecision: number,
+	period?: Period,
 ): SceneOverlay {
 	const deltaValue = current.value - origin.value;
 	if (!Number.isFinite(deltaValue)) {
@@ -125,8 +231,10 @@ export function createDragCandidate(
 			}
 			candidate.anchor = {
 				timestamp: dragTarget.target === 'anchor'
-					? timestampAtCurrentPoint(current, timestamps, '/overlays/anchor')
-					: translatedTimestamp(anchor.timestamp, deltaIndex, timestamps, '/overlays/anchor/timestamp'),
+					? timestampAtCurrentPoint(current, timestamps, '/overlays/anchor', period)
+					: translatedTimestamp(
+						anchor.timestamp, deltaIndex, timestamps, '/overlays/anchor/timestamp', period,
+					),
 			};
 			return candidate;
 		}
@@ -144,16 +252,18 @@ export function createDragCandidate(
 				'/overlays/value',
 			);
 			if (dragTarget.target === 'anchor') {
-				const timestamp = timestampAtCurrentPoint(current, timestamps, '/overlays/anchor');
+				const timestamp = timestampAtCurrentPoint(
+					current, timestamps, '/overlays/anchor', period,
+				);
 				if (dragTarget.anchorIndex === 0) candidate.startTimestamp = timestamp;
 				else if (dragTarget.anchorIndex === 1) candidate.endTimestamp = timestamp;
 				else throw new SceneError('INVALID_REFERENCE', '/overlays/anchorIndex', 'Invalid anchor index.');
 			} else {
 				candidate.startTimestamp = translatedTimestamp(
-					before.startTimestamp, deltaIndex, timestamps, '/overlays/startTimestamp',
+					before.startTimestamp, deltaIndex, timestamps, '/overlays/startTimestamp', period,
 				);
 				candidate.endTimestamp = translatedTimestamp(
-					before.endTimestamp, deltaIndex, timestamps, '/overlays/endTimestamp',
+					before.endTimestamp, deltaIndex, timestamps, '/overlays/endTimestamp', period,
 				);
 			}
 			return candidate;
@@ -167,8 +277,10 @@ export function createDragCandidate(
 				throw new SceneError('SCENE_SCHEMA_INVALID', '/overlays', 'Missing vertical line geometry.');
 			}
 			candidate.timestamp = dragTarget.target === 'anchor'
-				? timestampAtCurrentPoint(current, timestamps, '/overlays/anchor')
-				: translatedTimestamp(before.timestamp, deltaIndex, timestamps, '/overlays/timestamp');
+				? timestampAtCurrentPoint(current, timestamps, '/overlays/anchor', period)
+				: translatedTimestamp(
+					before.timestamp, deltaIndex, timestamps, '/overlays/timestamp', period,
+				);
 			if (dragTarget.target === 'anchor') {
 				const value = normalizedValue(current.value, pricePrecision, '/overlays/anchor/value');
 				if (dragTarget.anchorIndex === 0) candidate.startValue = value;
@@ -199,11 +311,11 @@ export function createDragCandidate(
 					throw new SceneError('INVALID_REFERENCE', '/overlays/anchorIndex', 'Invalid anchor index.');
 				}
 				candidate.points![dragTarget.anchorIndex] = currentPoint(
-					current, timestamps, pricePrecision, `/overlays/points/${dragTarget.anchorIndex}`,
+					current, timestamps, pricePrecision, `/overlays/points/${dragTarget.anchorIndex}`, period,
 				);
 			} else {
 				candidate.points = before.points.map((point, index) => translatedPoint(
-					point, deltaIndex, deltaValue, timestamps, pricePrecision, `/overlays/points/${index}`,
+					point, deltaIndex, deltaValue, timestamps, pricePrecision, `/overlays/points/${index}`, period,
 				)) as NonNullable<SceneOverlay['points']>;
 			}
 			return candidate;
@@ -216,9 +328,9 @@ export function createDragCandidate(
 				throw new SceneError('SCENE_SCHEMA_INVALID', '/overlays/point', 'Missing point geometry.');
 			}
 			candidate.point = dragTarget.target === 'anchor'
-				? currentPoint(current, timestamps, pricePrecision, '/overlays/point')
+				? currentPoint(current, timestamps, pricePrecision, '/overlays/point', period)
 				: translatedPoint(
-					before.point, deltaIndex, deltaValue, timestamps, pricePrecision, '/overlays/point',
+					before.point, deltaIndex, deltaValue, timestamps, pricePrecision, '/overlays/point', period,
 				);
 			return candidate;
 		}
@@ -229,16 +341,18 @@ export function createDragCandidate(
 				throw new SceneError('SCENE_SCHEMA_INVALID', '/overlays', 'Missing two-point geometry.');
 			}
 			if (dragTarget.target === 'anchor') {
-				const point = currentPoint(current, timestamps, pricePrecision, '/overlays/anchor');
+				const point = currentPoint(
+					current, timestamps, pricePrecision, '/overlays/anchor', period,
+				);
 				if (dragTarget.anchorIndex === 0) candidate.start = point;
 				else if (dragTarget.anchorIndex === 1) candidate.end = point;
 				else throw new SceneError('INVALID_REFERENCE', '/overlays/anchorIndex', 'Invalid anchor index.');
 			} else {
 				candidate.start = translatedPoint(
-					before.start, deltaIndex, deltaValue, timestamps, pricePrecision, '/overlays/start',
+					before.start, deltaIndex, deltaValue, timestamps, pricePrecision, '/overlays/start', period,
 				);
 				candidate.end = translatedPoint(
-					before.end, deltaIndex, deltaValue, timestamps, pricePrecision, '/overlays/end',
+					before.end, deltaIndex, deltaValue, timestamps, pricePrecision, '/overlays/end', period,
 				);
 			}
 			return candidate;
