@@ -24,26 +24,35 @@ function lineStyle(style: SceneIndicator['styles']['lines'][number]) {
 	};
 }
 
-/** 将协议内指标样式映射为 KLineCharts 的受控样式子集。 */
+/**
+ * 将协议内指标样式映射为 KLineCharts 的受控样式子集。
+ * 空样式通道必须省略，让引擎保留可用的默认项，避免圆点等图形按空数组取样。
+ */
 export function toKLineChartsIndicatorStyles(
 	styles: SceneIndicator['styles'],
 ): DeepPartial<IndicatorStyle> {
-	return {
-		lines: styles.lines.map(lineStyle),
-		bars: styles.bars.map((style) => ({
+	const converted: DeepPartial<IndicatorStyle> = {};
+	if (styles.lines.length > 0) {
+		converted.lines = styles.lines.map(lineStyle);
+	}
+	if (styles.bars.length > 0) {
+		converted.bars = styles.bars.map((style) => ({
 			style: 'fill',
 			upColor: style.upColor,
 			downColor: style.downColor,
 			noChangeColor: style.noChangeColor,
-		})),
-		circles: styles.circles.map((style) => ({
+		}));
+	}
+	if (styles.circles.length > 0) {
+		converted.circles = styles.circles.map((style) => ({
 			style: 'fill',
 			upColor: style.color,
 			downColor: style.color,
 			noChangeColor: style.color,
 			borderRadius: style.radius,
-		})),
-	};
+		}));
+	}
+	return converted;
 }
 
 export function toIndicatorCreate(

@@ -6,7 +6,7 @@ test('workspace manifest exposes only the KLineCharts scene packages', async () 
 	const manifest = JSON.parse(await readFile('package.json', 'utf8'));
 
 	assert.equal(manifest.name, '@baron1996/klinecharts-scene-workspace');
-	assert.equal(manifest.version, '0.9.19');
+	assert.equal(manifest.version, '0.9.20');
 	assert.deepEqual(manifest.workspaces, [
 		'packages/scene-schema',
 		'packages/klinecharts-adapter',

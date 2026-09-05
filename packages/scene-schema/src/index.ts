@@ -1,5 +1,5 @@
 /** 场景协议包版本；支持 Scene v1，并以 Scene v2 作为当前版本。 */
-export const SCENE_PACKAGE_VERSION = '0.9.19' as const;
+export const SCENE_PACKAGE_VERSION = '0.9.20' as const;
 
 export * from './canonical-json.js';
 export * from './canonicalize.js';

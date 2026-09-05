@@ -5,6 +5,8 @@ import { loadScene } from './load-scene.js';
 const allIndicators = loadScene('all-indicators.json');
 
 test('@browser creates all 27 allowlisted Indicators with Scene IDs', async ({ page }) => {
+	const pageErrors: string[] = [];
+	page.on('pageerror', (error) => pageErrors.push(error.message));
 	await page.goto('/test/fixture.html');
 	const snapshot = await page.evaluate(async (scene) => {
 		const { KLineChartsSceneAdapter } = await import('/src/index.ts');
@@ -12,6 +14,8 @@ test('@browser creates all 27 allowlisted Indicators with Scene IDs', async ({ p
 			document.querySelector<HTMLElement>('#chart')!,
 			scene,
 		);
+		await new Promise<void>((resolve) => requestAnimationFrame(() =>
+			requestAnimationFrame(() => resolve())));
 		const result = adapter.inspect();
 		adapter.dispose();
 		return result;
@@ -26,6 +30,7 @@ test('@browser creates all 27 allowlisted Indicators with Scene IDs', async ({ p
 	expect(snapshot.indicators).toEqual(expected);
 	expect(JSON.stringify(snapshot)).not.toContain('baron_pane_');
 	expect(JSON.stringify(snapshot)).not.toContain('baron_y_');
+	expect(pageErrors).toEqual([]);
 });
 
 test('@browser creates indicators attached to the candle pane', async ({ page }) => {

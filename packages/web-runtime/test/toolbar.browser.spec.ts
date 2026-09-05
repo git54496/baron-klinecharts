@@ -689,6 +689,107 @@ test('@browser composite chart toolbar separates market, settings, and Drawing c
 	});
 });
 
+test('@browser chart remains draggable after enabling every main indicator', async ({ page }) => {
+	const pageErrors: string[] = [];
+	page.on('pageerror', (error) => pageErrors.push(error.message));
+	await page.goto('/test/fixture.html');
+	const selectedIndicators = await page.evaluate(async (sourceWorkspace) => {
+		const workspace = structuredClone(sourceWorkspace);
+		const firstTimestamp = workspace.scene.document.data[0]!.timestamp;
+		workspace.scene.document.data = Array.from({ length: 120 }, (_value, index) => {
+			const midpoint = 12 + Math.sin(index / 6) + index * 0.01;
+			const close = midpoint + (index % 3 - 1) * 0.12;
+			const volume = 100_000 + index * 500;
+			return {
+				timestamp: firstTimestamp + index * 86_400_000,
+				open: midpoint,
+				high: Math.max(midpoint, close) + 0.3,
+				low: Math.min(midpoint, close) - 0.3,
+				close,
+				volume,
+				turnover: volume * close,
+			};
+		});
+		workspace.scene.document.viewport.anchorTimestamp =
+			workspace.scene.document.data.at(-1)!.timestamp;
+
+		const {
+			createChartWorkspaceToolbar,
+			createDrawableWorkspaceRuntime,
+		} = await import('/src/index.ts');
+		const runtime = await createDrawableWorkspaceRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			workspace,
+			{ commitMode: 'immediate' },
+		);
+		const leftContainer = document.createElement('div');
+		leftContainer.style.height = '600px';
+		document.body.append(leftContainer);
+		const toolbar = createChartWorkspaceToolbar(
+			{
+				top: document.querySelector<HTMLElement>('#toolbar')!,
+				left: leftContainer,
+			},
+			runtime,
+			{ fullscreenControl: 'hidden' },
+		);
+		toolbar.topElement.querySelector<HTMLButtonElement>(
+			'[data-action="main-indicators"]',
+		)!.click();
+		const indicatorPopover = document.querySelector<HTMLElement>(
+			'[id^="baron-workspace-indicators-"]',
+		)!;
+		for (const button of indicatorPopover.querySelectorAll<HTMLButtonElement>(
+			'[data-indicator-name]',
+		)) {
+			button.click();
+		}
+		toolbar.topElement.querySelector<HTMLButtonElement>(
+			'[data-action="main-indicators"]',
+		)!.click();
+		await new Promise<void>((resolve) => requestAnimationFrame(() =>
+			requestAnimationFrame(() => resolve())));
+		const testGlobal = globalThis as typeof globalThis & {
+			__cleanupIndicatorDragRegression?: () => void;
+		};
+		testGlobal.__cleanupIndicatorDragRegression = () => {
+			toolbar.destroy();
+			runtime.destroy();
+			leftContainer.remove();
+		};
+		return runtime.exportWorkspace().scene.document.panes[0]!.indicators.map(
+			(indicator: { name: string }) => indicator.name,
+		);
+	}, chartWorkspaceFixture);
+
+	const chart = page.locator('#chart');
+	const beforeDrag = await chart.screenshot();
+	const bounds = await chart.boundingBox();
+	expect(bounds).not.toBeNull();
+	await page.mouse.move(bounds!.x + bounds!.width * 0.55, bounds!.y + bounds!.height * 0.45);
+	await page.mouse.down();
+	await page.mouse.move(bounds!.x + bounds!.width * 0.75, bounds!.y + bounds!.height * 0.45, {
+		steps: 10,
+	});
+	await page.mouse.up();
+	await page.mouse.move(bounds!.x + bounds!.width + 20, bounds!.y + bounds!.height + 20);
+	await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() =>
+		requestAnimationFrame(() => resolve()))));
+	const afterDrag = await chart.screenshot();
+
+	await page.evaluate(() => {
+		const testGlobal = globalThis as typeof globalThis & {
+			__cleanupIndicatorDragRegression?: () => void;
+		};
+		testGlobal.__cleanupIndicatorDragRegression?.();
+		delete testGlobal.__cleanupIndicatorDragRegression;
+	});
+
+	expect(selectedIndicators).toEqual(['MA', 'EMA', 'SMA', 'BOLL', 'SAR', 'BBI']);
+	expect(pageErrors).toEqual([]);
+	expect(afterDrag.equals(beforeDrag)).toBe(false);
+});
+
 test('@browser time-series Workspace toolbar keeps 22 tools without main series or log controls', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	const result = await page.evaluate(async (workspace) => {

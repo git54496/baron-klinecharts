@@ -48,6 +48,18 @@ export function defaultIndicatorStyles(
 			circles: [],
 		};
 	}
+	if (name === 'SAR') {
+		return {
+			lines,
+			bars: [],
+			circles: [
+				{
+					color: DEFAULT_INDICATOR_LINE_COLORS[0],
+					radius: 2,
+				},
+			],
+		};
+	}
 	return { lines, bars: [], circles: [] };
 }
 

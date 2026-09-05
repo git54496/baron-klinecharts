@@ -32,6 +32,7 @@ import type {
 	RuntimeCapabilityDescriptor,
 } from './drawing/runtime-capability-descriptor.js';
 import { RuntimeEventBus } from './events.js';
+import { defaultIndicatorStyles } from './indicator-presentation.js';
 import { runRuntimeTeardowns } from './lifecycle.js';
 import type {
 	AddIndicatorOptions,
@@ -61,41 +62,6 @@ export const DEFAULT_OVERLAY_STYLES: SceneOverlay['styles'] = {
 		borderColor: 'rgba(41, 98, 255, 1)',
 	},
 };
-
-const DEFAULT_INDICATOR_LINE_COLORS = [
-	'rgba(41, 98, 255, 1)',
-	'rgba(245, 158, 11, 1)',
-	'rgba(16, 185, 129, 1)',
-	'rgba(239, 68, 68, 1)',
-	'rgba(139, 92, 246, 1)',
-] as const;
-
-function defaultIndicatorStyles(
-	name: SceneIndicator['name'],
-	calcParams: readonly number[],
-): SceneIndicator['styles'] {
-	const lines = calcParams.map((_param, index) => ({
-		color: DEFAULT_INDICATOR_LINE_COLORS[
-			index % DEFAULT_INDICATOR_LINE_COLORS.length
-		]!,
-		size: 1,
-		style: 'solid' as const,
-	}));
-	if (name === 'VOL') {
-		return {
-			lines,
-			bars: [
-				{
-					upColor: 'rgba(239, 83, 80, 1)',
-					downColor: 'rgba(38, 166, 154, 1)',
-					noChangeColor: 'rgba(88, 88, 88, 1)',
-				},
-			],
-			circles: [],
-		};
-	}
-	return { lines, bars: [], circles: [] };
-}
 
 function toRuntimeEvent(
 	event: AdapterSceneEvent,

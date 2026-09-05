@@ -36,13 +36,13 @@ tests                          跨语言、浏览器、视觉与安装门禁
 安装 Web Runtime：
 
 ```bash
-npm install --save-exact @baron1996/klinecharts-runtime@0.9.19
+npm install --save-exact @baron1996/klinecharts-runtime@0.9.20
 ```
 
 安装 CLI：
 
 ```bash
-npm install --global @baron1996/klinecharts-cli@0.9.19
+npm install --global @baron1996/klinecharts-cli@0.9.20
 baron-kline install-browser
 ```
 
@@ -104,7 +104,7 @@ Workspace 示例一致。
 - 禁止把本仓库路径加入其他工程或 Agent 的可写 workspace。
 
 消费方必须安装明确版本并提交自己的 lockfile，例如
-`@baron1996/klinecharts-runtime@0.9.19` 和 `baron-klinecharts==0.9.19`。升级只能
+`@baron1996/klinecharts-runtime@0.9.20` 和 `baron-klinecharts==0.9.20`。升级只能
 通过本仓库发布新版本后，由消费方主动修改依赖版本完成；不得直接修改本仓库来
 适配某个业务工程。
 
@@ -154,7 +154,7 @@ baron-kline install-browser
 要求 Python 3.11–3.14。浏览器客户端随包安装，但 Chromium 不会被隐式下载。
 
 ```bash
-pip install baron-klinecharts==0.9.19
+pip install baron-klinecharts==0.9.20
 python -m playwright install chromium
 ```
 
@@ -183,12 +183,11 @@ CI 分别使用 `tests/rendering/baselines/github-macos-15` 和
 
 ## 发布
 
-当前发布版本为 `0.9.19`。本次同步发布 Web Runtime、Adapter、Scene Schema、CLI 和
-Python，私有 Render Runtime 也同步到 `0.9.19`，所有内部依赖使用精确版本。该版本在
-独占 Drawing 选择模式下由 Baron 持续展示权威操作锚点，避免工具栏已选中而锚点随原生
-悬停状态消失；同时让端点与整段拖动遵循 KLineCharts 的周期时间轴外推规则，支持位于
-最后一根真实 K 线之后的未来锚点。该修复不改变现有宿主持久化接口，也不提升
-Drawing/Workspace Schema 版本或 Runtime 事件协议版本。
+当前发布版本为 `0.9.20`。本次同步发布 Web Runtime、Adapter、Scene Schema、CLI 和
+Python，私有 Render Runtime 也同步到 `0.9.20`，所有内部依赖使用精确版本。该版本为
+SAR 提供完整圆点样式，并在协议样式通道为空时保留 KLineCharts 的默认样式，避免启用
+SAR 或全部主图指标后渲染异常、K 线无法左右拖动。该修复兼容已有 Scene，不改变现有
+宿主持久化接口，也不提升 Drawing/Workspace Schema 版本或 Runtime 事件协议版本。
 ChartScene `version` 仍为 `1`；Runtime protocol `0.2.0` 增加显式线性/对数轴、
 价格量度、精确命中与过程事件，同时继续读取 Runtime `0.1.0` 的 M1 场景。
 发布流水线先执行完整验证，再只为版本与 tag 相同的公共包构建一次不可变产物。
