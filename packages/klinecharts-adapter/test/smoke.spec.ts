@@ -4,6 +4,6 @@ import { ADAPTER_PACKAGE_VERSION } from '../src/index.js';
 
 describe('klinecharts adapter package', () => {
 	it('exposes the fixed package version', () => {
-		expect(ADAPTER_PACKAGE_VERSION).toBe('0.9.20');
+		expect(ADAPTER_PACKAGE_VERSION).toBe('0.9.21');
 	});
 });
