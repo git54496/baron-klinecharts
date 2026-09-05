@@ -14,6 +14,7 @@ import {
 import type { Chart, Coordinate, Overlay, Point } from 'klinecharts';
 
 import { createEngine, type EngineHandle } from './engine.js';
+import { toKLineChartsOptions } from './conversion/chart-options.js';
 import { toIndicatorCreate } from './conversion/indicators.js';
 import { registerProjectOverlays } from './extensions/register.js';
 import {
@@ -370,6 +371,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	#interactionSequence = 0;
 	/** 显式 Workspace 模式；Legacy 与 Workspace 状态严格隔离。 */
 	#workspaceMode = false;
+	/** 宿主显示时区覆盖；Scene 替换时必须复用，避免格式化器退回证券时区。 */
+	readonly #displayTimezone: string | undefined;
 	/** Workspace 模式与引擎同步的 Overlay 几何（不写入 #scene.overlays）。 */
 	#workspaceOverlays: SceneOverlay[] = [];
 	/** Workspace 模式权威业务 Drawing（含 granularity/target/text）。 */
@@ -409,6 +412,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		originalBackground: string,
 		drawingInteraction: DrawingInteractionOptions = {},
 		emptyRuntime = false,
+		displayTimezone?: string,
 	) {
 		this.#container = container;
 		this.#scene = scene;
@@ -421,6 +425,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#originalBackground = originalBackground;
 		this.#drawingInteraction = structuredClone(drawingInteraction);
 		this.#emptyRuntime = emptyRuntime;
+		this.#displayTimezone = displayTimezone;
 		this.#mutationsEnabled = !emptyRuntime;
 		this.#hitTolerance('mouse');
 		this.#hitTolerance('touch');
@@ -485,6 +490,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				originalBackground,
 				options?.drawingInteraction,
 				true,
+				options?.displayTimezone,
 			);
 			adapter.#workspaceMode = true;
 			container.style.backgroundColor = internalScene.chart.layout.backgroundColor;
@@ -645,6 +651,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				idMap,
 				originalBackground,
 				options?.drawingInteraction,
+				false,
+				options?.displayTimezone,
 			);
 			applyViewport(handle.chart, scene.viewport);
 			container.style.backgroundColor = scene.chart.layout.backgroundColor;
@@ -2024,7 +2032,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		const previousAxis = previousPane.yAxes[axisIndex]!;
 		const path = `/panes/${paneIndex}/yAxes/${axisIndex}`;
 		try {
-			overrideSceneYAxis(this.#chart, this.#idMap, axis, pane.id, path);
+			overrideSceneYAxis(this.#chart, this.#idMap, axis, pane.id, path, true);
 			// KLineCharts batches Y-axis recreation in a microtask; await that formal
 			// layout boundary before making the upgraded Scene externally visible.
 			await Promise.resolve();
@@ -2040,6 +2048,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				previousAxis,
 				previousPane.id,
 				path,
+				true,
 			);
 			await Promise.resolve();
 			if (error instanceof SceneError) {
@@ -2053,6 +2062,16 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		}
 		this.#scene = candidate;
 		return structuredClone(candidate);
+	}
+
+	/** Scene 日期展示配置随周期原子切换，但不重建图表容器。 */
+	#applyDatePresentation(chartConfig: ChartScene['chart']): void {
+		const options = toKLineChartsOptions(chartConfig, this.#displayTimezone);
+		if (options.formatter !== undefined) {
+			this.#chart.setFormatter(options.formatter);
+		}
+		this.#chart.setLocale(chartConfig.locale);
+		this.#chart.setTimezone(this.#displayTimezone ?? chartConfig.timezone);
 	}
 
 	/** 同结构场景替换：symbol/period/data/viewport 原子更新，失败恢复旧场景。 */
@@ -2094,6 +2113,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		const previousHistoricalHasMore = this.#historicalDataLoading?.hasMore;
 		this.#settlePendingHistoricalData(false);
 		try {
+			this.#applyDatePresentation(candidate.chart);
 			this.#chart.setSymbol({
 				ticker: candidate.symbol.ticker,
 				pricePrecision: candidate.symbol.pricePrecision,
@@ -2117,6 +2137,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			return structuredClone(candidate);
 		} catch (error) {
 			try {
+				this.#applyDatePresentation(previous.chart);
 				this.#chart.setSymbol({
 					ticker: previous.symbol.ticker,
 					pricePrecision: previous.symbol.pricePrecision,

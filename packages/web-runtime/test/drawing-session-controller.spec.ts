@@ -246,6 +246,19 @@ async function flush(
 }
 
 describe('DrawingSessionController', () => {
+	it('skips restored Drawing ids when generating a new id', () => {
+		const { engine, controller } = buildController('immediate');
+		controller.restoreConfirmed([
+			snapshot('drawing-1', 12.5),
+			snapshot('drawing-3', 12.7),
+		]);
+
+		const id = controller.startCreate('horizontalStraightLine');
+
+		expect(id).toBe('drawing-2');
+		expect(engine.started?.id).toBe('drawing-2');
+	});
+
 	it('returns to ready when an in-progress Drawing is cancelled by the engine', () => {
 		const { engine, controller } = buildController('immediate');
 		const id = controller.startCreate('horizontalStraightLine');

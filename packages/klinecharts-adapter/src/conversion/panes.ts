@@ -11,10 +11,17 @@ interface IdentifiedYAxis extends YAxis {
 	readonly paneId: string;
 }
 
+/** 蜡烛主价格轴默认只格式化展示文本，不改变 Scene 与 Drawing 数值精度。 */
+export function formatDefaultPriceAxisValue(value: number): string {
+	const rounded = Number(value.toFixed(2));
+	return (Object.is(rounded, -0) ? 0 : rounded).toFixed(2);
+}
+
 function axisOverride(
 	axis: SceneYAxis,
 	enginePaneId: string,
 	engineAxisId: string,
+	formatAsPrice: boolean,
 ) {
 	return {
 		id: engineAxisId,
@@ -28,6 +35,9 @@ function axisOverride(
 			top: axis.topGap,
 			bottom: axis.bottomGap,
 		},
+		...(formatAsPrice
+			? { displayValueToText: (value: number) => formatDefaultPriceAxisValue(value) }
+			: {}),
 		needWidget: true,
 	};
 }
@@ -39,10 +49,11 @@ export function overrideSceneYAxis(
 	axis: SceneYAxis,
 	paneId: string,
 	path: string,
+	formatAsPrice = false,
 ): void {
 	const enginePaneId = requireMappedId(idMap.paneToEngine, paneId, `${path}/paneId`, 'Pane');
 	const engineAxisId = requireMappedId(idMap.yAxisToEngine, axis.id, `${path}/id`, 'Y-axis');
-	chart.overrideYAxis(axisOverride(axis, enginePaneId, engineAxisId));
+	chart.overrideYAxis(axisOverride(axis, enginePaneId, engineAxisId, formatAsPrice));
 }
 
 /** 按 Scene 顺序创建 Pane、Y 轴和指标，并核对每个映射。 */
@@ -80,7 +91,12 @@ export function applyPanes(scene: ChartScene, chart: Chart, idMap: EngineIdMap):
 				`/panes/${paneIndex}/yAxes/${axisIndex}/id`,
 				'Y-axis',
 			);
-			const override = axisOverride(axis, enginePaneId, engineAxisId);
+			const override = axisOverride(
+				axis,
+				enginePaneId,
+				engineAxisId,
+				pane.kind === 'candle' && axis.role === 'primary',
+			);
 			const axes = chart.getYAxes({ paneId: enginePaneId }) as IdentifiedYAxis[];
 			if (axes.some((candidate) => candidate.id === engineAxisId)) {
 				chart.overrideYAxis(override);

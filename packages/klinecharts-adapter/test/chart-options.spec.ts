@@ -38,6 +38,7 @@ describe('chart display timezone', () => {
 
 		expect(options.timezone).toBe('UTC');
 		expect(formatDate(options, 'tooltip')).toBe('2026-08-30 12:00 UTC');
+		expect(formatDate(options, 'crosshair')).toBe('2026-08-30 12:00');
 		expect(formatDate(options, 'xAxis')).toBe('2026-08-30 12:00');
 	});
 

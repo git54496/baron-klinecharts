@@ -259,6 +259,48 @@ test('@browser empty Workspace Runtime keeps chart and toolbar nodes while insta
 	expect(reprojected).toEqual({ drawings: 2, sameChartRoot: true });
 });
 
+test('@browser Workspace period replacement updates the crosshair time label format', async ({ page }) => {
+	await page.addInitScript(() => {
+		const drawnTexts: string[] = [];
+		(window as unknown as { __baronDrawnTexts: string[] }).__baronDrawnTexts = drawnTexts;
+		const originalFillText = CanvasRenderingContext2D.prototype.fillText;
+		CanvasRenderingContext2D.prototype.fillText = function fillText(
+			text: string,
+			x: number,
+			y: number,
+			maxWidth?: number,
+		): void {
+			drawnTexts.push(String(text));
+			if (maxWidth === undefined) {
+				originalFillText.call(this, text, x, y);
+			} else {
+				originalFillText.call(this, text, x, y, maxWidth);
+			}
+		};
+	});
+	await installRuntime(page, chartWorkspace);
+	await page.evaluate((workspace) => {
+		const runtime = (window as unknown as {
+			__runtime: {
+				replaceScene(scene: unknown): unknown;
+			};
+		}).__runtime;
+		const hourlyScene = structuredClone(workspace.scene.document);
+		hourlyScene.period = { type: 'hour', span: 2 };
+		hourlyScene.chart.dateFormat = 'yyyy-MM-dd HH:mm';
+		runtime.replaceScene(hourlyScene);
+		(window as unknown as { __baronDrawnTexts: string[] }).__baronDrawnTexts.length = 0;
+	}, chartWorkspace);
+
+	for (let x = 120; x <= 820; x += 70) {
+		await page.mouse.move(x, 300);
+	}
+	await expect.poll(() => page.evaluate(() => (
+		(window as unknown as { __baronDrawnTexts: string[] }).__baronDrawnTexts
+			.some((text) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/u.test(text))
+	))).toBe(true);
+});
+
 test('@browser Workspace Runtime host-confirmed commit and reject', async ({ page }) => {
 	await installRuntime(page, chartWorkspace, 'host-confirmed');
 	await page.evaluate(() => {

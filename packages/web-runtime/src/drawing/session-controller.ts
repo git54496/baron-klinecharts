@@ -139,7 +139,7 @@ export class DrawingSessionController {
 	): string {
 		this.#assertReady();
 		this.#state = 'interacting';
-		const id = options?.id ?? `drawing-${++this.#requestSequence}`;
+		const id = options?.id ?? this.#nextGeneratedDrawingId();
 		this.#interactingDrawingId = id;
 		try {
 			const startedId = this.#options.engine.startDrawing({
@@ -160,6 +160,15 @@ export class DrawingSessionController {
 			this.#state = 'ready';
 			throw error;
 		}
+	}
+
+	/** 自动 ID 只跳过当前已确认 Drawing；显式 ID 仍由引擎按原契约校验。 */
+	#nextGeneratedDrawingId(): string {
+		let id: string;
+		do {
+			id = `drawing-${++this.#requestSequence}`;
+		} while (this.#confirmed.some((drawing) => drawing.id === id));
+		return id;
 	}
 
 	public updateDrawingStyles(
