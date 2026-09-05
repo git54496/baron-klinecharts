@@ -86,8 +86,8 @@ function selectedDrawing(runtime: DrawingRuntimeCapability): EngineDrawingSnapsh
 }
 
 /**
- * 创建选中 Drawing 的对象级浮动工具栏。工具栏使用 body portal，避免修改图表引擎 DOM；
- * 拖动位置只保存在当前实例内，刷新后回到图表顶部中央。
+ * 创建选中 Drawing 的对象级浮动工具栏。普通模式使用 body portal，目标图表所属工作区
+ * 进入元素全屏时迁入对应全屏子树；拖动位置只保存在当前实例内，刷新后回到图表顶部中央。
  */
 export function createDrawingFloatingToolbar(
 	target: HTMLElement,
@@ -181,7 +181,13 @@ export function createDrawingFloatingToolbar(
 		status,
 	);
 	document.head.append(style);
-	document.body.append(root);
+	const resolvePortalHost = (): ParentNode => {
+		const fullscreenElement = document.fullscreenElement;
+		return fullscreenElement !== null && fullscreenElement.contains(target)
+			? fullscreenElement
+			: document.body;
+	};
+	resolvePortalHost().append(root);
 
 	let destroyed = false;
 	let userPositioned = false;
@@ -414,8 +420,16 @@ export function createDrawingFloatingToolbar(
 	grip.addEventListener('pointercancel', finishDrag);
 	const unsubscribe = runtime.subscribeDrawingChanges(render);
 	const handleViewportChange = (): void => clampCurrentPosition();
+	const handleFullscreenChange = (): void => {
+		const portalHost = resolvePortalHost();
+		if (root.parentNode !== portalHost) {
+			portalHost.append(root);
+		}
+		clampCurrentPosition();
+	};
 	window.addEventListener('resize', handleViewportChange);
 	window.addEventListener('scroll', handleViewportChange, true);
+	document.addEventListener('fullscreenchange', handleFullscreenChange);
 	const resizeObserver = typeof ResizeObserver === 'undefined'
 		? null
 		: new ResizeObserver(handleViewportChange);
@@ -442,6 +456,7 @@ export function createDrawingFloatingToolbar(
 			resizeObserver?.disconnect();
 			window.removeEventListener('resize', handleViewportChange);
 			window.removeEventListener('scroll', handleViewportChange, true);
+			document.removeEventListener('fullscreenchange', handleFullscreenChange);
 			colorInput.removeEventListener('change', handleColorChange);
 			lineStyle.select.removeEventListener('change', handleLineStyleChange);
 			lineWidth.select.removeEventListener('change', handleLineWidthChange);

@@ -902,6 +902,92 @@ test('@browser chart controls stay in the main toolbar and Drawing controls use 
 	await expect(page.locator('.baron-drawing-toolbar')).toBeHidden();
 });
 
+test('@browser selected Drawing toolbar remains visible inside workspace fullscreen', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	await page.evaluate(async (workspace) => {
+		const {
+			createChartWorkspaceToolbar,
+			createDrawingFloatingToolbar,
+			createDrawableWorkspaceRuntime,
+		} = await import('/src/index.ts');
+		const top = document.querySelector<HTMLElement>('#toolbar')!;
+		const chart = document.querySelector<HTMLElement>('#chart')!;
+		const left = document.createElement('div');
+		left.id = 'drawing-toolbar';
+		const fullscreenHost = document.createElement('section');
+		fullscreenHost.id = 'fullscreen-host';
+		document.body.append(fullscreenHost);
+		fullscreenHost.append(top, left, chart);
+		Object.defineProperty(fullscreenHost, 'requestFullscreen', {
+			configurable: true,
+			value: async () => {
+				Object.defineProperty(document, 'fullscreenElement', {
+					configurable: true,
+					value: fullscreenHost,
+				});
+				document.dispatchEvent(new Event('fullscreenchange'));
+			},
+		});
+		Object.defineProperty(document, 'exitFullscreen', {
+			configurable: true,
+			value: async () => {
+				Object.defineProperty(document, 'fullscreenElement', {
+					configurable: true,
+					value: null,
+				});
+				document.dispatchEvent(new Event('fullscreenchange'));
+			},
+		});
+		const runtime = await createDrawableWorkspaceRuntime(
+			chart,
+			workspace,
+			{ commitMode: 'immediate' },
+		);
+		const workspaceToolbar = createChartWorkspaceToolbar(
+			{ top, left },
+			runtime,
+			{ fullscreenTarget: fullscreenHost },
+		);
+		const drawingToolbar = createDrawingFloatingToolbar(chart, runtime);
+		const drawingId = runtime.listDrawings()[0]!.id;
+		runtime.selectDrawing(drawingId);
+		Object.assign(window, {
+			__fullscreenDrawingRuntime: runtime,
+			__fullscreenDrawingToolbar: drawingToolbar,
+			__fullscreenWorkspaceToolbar: workspaceToolbar,
+		});
+	}, chartWorkspaceFixture);
+
+	const drawingToolbar = page.locator('.baron-drawing-toolbar');
+	await expect(drawingToolbar).toBeVisible();
+	await expect.poll(() => drawingToolbar.evaluate((element) => element.parentElement?.tagName))
+		.toBe('BODY');
+
+	await page.locator('#fullscreen-host [data-action="fullscreen"]').click();
+	await expect.poll(() => page.evaluate(() => document.fullscreenElement?.id)).toBe('fullscreen-host');
+	await expect.poll(() => drawingToolbar.evaluate((element) => element.parentElement?.id))
+		.toBe('fullscreen-host');
+	await expect(drawingToolbar).toBeVisible();
+
+	await drawingToolbar.locator('[data-action="line-style"]').selectOption('dotted');
+	await expect.poll(() => page.evaluate(() => {
+		const runtime = (window as unknown as {
+			__fullscreenDrawingRuntime: {
+				getSelectedDrawingId(): string | undefined;
+				getDrawing(id: string): { styles: { line: { style: string } } };
+			};
+		}).__fullscreenDrawingRuntime;
+		const drawingId = runtime.getSelectedDrawingId()!;
+		return runtime.getDrawing(drawingId).styles.line.style;
+	})).toBe('dotted');
+
+	await page.locator('#fullscreen-host [data-action="fullscreen"]').click();
+	await expect.poll(() => page.evaluate(() => document.fullscreenElement)).toBeNull();
+	await expect.poll(() => drawingToolbar.evaluate((element) => element.parentElement?.tagName))
+		.toBe('BODY');
+	await expect(drawingToolbar).toBeVisible();
+});
+
 test('@browser clear-all removes every unlocked Drawing and keeps locked ones', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	const workspace = structuredClone(chartWorkspaceFixture);
