@@ -2,6 +2,7 @@ import type {
 	ChartScene,
 	Drawing,
 	MarketData,
+	SceneIndicator,
 } from '@baron1996/kline-scene-schema';
 
 export interface EngineDrawingTarget {
@@ -107,7 +108,8 @@ export interface EmptyChartRuntimeBootstrap {
 }
 
 /** 只在浏览器加载生命周期内存在的空图表引擎端口。 */
-export interface EmptyChartEnginePort extends DrawingEnginePort {
+export interface EmptyChartEnginePort
+	extends DrawingEnginePort, DisplayTimezoneEnginePort {
 	installInitialScene(scene: ChartScene): ChartScene;
 }
 
@@ -123,6 +125,19 @@ export interface HistoricalDataEnginePort {
 		hasMore: boolean,
 	): EngineHistoricalDataCommitResult;
 	rejectHistoricalData(requestId: string): boolean;
+}
+
+/** Chart Adapter 可选实现的指标端口；计算仍由浏览器内图表引擎完成。 */
+export interface IndicatorEnginePort {
+	listIndicators(): readonly SceneIndicator[];
+	addIndicator(indicator: SceneIndicator): SceneIndicator;
+	removeIndicator(id: string): boolean;
+}
+
+/** 仅影响日期展示的时区端口，不修改 Scene 与 Drawing 坐标语义。 */
+export interface DisplayTimezoneEnginePort {
+	getDisplayTimezone(): string;
+	setDisplayTimezone(timezone: string): void;
 }
 
 /**

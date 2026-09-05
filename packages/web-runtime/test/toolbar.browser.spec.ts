@@ -579,6 +579,116 @@ test('@browser chart Workspace toolbar has 22 tools and working main series cont
 	expect(result.candleType).toBe('area');
 });
 
+test('@browser composite chart toolbar separates market, settings, and Drawing controls', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const result = await page.evaluate(async (workspace) => {
+		const {
+			createChartWorkspaceToolbar,
+			createDrawableWorkspaceRuntime,
+			SUPPORTED_OVERLAYS,
+		} = await import('/src/index.ts');
+		const events: Array<Record<string, unknown>> = [];
+		const runtime = await createDrawableWorkspaceRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			workspace,
+			{ commitMode: 'immediate', onEvent: (event) => events.push(event) },
+		);
+		const leftContainer = document.createElement('div');
+		leftContainer.style.height = '600px';
+		document.body.append(leftContainer);
+		const toolbar = createChartWorkspaceToolbar(
+			{
+				top: document.querySelector<HTMLElement>('#toolbar')!,
+				left: leftContainer,
+			},
+			runtime,
+			{
+				periodActions: [
+					{ actionId: 'period.1h', label: '1小时', pressed: true },
+					{ actionId: 'period.1d', label: '日' },
+				],
+				settingsHostActions: [
+					{ actionId: 'adjustment.qfq', label: '前复权', pressed: true },
+				],
+				displayTimezoneChoices: [
+					{ value: 'instrument', label: '标的时区', timezone: workspace.scene.document.chart.timezone },
+					{ value: 'utc', label: 'UTC', timezone: 'UTC' },
+				],
+				activeDisplayTimezoneValue: 'instrument',
+				fullscreenControl: 'hidden',
+			},
+		);
+
+		const periodButton = toolbar.topElement.querySelector<HTMLButtonElement>(
+			'[data-host-action="period.1d"]',
+		)!;
+		periodButton.click();
+		toolbar.topElement.querySelector<HTMLButtonElement>('[data-action="main-indicators"]')!.click();
+		const indicatorPopover = document.querySelector<HTMLElement>('[id^="baron-workspace-indicators-"]')!;
+		const maButton = indicatorPopover.querySelector<HTMLButtonElement>('[data-indicator-name="MA"]')!;
+		for (const button of indicatorPopover.querySelectorAll<HTMLButtonElement>('[data-indicator-name]')) {
+			button.click();
+		}
+		const timezone = toolbar.topElement.querySelector<HTMLSelectElement>('[data-action="display-timezone"]')!;
+		timezone.value = 'utc';
+		timezone.dispatchEvent(new Event('change'));
+		const annotationButton = toolbar.leftElement.querySelector<HTMLButtonElement>(
+			'[data-overlay-type="simpleAnnotation"]',
+		)!;
+		annotationButton.click();
+		const textPopover = document.querySelector<HTMLElement>(
+			'[id^="baron-workspace-text-"][id$="simpleAnnotation"]',
+		)!;
+		textPopover.querySelector<HTMLInputElement>('input')!.value = '压力位';
+		textPopover.querySelector<HTMLFormElement>('form')!.requestSubmit();
+		toolbar.topElement.querySelector<HTMLButtonElement>('[data-action="settings"]')!.click();
+		const settingsPopover = document.querySelector<HTMLElement>('[id^="baron-workspace-settings-"]')!;
+		const exported = runtime.exportWorkspace();
+		const scene = exported.scene.document as typeof workspace.scene.document;
+		const snapshot = {
+			periods: toolbar.topElement.querySelectorAll('[data-host-action^="period."]').length,
+			drawingTools: toolbar.leftElement.querySelectorAll('[data-overlay-type]').length,
+			expectedDrawingTools: SUPPORTED_OVERLAYS.length,
+			mainIndicators: scene.panes[0].indicators.map((indicator: { name: string }) => indicator.name),
+			maPressed: maButton.getAttribute('aria-pressed'),
+			displayTimezone: runtime.getDisplayTimezone(),
+			sceneTimezone: scene.chart.timezone,
+			originalSceneTimezone: workspace.scene.document.chart.timezone,
+			hasAdjustment: settingsPopover.querySelector('[data-host-action="adjustment.qfq"]') !== null,
+			hasPriceScale: settingsPopover.querySelector('[data-action="price-scale"]') !== null,
+			hasMainSeries: settingsPopover.querySelector('[data-action="main-series"]') !== null,
+			annotationPressed: annotationButton.getAttribute('aria-pressed'),
+			textPopoverHidden: textPopover.hidden,
+			periodRequested: events.some((event) =>
+				event.type === 'host-action-requested' && event.actionId === 'period.1d'),
+		};
+		toolbar.destroy();
+		const remaining = document.querySelectorAll(
+			'.baron-chart-workspace-toolbar, .baron-chart-workspace-popover, .baron-chart-workspace-tooltip',
+		).length;
+		runtime.destroy();
+		return { ...snapshot, remaining };
+	}, chartWorkspaceFixture);
+
+	expect(result).toEqual({
+		periods: 2,
+		drawingTools: 22,
+		expectedDrawingTools: 22,
+		mainIndicators: ['MA', 'EMA', 'SMA', 'BOLL', 'SAR', 'BBI'],
+		maPressed: 'true',
+		displayTimezone: 'UTC',
+		sceneTimezone: result.originalSceneTimezone,
+		originalSceneTimezone: result.originalSceneTimezone,
+		hasAdjustment: true,
+		hasPriceScale: true,
+		hasMainSeries: true,
+		annotationPressed: 'true',
+		textPopoverHidden: true,
+		periodRequested: true,
+		remaining: 0,
+	});
+});
+
 test('@browser time-series Workspace toolbar keeps 22 tools without main series or log controls', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	const result = await page.evaluate(async (workspace) => {

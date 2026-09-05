@@ -1,6 +1,7 @@
 import type {
 	ChartScene,
 	DrawingDocument,
+	SceneIndicator,
 	TimeSeriesScene,
 } from '@baron1996/kline-scene-schema';
 import type { EngineDrawingSnapshot } from '@baron1996/klinecharts-adapter';
@@ -73,6 +74,9 @@ export type WorkspaceRuntimeEvent =
 	  }
 	| { readonly type: 'value-axis-scale-changed'; readonly scale: 'linear' | 'logarithmic' }
 	| { readonly type: 'main-series-presentation-changed'; readonly activeType: ActiveMainSeriesType }
+	| { readonly type: 'main-indicator-created'; readonly indicator: SceneIndicator }
+	| { readonly type: 'main-indicator-removed'; readonly id: string }
+	| { readonly type: 'display-timezone-changed'; readonly timezone: string }
 	| {
 			readonly type: 'host-action-requested';
 			readonly actionId: string;

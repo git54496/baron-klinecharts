@@ -4,6 +4,7 @@ import type {
 	DrawingDocument,
 	DrawableWorkspaceDocument,
 	MarketData,
+	SceneIndicator,
 } from '@baron1996/kline-scene-schema';
 import type {
 	EmptyChartEnginePort,
@@ -18,6 +19,7 @@ import {
 } from '@baron1996/klinecharts-adapter';
 
 import { runRuntimeTeardowns } from '../lifecycle.js';
+import type { AddIndicatorOptions } from '../types.js';
 import type { RuntimeCapabilityDescriptor } from './runtime-capability-descriptor.js';
 import { getSceneRuntime } from './scene-runtime-factory.js';
 import {
@@ -88,6 +90,8 @@ export class ProgressiveDrawableWorkspaceRuntime
 	readonly #stateElement: HTMLDivElement;
 	readonly #stateStyle: HTMLStyleElement;
 	readonly #originalPosition: string;
+	/** 空态和就绪态共用的当前展示时区。 */
+	#displayTimezone: string;
 	#inner: DrawableWorkspaceRuntime | undefined;
 	#state: ProgressiveWorkspaceRuntimeState = 'empty';
 	#sequence = 0;
@@ -103,6 +107,7 @@ export class ProgressiveDrawableWorkspaceRuntime
 		this.#bootstrap = structuredClone(bootstrap);
 		this.#options = options;
 		this.#adapter = adapter;
+		this.#displayTimezone = options.displayTimezone ?? bootstrap.chart.timezone;
 		this.#originalPosition = container.style.position;
 		if (getComputedStyle(container).position === 'static') {
 			container.style.position = 'relative';
@@ -236,9 +241,7 @@ export class ProgressiveDrawableWorkspaceRuntime
 				...(this.#options.historicalDataLoading === undefined
 					? {}
 					: { historicalDataLoading: this.#options.historicalDataLoading }),
-				...(this.#options.displayTimezone === undefined
-					? {}
-					: { displayTimezone: this.#options.displayTimezone }),
+				displayTimezone: this.#displayTimezone,
 				...(this.#options.drawingInteraction === undefined
 					? {}
 					: { drawingInteraction: this.#options.drawingInteraction }),
@@ -372,8 +375,41 @@ export class ProgressiveDrawableWorkspaceRuntime
 		return this.#requireReady().setMainSeriesPresentation(presentation);
 	}
 
-	public replaceScene(scene: ChartScene): ChartScene {
-		return this.#requireReady().replaceScene(scene) as ChartScene;
+	public listMainIndicators(): readonly SceneIndicator[] {
+		return this.#inner?.listMainIndicators() ?? [];
+	}
+
+	public addMainIndicator(options: AddIndicatorOptions): SceneIndicator {
+		return this.#requireReady().addMainIndicator(options);
+	}
+
+	public removeMainIndicator(id: string): boolean {
+		return this.#requireReady().removeMainIndicator(id);
+	}
+
+	public getDisplayTimezone(): string {
+		return this.#inner?.getDisplayTimezone() ?? this.#displayTimezone;
+	}
+
+	public setDisplayTimezone(timezone: string): void {
+		if (this.#inner !== undefined) {
+			this.#inner.setDisplayTimezone(timezone);
+			return;
+		}
+		try {
+			new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(0);
+		} catch {
+			throw new Error(`DISPLAY_TIMEZONE_INVALID: ${timezone} is not a valid IANA timezone.`);
+		}
+		this.#adapter.setDisplayTimezone(timezone);
+		this.#displayTimezone = timezone;
+	}
+
+	public replaceScene(
+		scene: ChartScene,
+		options: { readonly preserveMainIndicators?: boolean } = {},
+	): ChartScene {
+		return this.#requireReady().replaceScene(scene, options) as ChartScene;
 	}
 
 	public commitHistoricalData(

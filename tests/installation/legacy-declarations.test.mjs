@@ -113,6 +113,12 @@ export interface DrawingFloatingToolbar {
 	[
 		'packages/web-runtime/dist/drawing/workspace-runtime.d.ts',
 		[
+			', SceneIndicator',
+			"import type { AddIndicatorOptions } from '../types.js';\n",
+			'DisplayTimezoneRuntimeCapability, ',
+			', MainIndicatorRuntimeCapability',
+			', MainIndicatorRuntimeCapability',
+			', DisplayTimezoneRuntimeCapability',
 			'DrawingInteractionOptions, ',
 			'DrawingEnginePort, ',
 			' MarketData,',
@@ -152,6 +158,15 @@ export interface DrawingFloatingToolbar {
 `,
 			'        readonly groupId?: string;\n',
 			"        readonly metadata?: NonNullable<Drawing['metadata']>;\n",
+			`    listMainIndicators(): readonly SceneIndicator[];
+    addMainIndicator(options: AddIndicatorOptions): SceneIndicator;
+    removeMainIndicator(id: string): boolean;
+    getDisplayTimezone(): string;
+    setDisplayTimezone(timezone: string): void;
+`,
+			`, options?: {
+        readonly preserveMainIndicators?: boolean;
+    }`,
 		],
 	],
 	[
@@ -176,6 +191,8 @@ export interface DrawingFloatingToolbar {
 	[
 		'packages/web-runtime/dist/drawing/capabilities.d.ts',
 		[
+			', SceneIndicator',
+			"import type { AddIndicatorOptions } from '../types.js';\n",
 			', MarketData',
 			'EngineHistoricalDataCommitResult, ',
 			`/** 由宿主接管网络请求的更早行情能力。 */
@@ -190,11 +207,24 @@ export interface HistoricalDataRuntimeCapability {
 `,
 			'        readonly groupId?: string;\n',
 			"        readonly metadata?: NonNullable<Drawing['metadata']>;\n",
+			`/** 主图指标配置能力；指标值由浏览器内图表引擎基于 OHLC 数据计算。 */
+export interface MainIndicatorRuntimeCapability {
+    listMainIndicators(): readonly SceneIndicator[];
+    addMainIndicator(options: AddIndicatorOptions): SceneIndicator;
+    removeMainIndicator(id: string): boolean;
+}
+/** 展示时区能力；不改变 Scene 的证券时区与 Drawing 坐标语义。 */
+export interface DisplayTimezoneRuntimeCapability {
+    getDisplayTimezone(): string;
+    setDisplayTimezone(timezone: string): void;
+}
+`,
 		],
 	],
 	[
 		'packages/web-runtime/dist/drawing/workspace-events.d.ts',
 		[
+			', SceneIndicator',
 			"import type { EngineHistoricalDataRequest } from '@baron1996/klinecharts-adapter';\n",
 			` | ({
     readonly type: 'historical-data-requested';
@@ -208,6 +238,16 @@ export interface HistoricalDataRuntimeCapability {
     readonly type: 'historical-data-rejected';
     readonly requestId: string;
     readonly message: string;
+}`,
+			` | {
+    readonly type: 'main-indicator-created';
+    readonly indicator: SceneIndicator;
+} | {
+    readonly type: 'main-indicator-removed';
+    readonly id: string;
+} | {
+    readonly type: 'display-timezone-changed';
+    readonly timezone: string;
 }`,
 		],
 	],

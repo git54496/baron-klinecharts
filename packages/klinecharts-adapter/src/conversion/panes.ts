@@ -69,7 +69,7 @@ export function applyPanes(scene: ChartScene, chart: Chart, idMap: EngineIdMap):
 			`/panes/${paneIndex}/id`,
 			'Pane',
 		);
-		if (pane.kind === 'indicator') {
+		if (pane.indicators.length > 0) {
 			createPaneIndicators(chart, pane, paneIndex, idMap);
 		}
 		chart.setPaneOptions({

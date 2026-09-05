@@ -4,12 +4,13 @@ Browser editing runtime and standard annotation toolbar for deterministic KLineC
 ChartScene files.
 
 ```bash
-npm install --save-exact @baron1996/kline-scene-schema@0.9.13 @baron1996/klinecharts-runtime@0.9.13
+npm install --save-exact @baron1996/kline-scene-schema@0.9.14 @baron1996/klinecharts-runtime@0.9.14
 ```
 
 ```ts
 import { parseChartScene } from '@baron1996/kline-scene-schema';
 import {
+  createChartWorkspaceToolbar,
   createDrawingFloatingToolbar,
   createKLineSceneRuntime,
   createStandardToolbar,
@@ -53,6 +54,39 @@ presentation. Selecting a Drawing shows `createDrawingFloatingToolbar`, which ow
 line style, width, color, text, lock/unlock, and explicit deletion. The floating
 toolbar can be dragged within the chart's visible bounds. Baron does not replace or
 cancel the browser context menu; right-click never deletes a Drawing.
+
+For a chart Workspace, `createChartWorkspaceToolbar` provides the split layout used
+by professional charting screens: period and display controls at the top, and Drawing
+tools on the left. Period and adjustment actions remain opaque host actions. Main
+indicators are calculated by KLineCharts in the browser from the Scene OHLC data.
+
+```ts
+const toolbar = createChartWorkspaceToolbar(
+  { top: topToolbarContainer, left: leftToolbarContainer },
+  runtime,
+  {
+    periodActions: [
+      { actionId: 'period.1h', label: '1小时', pressed: true },
+      { actionId: 'period.1d', label: '日' },
+    ],
+    settingsHostActions: [
+      { actionId: 'adjustment.qfq', label: '前复权', pressed: true },
+    ],
+    displayTimezoneChoices: [
+      { value: 'instrument', label: '标的时区', timezone: 'Asia/Shanghai' },
+      { value: 'utc', label: 'UTC', timezone: 'UTC' },
+    ],
+    activeDisplayTimezoneValue: 'instrument',
+    fullscreenTarget: chartWorkspaceElement,
+  },
+);
+```
+
+The indicator menu currently manages main-pane `MA`, `EMA`, `SMA`, `BOLL`, `SAR`,
+and `BBI`. `replaceScene()` preserves these Runtime-owned selections by default, so
+a host can fetch and install another historical period without adding indicator
+fields to its datafeed request. Pass `{ preserveMainIndicators: false }` only when an
+explicit reset is required. Secondary indicator panes are outside this API.
 
 The runtime does not provide undo or redo and does not fetch market data.
 Runtime `0.2.0` events are structured-cloneable pure data with
@@ -114,7 +148,8 @@ coordinator.destroy();
 runtime.destroy();
 ```
 
-`displayTimezone` is a presentation-only IANA timezone override. It changes the
+`displayTimezone` is the initial presentation-only IANA timezone override, and
+`runtime.setDisplayTimezone(timezone)` changes it in place. It changes the
 KLineCharts time axis and adds the active timezone to tooltip dates, but it is not
 written into the Workspace and does not change candle timestamps, period rules,
 Drawing projection, or host alerts. Omit it to use the Scene chart timezone.

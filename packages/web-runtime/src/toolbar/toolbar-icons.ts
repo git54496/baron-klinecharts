@@ -210,6 +210,32 @@ const ICON_SPECS = {
 			},
 		},
 	],
+	indicator: [
+		{ name: 'path', attributes: { d: 'M3 17l5 -5l4 4l8 -10' } },
+		{ name: 'path', attributes: { d: 'M17 6h3v3' } },
+	],
+	timezone: [
+		{ name: 'circle', attributes: { cx: '12', cy: '12', r: '9' } },
+		{ name: 'path', attributes: { d: 'M3 12h18' } },
+		{ name: 'path', attributes: { d: 'M12 3a14 14 0 0 1 0 18' } },
+		{ name: 'path', attributes: { d: 'M12 3a14 14 0 0 0 0 18' } },
+	],
+	settings: [
+		{ name: 'circle', attributes: { cx: '12', cy: '12', r: '3' } },
+		{ name: 'path', attributes: { d: 'M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06 .06l-2.83 2.83l-.06 -.06a1.7 1.7 0 0 0 -1.88 -.34a1.7 1.7 0 0 0 -1.03 1.56v.17h-4v-.17a1.7 1.7 0 0 0 -1.03 -1.56a1.7 1.7 0 0 0 -1.88 .34l-.06 .06l-2.83 -2.83l.06 -.06a1.7 1.7 0 0 0 .34 -1.88a1.7 1.7 0 0 0 -1.56 -1.03h-.17v-4h.17a1.7 1.7 0 0 0 1.56 -1.03a1.7 1.7 0 0 0 -.34 -1.88l-.06 -.06l2.83 -2.83l.06 .06a1.7 1.7 0 0 0 1.88 .34h.01a1.7 1.7 0 0 0 1.02 -1.56v-.17h4v.17a1.7 1.7 0 0 0 1.03 1.56a1.7 1.7 0 0 0 1.88 -.34l.06 -.06l2.83 2.83l-.06 .06a1.7 1.7 0 0 0 -.34 1.88v.01a1.7 1.7 0 0 0 1.56 1.02h.17v4h-.17a1.7 1.7 0 0 0 -1.56 1.03' } },
+	],
+	fullscreen: [
+		{ name: 'path', attributes: { d: 'M4 8v-4h4' } },
+		{ name: 'path', attributes: { d: 'M16 4h4v4' } },
+		{ name: 'path', attributes: { d: 'M20 16v4h-4' } },
+		{ name: 'path', attributes: { d: 'M8 20h-4v-4' } },
+	],
+	fullscreenExit: [
+		{ name: 'path', attributes: { d: 'M8 4v4h-4' } },
+		{ name: 'path', attributes: { d: 'M16 4v4h4' } },
+		{ name: 'path', attributes: { d: 'M20 16h-4v4' } },
+		{ name: 'path', attributes: { d: 'M4 16h4v4' } },
+	],
 } as const satisfies Record<string, readonly SvgNodeSpec[]>;
 
 export type ToolbarIconName = keyof typeof ICON_SPECS;

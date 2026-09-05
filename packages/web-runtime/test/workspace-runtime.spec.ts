@@ -7,6 +7,7 @@ import type {
 	DrawableWorkspaceDocument,
 	Drawing,
 	MarketData,
+	SceneIndicator,
 	TimeSeriesScene,
 } from '@baron1996/kline-scene-schema';
 import type {
@@ -39,6 +40,7 @@ class MockEngine implements DrawingEnginePort {
 	public appliedScale: string | null = null;
 	public replacedScene: unknown = null;
 	public historicalListener: ((request: EngineHistoricalDataRequest) => void) | null = null;
+	public displayTimezone = this.scene.chart.timezone;
 
 	public restoreDrawings(drawings: readonly EngineDrawingSnapshot[]): void {
 		this.drawings = new Map(drawings.map((drawing) => [drawing.id, drawing]));
@@ -157,6 +159,35 @@ class MockEngine implements DrawingEnginePort {
 		this.replacedScene = scene;
 		this.scene = structuredClone(scene) as unknown as ChartScene;
 		return structuredClone(scene);
+	}
+
+	public listIndicators(): readonly SceneIndicator[] {
+		return structuredClone(this.scene.panes.flatMap((pane) => pane.indicators));
+	}
+
+	public addIndicator(indicator: SceneIndicator): SceneIndicator {
+		const paneIndex = this.scene.panes.findIndex((pane) => pane.id === indicator.paneId);
+		this.scene.panes[paneIndex]!.indicators.push(structuredClone(indicator));
+		return structuredClone(indicator);
+	}
+
+	public removeIndicator(id: string): boolean {
+		for (const pane of this.scene.panes) {
+			const previousLength = pane.indicators.length;
+			pane.indicators = pane.indicators.filter((indicator) => indicator.id !== id);
+			if (pane.indicators.length !== previousLength) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public getDisplayTimezone(): string {
+		return this.displayTimezone;
+	}
+
+	public setDisplayTimezone(timezone: string): void {
+		this.displayTimezone = timezone;
 	}
 
 	public configureHistoricalDataLoading(): void {}
@@ -321,6 +352,23 @@ describe('DrawableWorkspaceRuntime', () => {
 			chartWorkspaceFixture.drawings.coordinateSystem.timezone,
 		);
 		runtime.destroy();
+	});
+
+	it('changes display timezone without mutating Scene or Drawing coordinates', async () => {
+		const { runtime, events } = await makeRuntime(chartWorkspaceFixture);
+		const sceneTimezone = runtime.exportWorkspace().scene.document.chart.timezone;
+		const drawingTimezone = runtime.exportDrawingDocument().coordinateSystem.timezone;
+
+		runtime.setDisplayTimezone('UTC');
+
+		expect(runtime.getDisplayTimezone()).toBe('UTC');
+		expect(mockEngine!.displayTimezone).toBe('UTC');
+		expect(runtime.exportWorkspace().scene.document.chart.timezone).toBe(sceneTimezone);
+		expect(runtime.exportDrawingDocument().coordinateSystem.timezone).toBe(drawingTimezone);
+		expect(events.at(-1)).toMatchObject({
+			type: 'display-timezone-changed',
+			timezone: 'UTC',
+		});
 	});
 
 	it('forwards Drawing interaction policy as an adapter-only option', async () => {
@@ -499,6 +547,42 @@ describe('DrawableWorkspaceRuntime', () => {
 			(exported.scene as { document: ChartScene }).document.data[0].close,
 		).toBe(12.6);
 		expect(runtime.getDrawingSessionState()).toBe('ready');
+	});
+
+	it('manages main indicators in the browser and preserves them across period Scene replacement', async () => {
+		const { runtime, events } = await makeRuntime(chartWorkspaceFixture);
+		const indicator = runtime.addMainIndicator({
+			name: 'MA',
+			calcParams: [5, 10, 30, 60],
+		});
+		expect(indicator).toMatchObject({
+			name: 'MA',
+			paneId: 'pane-candle',
+			yAxisId: 'axis-price',
+		});
+		expect(runtime.listMainIndicators()).toHaveLength(1);
+		expect(events.some((event) => event.type === 'main-indicator-created')).toBe(true);
+
+		const next = structuredClone(chartWorkspaceFixture.scene.document) as unknown as ChartScene;
+		next.period = { type: 'hour', span: 2 };
+		runtime.replaceScene(next);
+		expect(runtime.listMainIndicators()).toEqual([indicator]);
+		expect((mockEngine!.replacedScene as ChartScene).panes[0]!.indicators).toEqual([indicator]);
+
+		expect(runtime.removeMainIndicator(indicator.id)).toBe(true);
+		expect(runtime.listMainIndicators()).toEqual([]);
+		expect(events.some((event) => event.type === 'main-indicator-removed')).toBe(true);
+	});
+
+	it('allows an explicit Scene replacement to reset main indicators', async () => {
+		const { runtime } = await makeRuntime(chartWorkspaceFixture);
+		runtime.addMainIndicator({ name: 'BOLL', calcParams: [20, 2] });
+		const next = structuredClone(chartWorkspaceFixture.scene.document) as unknown as ChartScene;
+
+		runtime.replaceScene(next, { preserveMainIndicators: false });
+
+		expect(runtime.listMainIndicators()).toEqual([]);
+		expect((mockEngine!.replacedScene as ChartScene).panes[0]!.indicators).toEqual([]);
 	});
 
 	it('forwards historical requests and atomically prepends confirmed data', async () => {

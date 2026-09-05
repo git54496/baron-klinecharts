@@ -1,7 +1,7 @@
 import {
 	createDrawingFloatingToolbar,
 	createDrawableWorkspaceRuntime,
-	createStandardToolbar,
+	createChartWorkspaceToolbar,
 	type WorkspaceRuntimeEvent,
 } from '@baron1996/klinecharts-runtime';
 import workspace from '../../tests/fixtures/workspaces/chart-minimal.json';
@@ -9,9 +9,17 @@ import workspace from '../../tests/fixtures/workspaces/chart-minimal.json';
 import '../shared.css';
 
 const chart = document.querySelector<HTMLElement>('#chart');
-const toolbarRoot = document.querySelector<HTMLElement>('#toolbar');
+const chartPanel = document.querySelector<HTMLElement>('#chart-panel');
+const topToolbarRoot = document.querySelector<HTMLElement>('#toolbar-top');
+const leftToolbarRoot = document.querySelector<HTMLElement>('#toolbar-left');
 const status = document.querySelector<HTMLElement>('[data-example-status]');
-if (chart === null || toolbarRoot === null || status === null) {
+if (
+	chart === null ||
+	chartPanel === null ||
+	topToolbarRoot === null ||
+	leftToolbarRoot === null ||
+	status === null
+) {
 	throw new Error('Example mount elements are missing.');
 }
 
@@ -30,8 +38,27 @@ try {
 		},
 		onEvent: (event) => events.push(event),
 	});
-	const toolbar = createStandardToolbar(toolbarRoot, runtime, {
-		downloadFileName: 'baron-workspace.json',
+	const toolbar = createChartWorkspaceToolbar({
+		top: topToolbarRoot,
+		left: leftToolbarRoot,
+	}, runtime, {
+		periodActions: [
+			{ actionId: 'period.1h', label: '1小时', pressed: true },
+			{ actionId: 'period.2h', label: '2小时' },
+			{ actionId: 'period.1d', label: '日' },
+			{ actionId: 'period.1w', label: '周' },
+		],
+		settingsHostActions: [
+			{ actionId: 'adjustment.none', label: '不复权', pressed: true },
+			{ actionId: 'adjustment.qfq', label: '前复权' },
+		],
+		displayTimezoneChoices: [
+			{ value: 'instrument', label: `标的 · ${workspace.scene.document.chart.timezone}`, timezone: workspace.scene.document.chart.timezone },
+			{ value: 'local', label: `本机 · ${Intl.DateTimeFormat().resolvedOptions().timeZone}`, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+			{ value: 'utc', label: 'UTC', timezone: 'UTC' },
+		],
+		activeDisplayTimezoneValue: 'instrument',
+		fullscreenTarget: chartPanel,
 	});
 	const drawingToolbar = createDrawingFloatingToolbar(chart, runtime);
 	status.dataset.state = 'ready';

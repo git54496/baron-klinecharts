@@ -4,6 +4,7 @@ import type {
 	Drawing,
 	DrawingDocument,
 	MarketData,
+	SceneIndicator,
 	TimeSeriesScene,
 } from '@baron1996/kline-scene-schema';
 import {
@@ -14,11 +15,13 @@ import {
 } from '@baron1996/kline-scene-schema';
 import type {
 	ActiveMainSeriesType,
+	DisplayTimezoneEnginePort,
 	DrawingInteractionOptions,
 	DrawingEnginePort,
 	EngineDrawingSnapshot,
 	EngineHistoricalDataCommitResult,
 	HistoricalDataEnginePort,
+	IndicatorEnginePort,
 	MainSeriesPresentation,
 } from '@baron1996/klinecharts-adapter';
 import {
@@ -27,9 +30,16 @@ import {
 } from '@baron1996/klinecharts-adapter';
 
 import { runRuntimeTeardowns } from '../lifecycle.js';
+import {
+	createSceneIndicator,
+	isMainPaneIndicatorName,
+} from '../indicator-presentation.js';
+import type { AddIndicatorOptions } from '../types.js';
 import type {
+	DisplayTimezoneRuntimeCapability,
 	DrawingRuntimeCapability,
 	HistoricalDataRuntimeCapability,
+	MainIndicatorRuntimeCapability,
 	RuntimeAuxiliaryCapability,
 } from './capabilities.js';
 import {
@@ -65,7 +75,11 @@ export interface DrawableWorkspaceRuntimeOptions {
 }
 
 export interface DrawableWorkspaceRuntimeHandle
-	extends DrawingRuntimeCapability, HistoricalDataRuntimeCapability, RuntimeAuxiliaryCapability {}
+	extends DrawingRuntimeCapability,
+		HistoricalDataRuntimeCapability,
+		MainIndicatorRuntimeCapability,
+		DisplayTimezoneRuntimeCapability,
+		RuntimeAuxiliaryCapability {}
 
 function drawingToSnapshot(drawing: Drawing): EngineDrawingSnapshot {
 	return {
@@ -122,8 +136,12 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 	/** 释放历史行情请求订阅，避免 Runtime 销毁后宿主收到旧请求。 */
 	readonly #unsubscribeHistoricalData: (() => void) | undefined;
 	#sequence = 0;
+	/** 主图指标稳定 ID 的递增序号。 */
+	#indicatorSequence = 0;
 	#destroyed = false;
 	#scene: ChartScene | TimeSeriesScene;
+	/** 当前展示时区；不写入可序列化场景。 */
+	#displayTimezone: string;
 	/** 渐进 Runtime 只允许安装一次首份 DrawingDocument。 */
 	#drawingDocumentInstalled: boolean;
 	/** 首次 Scene 建立时固定的 Drawing 业务身份，不随投影 metadata 变化。 */
@@ -144,6 +162,7 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		this.#scene = workspace.scene.document as unknown as
 			| ChartScene
 			| TimeSeriesScene;
+		this.#displayTimezone = options.displayTimezone ?? this.#scene.chart.timezone;
 		this.#drawingDocumentInstalled = drawingDocumentInstalled;
 		this.#drawingMetadataIdentity = structuredClone(workspace.drawings.metadata);
 		this.#registration = getSceneRuntime(workspace.scene.kind);
@@ -560,16 +579,112 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		return result;
 	}
 
+	public listMainIndicators(): readonly SceneIndicator[] {
+		this.#assertUsable();
+		if (this.#sceneKind() !== 'chart') {
+			return [];
+		}
+		return structuredClone(
+			(this.#scene as ChartScene).panes
+				.find((pane) => pane.kind === 'candle')?.indicators ?? [],
+		);
+	}
+
+	public addMainIndicator(options: AddIndicatorOptions): SceneIndicator {
+		this.#assertUsable();
+		if (this.#sceneKind() !== 'chart') {
+			throw new Error('MAIN_INDICATOR_UNSUPPORTED: time-series Workspaces do not support main indicators.');
+		}
+		if (!isMainPaneIndicatorName(options.name)) {
+			throw new Error(`MAIN_INDICATOR_UNSUPPORTED: ${options.name} is not a supported main-pane indicator.`);
+		}
+		const scene = this.#scene as ChartScene;
+		const paneIndex = scene.panes.findIndex((pane) => pane.kind === 'candle');
+		const pane = scene.panes[paneIndex];
+		const primaryAxis = pane?.yAxes.find((axis) => axis.role === 'primary');
+		if (pane === undefined || primaryAxis === undefined) {
+			throw new Error('MAIN_INDICATOR_UNSUPPORTED: candle pane primary axis is missing.');
+		}
+		if (options.paneId !== undefined && options.paneId !== pane.id) {
+			throw new Error('MAIN_INDICATOR_INVALID_TARGET: paneId must reference the candle pane.');
+		}
+		if (options.yAxisId !== undefined && options.yAxisId !== primaryAxis.id) {
+			throw new Error('MAIN_INDICATOR_INVALID_TARGET: yAxisId must reference the candle primary axis.');
+		}
+		const indicator = createSceneIndicator(
+			options,
+			{ paneId: pane.id, yAxisId: primaryAxis.id },
+			options.id ?? this.#nextIndicatorId(options.name),
+		);
+		const panes = structuredClone(scene.panes);
+		panes[paneIndex]!.indicators.push(structuredClone(indicator));
+		const candidate = parseChartScene({ ...structuredClone(scene), panes });
+		const committed = this.#requireIndicatorPort().addIndicator(indicator);
+		this.#scene = candidate;
+		this.#emit({ type: 'main-indicator-created', indicator: committed });
+		return structuredClone(committed);
+	}
+
+	public removeMainIndicator(id: string): boolean {
+		this.#assertUsable();
+		if (this.#sceneKind() !== 'chart') {
+			return false;
+		}
+		const scene = this.#scene as ChartScene;
+		const paneIndex = scene.panes.findIndex((pane) =>
+			pane.kind === 'candle' && pane.indicators.some((indicator) => indicator.id === id),
+		);
+		if (paneIndex < 0 || !this.#requireIndicatorPort().removeIndicator(id)) {
+			return false;
+		}
+		const panes = structuredClone(scene.panes);
+		panes[paneIndex]!.indicators = panes[paneIndex]!.indicators.filter(
+			(indicator) => indicator.id !== id,
+		);
+		this.#scene = parseChartScene({ ...structuredClone(scene), panes });
+		this.#emit({ type: 'main-indicator-removed', id });
+		return true;
+	}
+
+	public getDisplayTimezone(): string {
+		this.#assertUsable();
+		return this.#displayTimezone;
+	}
+
+	public setDisplayTimezone(timezone: string): void {
+		this.#assertUsable();
+		try {
+			new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(0);
+		} catch {
+			throw new Error(`DISPLAY_TIMEZONE_INVALID: ${timezone} is not a valid IANA timezone.`);
+		}
+		const port = this.#engine as DrawingEnginePort & Partial<DisplayTimezoneEnginePort>;
+		if (typeof port.setDisplayTimezone !== 'function') {
+			throw new Error('DISPLAY_TIMEZONE_UNSUPPORTED: the current Scene Adapter cannot change display timezone.');
+		}
+		port.setDisplayTimezone(timezone);
+		this.#displayTimezone = timezone;
+		this.#emit({ type: 'display-timezone-changed', timezone });
+	}
+
 	public replaceScene(
 		scene: ChartScene | TimeSeriesScene,
+		options: { readonly preserveMainIndicators?: boolean } = {},
 	): ChartScene | TimeSeriesScene {
 		this.#assertUsable();
-		const candidate = this.#registration.parseScene(scene);
+		let candidate = this.#registration.parseScene(scene);
 		if (
 			(this.#sceneKind() === 'chart' && !('panes' in candidate)) ||
 			(this.#sceneKind() === 'time-series' && !('series' in candidate))
 		) {
 			throw new Error('DRAWABLE_SCENE_KIND_UNSUPPORTED: cross-kind replacement is rejected.');
+		}
+		if (
+			this.#sceneKind() === 'chart' &&
+			'panes' in candidate &&
+			options.preserveMainIndicators !== false
+		) {
+			candidate = preserveMainIndicators(this.#scene as ChartScene, candidate);
 		}
 		const engine = this.#engine as unknown as {
 			replaceScene(value: ChartScene | TimeSeriesScene): ChartScene | TimeSeriesScene;
@@ -721,6 +836,31 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		return port;
 	}
 
+	#requireIndicatorPort(): IndicatorEnginePort {
+		const candidate = this.#engine as DrawingEnginePort & Partial<IndicatorEnginePort>;
+		if (
+			typeof candidate.listIndicators !== 'function' ||
+			typeof candidate.addIndicator !== 'function' ||
+			typeof candidate.removeIndicator !== 'function'
+		) {
+			throw new Error('MAIN_INDICATOR_UNSUPPORTED: the current Scene Adapter has no indicator port.');
+		}
+		return candidate as DrawingEnginePort & IndicatorEnginePort;
+	}
+
+	#nextIndicatorId(name: SceneIndicator['name']): string {
+		const existing = new Set(
+			(this.#scene as ChartScene).panes.flatMap((pane) =>
+				pane.indicators.map((indicator) => indicator.id)),
+		);
+		let id = '';
+		do {
+			id = `indicator-${name.toLowerCase()}-${this.#indicatorSequence}`;
+			this.#indicatorSequence++;
+		} while (existing.has(id));
+		return id;
+	}
+
 	#emit(event: WorkspaceRuntimeEvent): void {
 		const envelope = deepFreeze({
 			protocol: WORKSPACE_EVENT_PROTOCOL,
@@ -754,6 +894,30 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 			);
 		}
 	}
+}
+
+/** 周期切换只替换行情 Scene，主图指标作为 Runtime UI 状态继续保留。 */
+function preserveMainIndicators(
+	current: ChartScene,
+	candidate: ChartScene,
+): ChartScene {
+	const currentIndicators = current.panes.find((pane) => pane.kind === 'candle')?.indicators ?? [];
+	if (currentIndicators.length === 0) {
+		return candidate;
+	}
+	const targetPaneIndex = candidate.panes.findIndex((pane) => pane.kind === 'candle');
+	const targetPane = candidate.panes[targetPaneIndex];
+	const targetAxis = targetPane?.yAxes.find((axis) => axis.role === 'primary');
+	if (targetPane === undefined || targetAxis === undefined) {
+		return candidate;
+	}
+	const panes = structuredClone(candidate.panes);
+	panes[targetPaneIndex]!.indicators = currentIndicators.map((indicator) => ({
+		...structuredClone(indicator),
+		paneId: targetPane.id,
+		yAxisId: targetAxis.id,
+	}));
+	return parseChartScene({ ...structuredClone(candidate), panes });
 }
 
 function containsMetadataIdentity(

@@ -2,6 +2,7 @@ import type {
 	ChartScene,
 	Drawing,
 	MarketData,
+	SceneIndicator,
 } from '@baron1996/kline-scene-schema';
 import type {
 	EngineHistoricalDataCommitResult,
@@ -14,6 +15,7 @@ import type {
 	RuntimeCapabilityDescriptor,
 } from './runtime-capability-descriptor.js';
 import type { WorkspaceRuntimeListener } from './workspace-events.js';
+import type { AddIndicatorOptions } from '../types.js';
 
 /** 公共 Drawing 能力；工具栏与所有正式交互式图表 Runtime 共用。 */
 export interface DrawingRuntimeCapability {
@@ -68,4 +70,17 @@ export interface HistoricalDataRuntimeCapability {
 		hasMore: boolean,
 	): EngineHistoricalDataCommitResult;
 	rejectHistoricalData(requestId: string, message: string): boolean;
+}
+
+/** 主图指标配置能力；指标值由浏览器内图表引擎基于 OHLC 数据计算。 */
+export interface MainIndicatorRuntimeCapability {
+	listMainIndicators(): readonly SceneIndicator[];
+	addMainIndicator(options: AddIndicatorOptions): SceneIndicator;
+	removeMainIndicator(id: string): boolean;
+}
+
+/** 展示时区能力；不改变 Scene 的证券时区与 Drawing 坐标语义。 */
+export interface DisplayTimezoneRuntimeCapability {
+	getDisplayTimezone(): string;
+	setDisplayTimezone(timezone: string): void;
 }

@@ -93,9 +93,26 @@ h1 {
 	width: 100%;
 }
 
+.chart-stage {
+	display: grid;
+	grid-template-columns: 44px minmax(0, 1fr);
+	height: 600px;
+}
+
+.toolbar-left {
+	min-width: 0;
+	min-height: 0;
+}
+
 .chart {
 	width: 100%;
 	height: 600px;
+	min-width: 0;
+	min-height: 0;
+}
+
+.chart-stage .chart {
+	height: 100%;
 }
 
 .hint {
@@ -122,7 +139,12 @@ h1 {
 		flex-direction: column;
 	}
 
-	.chart {
+	.chart,
+	.chart-stage {
 		height: 520px;
+	}
+
+	.chart-stage .chart {
+		height: 100%;
 	}
 }

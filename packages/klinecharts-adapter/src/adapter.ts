@@ -372,7 +372,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	/** 显式 Workspace 模式；Legacy 与 Workspace 状态严格隔离。 */
 	#workspaceMode = false;
 	/** 宿主显示时区覆盖；Scene 替换时必须复用，避免格式化器退回证券时区。 */
-	readonly #displayTimezone: string | undefined;
+	#displayTimezone: string | undefined;
 	/** Workspace 模式与引擎同步的 Overlay 几何（不写入 #scene.overlays）。 */
 	#workspaceOverlays: SceneOverlay[] = [];
 	/** Workspace 模式权威业务 Drawing（含 granularity/target/text）。 */
@@ -537,7 +537,10 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		}
 		if (
 			!containsBootstrapConfig(this.#scene.chart, candidate.chart) ||
-			!containsBootstrapConfig(this.#scene.panes, candidate.panes)
+			!containsBootstrapConfig(
+				this.#scene.panes.map((pane) => ({ ...pane, indicators: [] })),
+				candidate.panes.map((pane) => ({ ...pane, indicators: [] })),
+			)
 		) {
 			throw new SceneError(
 				'INVALID_REFERENCE',
@@ -553,6 +556,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			...(candidate.symbol.name === undefined ? {} : { name: candidate.symbol.name }),
 		});
 		this.#chart.setPeriod(structuredClone(candidate.period));
+		this.#replaceMainPaneIndicators(this.#scene, candidate);
 		this.#chart.setDataLoader(createStaticDataLoader(engineDataForScene(candidate)));
 		this.#chart.resetData();
 		applyViewport(this.#chart, candidate.viewport);
@@ -2074,6 +2078,75 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#chart.setTimezone(this.#displayTimezone ?? chartConfig.timezone);
 	}
 
+	/** 返回当前展示时区；该值不进入 Scene 或 DrawingDocument。 */
+	public getDisplayTimezone(): string {
+		this.#assertActive();
+		return this.#displayTimezone ?? this.#scene.chart.timezone;
+	}
+
+	/** 原地切换日期展示时区，不重新取数、不重建图表。 */
+	public setDisplayTimezone(timezone: string): void {
+		this.#assertActive();
+		if (timezone.trim().length === 0) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/displayTimezone',
+				'Display timezone cannot be empty.',
+			);
+		}
+		this.#displayTimezone = timezone;
+		this.#applyDatePresentation(this.#scene.chart);
+	}
+
+	/** 同结构 Scene 替换时同步主图指标；副图结构仍由更高层单独管理。 */
+	#replaceMainPaneIndicators(previous: ChartScene, candidate: ChartScene): void {
+		const candleIndicators = (scene: ChartScene): readonly SceneIndicator[] =>
+			scene.panes.find((pane) => pane.kind === 'candle')?.indicators ?? [];
+		const previousIndicators = candleIndicators(previous);
+		const candidateIndicators = candleIndicators(candidate);
+		if (JSON.stringify(previousIndicators) === JSON.stringify(candidateIndicators)) {
+			return;
+		}
+		const remove = (indicators: readonly SceneIndicator[], strict: boolean): void => {
+			for (const indicator of indicators) {
+				const removed = this.#chart.removeIndicator({ id: indicator.id });
+				if (strict && !removed) {
+					throw new SceneError(
+						'RUNTIME_INIT_FAILED',
+						'/panes',
+						`KLineCharts failed to remove Indicator ${indicator.id}.`,
+					);
+				}
+			}
+		};
+		const create = (indicators: readonly SceneIndicator[], scene: ChartScene): void => {
+			const paneIndex = scene.panes.findIndex((pane) => pane.kind === 'candle');
+			for (let indicatorIndex = 0; indicatorIndex < indicators.length; indicatorIndex++) {
+				const indicator = indicators[indicatorIndex]!;
+				const path = `/panes/${paneIndex}/indicators/${indicatorIndex}`;
+				const createdId = this.#chart.createIndicator(
+					toIndicatorCreate(indicator, this.#idMap, path),
+					true,
+				);
+				if (createdId !== indicator.id) {
+					throw new SceneError(
+						'RUNTIME_INIT_FAILED',
+						path,
+						`KLineCharts failed to create Indicator ${indicator.id}.`,
+					);
+				}
+			}
+		};
+		try {
+			remove(previousIndicators, true);
+			create(candidateIndicators, candidate);
+		} catch (error) {
+			remove([...previousIndicators, ...candidateIndicators], false);
+			create(previousIndicators, previous);
+			throw error;
+		}
+	}
+
 	/** 同结构场景替换：symbol/period/data/viewport 原子更新，失败恢复旧场景。 */
 	public replaceScene(value: ChartScene): ChartScene {
 		this.#assertActive();
@@ -2111,6 +2184,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		const previous = this.#scene;
 		const previousBackground = this.#container.style.backgroundColor;
 		const previousHistoricalHasMore = this.#historicalDataLoading?.hasMore;
+		let indicatorsReplaced = false;
 		this.#settlePendingHistoricalData(false);
 		try {
 			this.#applyDatePresentation(candidate.chart);
@@ -2121,6 +2195,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				...(candidate.symbol.name === undefined ? {} : { name: candidate.symbol.name }),
 			});
 			this.#chart.setPeriod(structuredClone(candidate.period));
+			this.#replaceMainPaneIndicators(previous, candidate);
+			indicatorsReplaced = true;
 			if (this.#historicalDataLoading !== undefined) {
 				this.#historicalDataLoading = { hasMore: true };
 			}
@@ -2137,6 +2213,9 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			return structuredClone(candidate);
 		} catch (error) {
 			try {
+				if (indicatorsReplaced) {
+					this.#replaceMainPaneIndicators(candidate, previous);
+				}
 				this.#applyDatePresentation(previous.chart);
 				this.#chart.setSymbol({
 					ticker: previous.symbol.ticker,
