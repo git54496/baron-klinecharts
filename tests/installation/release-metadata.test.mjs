@@ -8,42 +8,42 @@ const npmManifests = [
 	{
 		path: 'package.json',
 		name: '@baron1996/klinecharts-scene-workspace',
-		version: '0.9.15',
+		version: '0.9.16',
 		directory: undefined,
 		public: false,
 	},
 	{
 		path: 'packages/scene-schema/package.json',
 		name: '@baron1996/kline-scene-schema',
-		version: '0.9.15',
+		version: '0.9.16',
 		directory: 'packages/scene-schema',
 		public: true,
 	},
 	{
 		path: 'packages/klinecharts-adapter/package.json',
 		name: '@baron1996/klinecharts-adapter',
-		version: '0.9.15',
+		version: '0.9.16',
 		directory: 'packages/klinecharts-adapter',
 		public: true,
 	},
 	{
 		path: 'packages/web-runtime/package.json',
 		name: '@baron1996/klinecharts-runtime',
-		version: '0.9.15',
+		version: '0.9.16',
 		directory: 'packages/web-runtime',
 		public: true,
 	},
 	{
 		path: 'packages/render-runtime/package.json',
 		name: '@baron1996/klinecharts-render-runtime',
-		version: '0.9.15',
+		version: '0.9.16',
 		directory: 'packages/render-runtime',
 		public: false,
 	},
 	{
 		path: 'packages/cli/package.json',
 		name: '@baron1996/klinecharts-cli',
-		version: '0.9.15',
+		version: '0.9.16',
 		directory: 'packages/cli',
 		public: true,
 	},
@@ -84,7 +84,7 @@ test('Python metadata exposes the same release and public repository', async () 
 		'python/baron-klinecharts/pyproject.toml',
 		'utf8',
 	);
-	assert.match(pyproject, /^version = "0\.9\.15"$/m);
+	assert.match(pyproject, /^version = "0\.9\.16"$/m);
 	assert.match(
 		pyproject,
 		/^Source = "https:\/\/github\.com\/git54496\/baron-klinecharts"$/m,

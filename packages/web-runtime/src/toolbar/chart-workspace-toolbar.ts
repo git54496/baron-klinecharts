@@ -7,6 +7,7 @@ import type {
 	RuntimeAuxiliaryCapability,
 } from '../drawing/capabilities.js';
 import type { HostActionDescriptor } from '../drawing/runtime-capability-descriptor.js';
+import type { WorkspaceRuntimeListener } from '../drawing/workspace-events.js';
 import { MAIN_PANE_INDICATOR_PRESETS } from '../indicator-presentation.js';
 import { registerRuntimeTeardown } from '../lifecycle.js';
 import type { SupportedOverlayType } from '../types.js';
@@ -75,6 +76,10 @@ interface RuntimeStateAware {
 	): () => void;
 }
 
+interface WorkspaceEventAware {
+	subscribe(listener: WorkspaceRuntimeListener): () => void;
+}
+
 interface HostActionControl {
 	readonly button: HTMLButtonElement;
 	readonly error: HTMLDivElement;
@@ -89,6 +94,13 @@ interface PopoverControl {
 
 let nextWorkspaceToolbarId = 1;
 
+function resolvePortalHost(anchor: HTMLElement): ParentNode {
+	const fullscreenElement = document.fullscreenElement;
+	return fullscreenElement !== null && fullscreenElement.contains(anchor)
+		? fullscreenElement
+		: document.body;
+}
+
 function runtimeStateCapability(
 	runtime: ChartWorkspaceRuntime,
 ): RuntimeStateAware | undefined {
@@ -97,6 +109,15 @@ function runtimeStateCapability(
 	return typeof candidate.getRuntimeState === 'function' &&
 		typeof candidate.subscribeRuntimeState === 'function'
 		? (candidate as RuntimeStateAware)
+		: undefined;
+}
+
+function workspaceEventCapability(
+	runtime: ChartWorkspaceRuntime,
+): WorkspaceEventAware | undefined {
+	const candidate = runtime as ChartWorkspaceRuntime & Partial<WorkspaceEventAware>;
+	return typeof candidate.subscribe === 'function'
+		? candidate as WorkspaceEventAware
 		: undefined;
 }
 
@@ -142,7 +163,7 @@ function createPopover(
 	element.hidden = true;
 	button.setAttribute('aria-controls', id);
 	button.setAttribute('aria-expanded', 'false');
-	document.body.append(element);
+	resolvePortalHost(button).append(element);
 
 	const position = (): void => {
 		const anchor = button.getBoundingClientRect();
@@ -160,6 +181,10 @@ function createPopover(
 		element.hidden = true;
 	};
 	const open = (): void => {
+		const portalHost = resolvePortalHost(button);
+		if (element.parentNode !== portalHost) {
+			portalHost.append(element);
+		}
 		element.hidden = false;
 		position();
 		button.setAttribute('aria-expanded', 'true');
@@ -194,15 +219,26 @@ function createPopover(
 		}
 	};
 	const handleViewportChange = (): void => close();
+	const handleFullscreenChange = (): void => {
+		const portalHost = resolvePortalHost(button);
+		if (element.parentNode !== portalHost) {
+			portalHost.append(element);
+		}
+		if (!element.hidden) {
+			position();
+		}
+	};
 	button.addEventListener('click', handleButtonClick);
 	document.addEventListener('pointerdown', handleOutsidePointer, true);
 	document.addEventListener('keydown', handleKeyDown);
+	document.addEventListener('fullscreenchange', handleFullscreenChange);
 	window.addEventListener('resize', handleViewportChange);
 	window.addEventListener('scroll', handleViewportChange, true);
 	cleanupCallbacks.push(() => {
 		button.removeEventListener('click', handleButtonClick);
 		document.removeEventListener('pointerdown', handleOutsidePointer, true);
 		document.removeEventListener('keydown', handleKeyDown);
+		document.removeEventListener('fullscreenchange', handleFullscreenChange);
 		window.removeEventListener('resize', handleViewportChange);
 		window.removeEventListener('scroll', handleViewportChange, true);
 	});
@@ -227,25 +263,35 @@ function createTooltip(cleanupCallbacks: Array<() => void>): {
 	tooltip.setAttribute('role', 'tooltip');
 	tooltip.hidden = true;
 	document.body.append(tooltip);
+	let activeButton: HTMLButtonElement | null = null;
 	const hide = (): void => {
 		tooltip.hidden = true;
+		activeButton = null;
+	};
+	const position = (button: HTMLButtonElement): void => {
+		const bounds = button.getBoundingClientRect();
+		const tooltipBounds = tooltip.getBoundingClientRect();
+		const left = Math.min(
+			bounds.right + 8,
+			window.innerWidth - tooltipBounds.width - 8,
+		);
+		const top = Math.min(
+			Math.max(8, bounds.top + (bounds.height - tooltipBounds.height) / 2),
+			window.innerHeight - tooltipBounds.height - 8,
+		);
+		tooltip.style.left = `${Math.round(left)}px`;
+		tooltip.style.top = `${Math.round(top)}px`;
 	};
 	const bind = (button: HTMLButtonElement, label: string): void => {
 		const show = (): void => {
-			const bounds = button.getBoundingClientRect();
+			activeButton = button;
+			const portalHost = resolvePortalHost(button);
+			if (tooltip.parentNode !== portalHost) {
+				portalHost.append(tooltip);
+			}
 			tooltip.textContent = label;
 			tooltip.hidden = false;
-			const tooltipBounds = tooltip.getBoundingClientRect();
-			const left = Math.min(
-				bounds.right + 8,
-				window.innerWidth - tooltipBounds.width - 8,
-			);
-			const top = Math.min(
-				Math.max(8, bounds.top + (bounds.height - tooltipBounds.height) / 2),
-				window.innerHeight - tooltipBounds.height - 8,
-			);
-			tooltip.style.left = `${Math.round(left)}px`;
-			tooltip.style.top = `${Math.round(top)}px`;
+			position(button);
 		};
 		button.addEventListener('mouseenter', show);
 		button.addEventListener('mouseleave', hide);
@@ -258,6 +304,20 @@ function createTooltip(cleanupCallbacks: Array<() => void>): {
 			button.removeEventListener('blur', hide);
 		});
 	};
+	const handleFullscreenChange = (): void => {
+		if (activeButton === null || tooltip.hidden) {
+			return;
+		}
+		const portalHost = resolvePortalHost(activeButton);
+		if (tooltip.parentNode !== portalHost) {
+			portalHost.append(tooltip);
+		}
+		position(activeButton);
+	};
+	document.addEventListener('fullscreenchange', handleFullscreenChange);
+	cleanupCallbacks.push(() =>
+		document.removeEventListener('fullscreenchange', handleFullscreenChange),
+	);
 	return { bind, hide, destroy: () => tooltip.remove() };
 }
 
@@ -744,6 +804,11 @@ export function createChartWorkspaceToolbar(
 			left.append(section);
 		}
 	}
+	const clearDrawingToolSelection = (): void => {
+		for (const button of overlayButtons) {
+			button.setAttribute('aria-pressed', 'false');
+		}
+	};
 	const drawingActions = createSection('标注操作');
 	const clearButton = createButton({ label: '清空全部标注', icon: 'clearAll' });
 	clearButton.dataset.action = 'clear-all';
@@ -767,6 +832,20 @@ export function createChartWorkspaceToolbar(
 
 	containers.top.append(top);
 	containers.left.append(left);
+	const eventCapability = workspaceEventCapability(runtime);
+	if (eventCapability !== undefined) {
+		cleanupCallbacks.push(eventCapability.subscribe((event) => {
+			if (
+				(event.type === 'drawing-candidate' && event.operation === 'create') ||
+				event.type === 'drawing-committed' ||
+				event.type === 'drawing-rejected' ||
+				(event.type === 'selection-changed' && event.id === null) ||
+				event.type === 'workspace-error'
+			) {
+				clearDrawingToolSelection();
+			}
+		}));
+	}
 	const stateCapability = runtimeStateCapability(runtime);
 	let runtimeReady = stateCapability === undefined;
 	let hostDataDisabled = false;

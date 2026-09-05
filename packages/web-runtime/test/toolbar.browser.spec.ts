@@ -969,6 +969,12 @@ test('@browser selected Drawing toolbar remains visible inside workspace fullscr
 		.toBe('fullscreen-host');
 	await expect(drawingToolbar).toBeVisible();
 
+	await page.locator('#fullscreen-host [data-action="settings"]').click();
+	const settingsPopover = page.locator('[id^="baron-workspace-settings-"]');
+	await expect.poll(() => settingsPopover.evaluate((element) => element.parentElement?.id))
+		.toBe('fullscreen-host');
+	await expect(settingsPopover).toBeVisible();
+
 	await drawingToolbar.locator('[data-action="line-style"]').selectOption('dotted');
 	await expect.poll(() => page.evaluate(() => {
 		const runtime = (window as unknown as {
@@ -983,9 +989,64 @@ test('@browser selected Drawing toolbar remains visible inside workspace fullscr
 
 	await page.locator('#fullscreen-host [data-action="fullscreen"]').click();
 	await expect.poll(() => page.evaluate(() => document.fullscreenElement)).toBeNull();
+	await expect.poll(() => settingsPopover.evaluate((element) => element.parentElement?.tagName))
+		.toBe('BODY');
 	await expect.poll(() => drawingToolbar.evaluate((element) => element.parentElement?.tagName))
 		.toBe('BODY');
 	await expect(drawingToolbar).toBeVisible();
+});
+
+test('@browser composite Drawing tool exits its selected state after geometry completion', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const workspace = structuredClone(chartWorkspaceFixture);
+	workspace.drawings.drawings = [];
+	await page.evaluate(async (input) => {
+		const {
+			createChartWorkspaceToolbar,
+			createDrawableWorkspaceRuntime,
+		} = await import('/src/index.ts');
+		const events: Array<{ readonly type: string; readonly operation?: string }> = [];
+		const runtime = await createDrawableWorkspaceRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			input,
+			{
+				commitMode: 'host-confirmed',
+				onEvent: (event) => events.push(event),
+			},
+		);
+		const left = document.createElement('div');
+		document.body.append(left);
+		createChartWorkspaceToolbar(
+			{
+				top: document.querySelector<HTMLElement>('#toolbar')!,
+				left,
+			},
+			runtime,
+			{ fullscreenControl: 'hidden' },
+		);
+		Object.assign(window, {
+			__singleUseDrawingRuntime: runtime,
+			__singleUseDrawingEvents: events,
+		});
+	}, workspace);
+
+	const button = page.locator('[data-overlay-type="horizontalStraightLine"]');
+	await button.click();
+	await expect(button).toHaveAttribute('aria-pressed', 'true');
+	await page.locator('#chart canvas').nth(1).click({ position: { x: 400, y: 120 } });
+	await expect.poll(() => page.evaluate(() =>
+		(window as unknown as {
+			__singleUseDrawingEvents: Array<{ readonly type: string; readonly operation?: string }>;
+		}).__singleUseDrawingEvents.some(
+			(event) => event.type === 'drawing-candidate' && event.operation === 'create',
+		),
+	)).toBe(true);
+	await expect(button).toHaveAttribute('aria-pressed', 'false');
+	await expect.poll(() => page.evaluate(() =>
+		(window as unknown as {
+			__singleUseDrawingRuntime: { getDrawingMutationState(): string };
+		}).__singleUseDrawingRuntime.getDrawingMutationState(),
+	)).toBe('busy');
 });
 
 test('@browser clear-all removes every unlocked Drawing and keeps locked ones', async ({ page }) => {
