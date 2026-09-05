@@ -21,6 +21,7 @@ import { deepFreeze } from './workspace-events.js';
 export type DrawingSessionState =
 	| 'ready'
 	| 'interacting'
+	| 'preparing-candidate'
 	| 'awaiting-host-confirmation'
 	| 'reprojecting'
 	| 'terminal-error'
@@ -52,6 +53,10 @@ interface SessionCandidate {
 	readonly after: EngineDrawingSnapshot;
 	readonly document: DrawingDocument;
 	readonly canonicalHash: string;
+	/** 本次候选提交后应成为权威状态的完整 Drawing 集合。 */
+	readonly confirmedAfter?: readonly EngineDrawingSnapshot[];
+	/** 批量变更被宿主拒绝时需要原子恢复的完整前态。 */
+	readonly rollbackDrawings?: readonly EngineDrawingSnapshot[];
 }
 
 export interface DrawingSessionControllerOptions {
@@ -194,6 +199,47 @@ export class DrawingSessionController {
 		return this.#options.engine.removeDrawing(id);
 	}
 
+	/**
+	 * 原子删除多个 Drawing：引擎只应用一次完整后态，会话只发布一个候选文档。
+	 * 调用方负责决定业务上允许删除的 ID（例如工具栏会排除锁定标注）。
+	 */
+	public removeDrawings(ids: readonly string[]): boolean {
+		this.#assertReady();
+		const requestedIds = new Set(ids);
+		if (requestedIds.size === 0) {
+			return false;
+		}
+		const rollbackDrawings = this.#confirmed.map((drawing) =>
+			structuredClone(drawing),
+		);
+		const removedDrawings = rollbackDrawings.filter((drawing) =>
+			requestedIds.has(drawing.id),
+		);
+		if (removedDrawings.length === 0) {
+			return false;
+		}
+		const confirmedAfter = rollbackDrawings.filter((drawing) =>
+			!requestedIds.has(drawing.id),
+		);
+		this.#state = 'preparing-candidate';
+		this.#suppressEngineEvents = true;
+		try {
+			this.#options.engine.restoreDrawings(confirmedAfter);
+		} catch (error) {
+			this.#restoreBatchAfterFailure(error, rollbackDrawings);
+			return false;
+		} finally {
+			this.#suppressEngineEvents = false;
+		}
+		const representative = removedDrawings[0]!;
+		void this.#onBatchDelete(
+			representative,
+			confirmedAfter,
+			rollbackDrawings,
+		);
+		return true;
+	}
+
 	public selectDrawing(id: string | null): void {
 		this.#assertUsable();
 		this.#selectedId = id;
@@ -331,7 +377,9 @@ export class DrawingSessionController {
 			);
 		}
 		try {
-			if (candidate.before !== undefined) {
+			if (candidate.rollbackDrawings !== undefined) {
+				this.#restoreDrawingSet(candidate.rollbackDrawings);
+			} else if (candidate.before !== undefined) {
 				this.#options.engine.restoreDrawing(candidate.before);
 			} else {
 				this.#options.engine.removeDrawing(candidate.after.id);
@@ -538,6 +586,50 @@ export class DrawingSessionController {
 		}
 	}
 
+	async #onBatchDelete(
+		representative: EngineDrawingSnapshot,
+		confirmedAfter: readonly EngineDrawingSnapshot[],
+		rollbackDrawings: readonly EngineDrawingSnapshot[],
+	): Promise<void> {
+		try {
+			const candidateDocument = this.#options.buildDocument(confirmedAfter);
+			this.#options.projectionService.projectDocument({
+				scene: this.#scene,
+				drawings: candidateDocument,
+			});
+			const canonicalHash = await hashCanonicalDrawingDocument(candidateDocument);
+			const candidate: SessionCandidate = {
+				requestId: `change-${++this.#requestSequence}`,
+				operation: 'delete',
+				before: structuredClone(representative),
+				after: structuredClone(representative),
+				document: structuredClone(candidateDocument),
+				canonicalHash,
+				confirmedAfter: confirmedAfter.map((drawing) => structuredClone(drawing)),
+				rollbackDrawings: rollbackDrawings.map((drawing) => structuredClone(drawing)),
+			};
+			this.#candidate = candidate;
+			this.#options.emit(
+				deepFreeze({
+					type: 'drawing-candidate',
+					requestId: candidate.requestId,
+					operation: 'delete',
+					before: structuredClone(representative),
+					candidate: structuredClone(representative),
+					candidateDocument: structuredClone(candidateDocument),
+					canonicalHash,
+				}),
+			);
+			if (this.#options.commitMode === 'immediate') {
+				this.#commitCandidate(candidate);
+			} else {
+				this.#state = 'awaiting-host-confirmation';
+			}
+		} catch (error) {
+			this.#restoreBatchAfterFailure(error, rollbackDrawings);
+		}
+	}
+
 	#confirmedWith(
 		operation: WorkspaceDrawingOperation,
 		before: EngineDrawingSnapshot | undefined,
@@ -555,11 +647,13 @@ export class DrawingSessionController {
 	}
 
 	#commitCandidate(candidate: SessionCandidate): void {
-		this.#confirmed = this.#confirmedWith(
-			candidate.operation,
-			candidate.before,
-			candidate.after,
-		);
+		this.#confirmed = candidate.confirmedAfter === undefined
+			? this.#confirmedWith(
+					candidate.operation,
+					candidate.before,
+					candidate.after,
+				)
+			: candidate.confirmedAfter.map((drawing) => structuredClone(drawing));
 		this.#candidate = null;
 		this.#state = 'ready';
 		this.#options.emit({
@@ -586,6 +680,38 @@ export class DrawingSessionController {
 				'DRAWING_PROJECTION_INVALID',
 				`Failed to restore the rejected candidate: ${String(error)}`,
 			);
+		}
+	}
+
+	#restoreBatchAfterFailure(
+		error: unknown,
+		rollbackDrawings: readonly EngineDrawingSnapshot[],
+	): void {
+		try {
+			this.#restoreDrawingSet(rollbackDrawings);
+		} catch (restoreError) {
+			this.#enterTerminalError(
+				'DRAWING_PROJECTION_INVALID',
+				`Failed to restore the rejected candidate: ${String(restoreError)}`,
+			);
+			return;
+		}
+		this.#state = 'ready';
+		this.#options.emit({
+			type: 'workspace-error',
+			code: error instanceof DrawingSessionError
+				? error.code
+				: 'DRAWING_PROJECTION_INVALID',
+			message: error instanceof Error ? error.message : String(error),
+		});
+	}
+
+	#restoreDrawingSet(drawings: readonly EngineDrawingSnapshot[]): void {
+		this.#suppressEngineEvents = true;
+		try {
+			this.#options.engine.restoreDrawings(drawings);
+		} finally {
+			this.#suppressEngineEvents = false;
 		}
 	}
 

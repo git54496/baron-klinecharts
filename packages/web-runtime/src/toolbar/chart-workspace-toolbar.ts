@@ -813,11 +813,11 @@ export function createChartWorkspaceToolbar(
 	const clearButton = createButton({ label: '清空全部标注', icon: 'clearAll' });
 	clearButton.dataset.action = 'clear-all';
 	const clearDrawings = (): void => {
-		for (const drawing of runtime.listDrawings()) {
-			if (!drawing.locked) {
-				runtime.removeDrawing(drawing.id);
-			}
-		}
+		runtime.removeDrawings(
+			runtime.listDrawings()
+				.filter((drawing) => !drawing.locked)
+				.map((drawing) => drawing.id),
+		);
 		runtime.selectDrawing(null);
 	};
 	clearButton.addEventListener('click', clearDrawings);

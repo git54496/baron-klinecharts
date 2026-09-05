@@ -300,6 +300,10 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		return this.#session.removeDrawing(id);
 	}
 
+	public removeDrawings(ids: readonly string[]): boolean {
+		return this.#session.removeDrawings(ids);
+	}
+
 	public requestDrawingDelete(id: string): void {
 		this.removeDrawing(id);
 	}

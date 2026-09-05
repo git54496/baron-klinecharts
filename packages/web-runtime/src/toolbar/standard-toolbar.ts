@@ -428,11 +428,11 @@ export function createStandardToolbar(
 				const action = presentation.action === 'clear-all'
 						? (): void => {
 								// 清空全部 Drawing；锁定的 Drawing 保持既有“不接受 mutation”契约。
-								for (const drawing of runtime.listDrawings()) {
-									if (!drawing.locked) {
-										runtime.removeDrawing(drawing.id);
-									}
-								}
+								runtime.removeDrawings(
+									runtime.listDrawings()
+										.filter((drawing) => !drawing.locked)
+										.map((drawing) => drawing.id),
+								);
 								runtime.selectDrawing(null);
 							}
 					: (): void => {

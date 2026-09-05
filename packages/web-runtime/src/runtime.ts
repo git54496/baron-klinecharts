@@ -437,6 +437,14 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 		return this.removeOverlay(id);
 	}
 
+	public removeDrawings(ids: readonly string[]): boolean {
+		let removed = false;
+		for (const id of new Set(ids)) {
+			removed = this.removeOverlay(id) || removed;
+		}
+		return removed;
+	}
+
 	public requestDrawingDelete(id: string): void {
 		this.requestOverlayDelete(id);
 	}

@@ -288,6 +288,10 @@ export class ProgressiveDrawableWorkspaceRuntime
 		return this.#requireReady().removeDrawing(id);
 	}
 
+	public removeDrawings(ids: readonly string[]): boolean {
+		return this.#requireReady().removeDrawings(ids);
+	}
+
 	public requestDrawingDelete(id: string): void {
 		this.#requireReady().requestDrawingDelete(id);
 	}

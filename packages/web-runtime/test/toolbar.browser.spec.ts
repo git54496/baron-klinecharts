@@ -1049,46 +1049,107 @@ test('@browser composite Drawing tool exits its selected state after geometry co
 	)).toBe('busy');
 });
 
-test('@browser clear-all removes every unlocked Drawing and keeps locked ones', async ({ page }) => {
+test('@browser clear-all persists every unlocked Drawing deletion as one atomic candidate', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	const workspace = structuredClone(chartWorkspaceFixture);
 	const lockedDrawing = workspace.drawings.drawings[0];
 	lockedDrawing.locked = true;
 	await page.evaluate(async (workspace) => {
 		const {
+			createChartWorkspaceToolbar,
+			createCrossPeriodDrawingCoordinator,
 			createDrawableWorkspaceRuntime,
-			createStandardToolbar,
 		} = await import('/src/index.ts');
 		const runtime = await createDrawableWorkspaceRuntime(
 			document.querySelector<HTMLElement>('#chart')!,
 			workspace,
-			{ commitMode: 'immediate' },
+			{ commitMode: 'host-confirmed' },
 		);
-		createStandardToolbar(
-			document.querySelector<HTMLElement>('#toolbar')!,
+		const persistenceRequests: unknown[] = [];
+		const coordinatorEvents: Array<{ readonly type: string }> = [];
+		const coordinator = createCrossPeriodDrawingCoordinator(
 			runtime,
+			{
+				instrumentKey: 'US:EWZ',
+				scopeKey: workspace.drawings.scopeKey,
+			},
+			{
+				initialRevision: 'r1',
+				loadScene: async ({ currentWorkspace }) =>
+					structuredClone(currentWorkspace.scene.document) as never,
+				persistCandidate: async (request) => {
+					persistenceRequests.push(request);
+					await new Promise<void>((resolve) => setTimeout(resolve, 10));
+					return {
+						canonicalHash: request.canonicalHash,
+						revision: 'r2',
+					};
+				},
+				onEvent: (event) => coordinatorEvents.push(event),
+			},
 		);
-		(window as unknown as { __runtime: typeof runtime }).__runtime = runtime;
+		const left = document.createElement('div');
+		document.body.append(left);
+		createChartWorkspaceToolbar(
+			{
+				top: document.querySelector<HTMLElement>('#toolbar')!,
+				left,
+			},
+			runtime,
+			{ fullscreenControl: 'hidden' },
+		);
+		Object.assign(window, {
+			__clearAllRuntime: runtime,
+			__clearAllCoordinator: coordinator,
+			__clearAllPersistenceRequests: persistenceRequests,
+			__clearAllCoordinatorEvents: coordinatorEvents,
+		});
 	}, workspace);
 	await expect.poll(() => page.evaluate(
 		() => (window as unknown as {
-			__runtime: { listDrawings(): readonly unknown[] };
-		}).__runtime.listDrawings().length,
+			__clearAllRuntime: { listDrawings(): readonly unknown[] };
+		}).__clearAllRuntime.listDrawings().length,
 	)).toBe(22);
 	expect(await page.locator('[data-action="clear-all"]').count()).toBe(1);
 	await page.locator('[data-action="clear-all"]').click();
-	await expect.poll(() => page.evaluate(
-		() => {
-			const drawings = (window as unknown as {
-				__runtime: { listDrawings(): readonly { readonly id: string; readonly locked: boolean }[] };
-			}).__runtime.listDrawings();
-			return {
-				length: drawings.length,
-				id: drawings[0]?.id,
-				locked: drawings[0]?.locked,
+	const result = await page.evaluate(async () => {
+		const target = window as unknown as {
+			__clearAllRuntime: {
+				getDrawingMutationState(): string;
+				listDrawings(): readonly { readonly id: string; readonly locked: boolean }[];
 			};
-		},
-	)).toEqual({ length: 1, id: lockedDrawing.id, locked: true });
+			__clearAllCoordinator: { readonly state: string; waitForIdle(): Promise<void> };
+			__clearAllPersistenceRequests: Array<{
+				readonly candidateDocument: { readonly drawings: readonly unknown[] };
+			}>;
+			__clearAllCoordinatorEvents: Array<{ readonly type: string }>;
+		};
+		await target.__clearAllCoordinator.waitForIdle();
+		const drawings = target.__clearAllRuntime.listDrawings();
+		return {
+			coordinatorState: target.__clearAllCoordinator.state,
+			mutationState: target.__clearAllRuntime.getDrawingMutationState(),
+			persistenceCount: target.__clearAllPersistenceRequests.length,
+			persistedDrawingCount:
+				target.__clearAllPersistenceRequests[0]?.candidateDocument.drawings.length,
+			terminalErrorCount: target.__clearAllCoordinatorEvents.filter(
+				(event) => event.type === 'terminal-error',
+			).length,
+			drawingCount: drawings.length,
+			remainingDrawingId: drawings[0]?.id,
+			remainingDrawingLocked: drawings[0]?.locked,
+		};
+	});
+	expect(result).toEqual({
+		coordinatorState: 'ready',
+		mutationState: 'ready',
+		persistenceCount: 1,
+		persistedDrawingCount: 1,
+		terminalErrorCount: 0,
+		drawingCount: 1,
+		remainingDrawingId: lockedDrawing.id,
+		remainingDrawingLocked: true,
+	});
 });
 
 test('@browser M1 toolbar creates, selects, exports, and deletes a horizontal line through real DOM', async ({ page }) => {

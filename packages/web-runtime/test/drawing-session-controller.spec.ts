@@ -308,6 +308,69 @@ describe('DrawingSessionController', () => {
 		expect(controller.state).toBe('ready');
 	});
 
+	it('publishes and commits multiple deletions as one host-confirmed candidate', async () => {
+		const { engine, controller, events } = buildController('host-confirmed');
+		const locked = { ...snapshot('locked', 12.7), locked: true };
+		controller.restoreConfirmed([
+			snapshot('drawing-a', 12.5),
+			snapshot('drawing-b', 12.6),
+			locked,
+		]);
+
+		expect(controller.removeDrawings(['drawing-a', 'drawing-b'])).toBe(true);
+		expect(controller.state).toBe('preparing-candidate');
+		expect([...engine.drawings.keys()]).toEqual(['locked']);
+		expect(controller.confirmedDrawings).toHaveLength(3);
+
+		await flush(events);
+		const candidates = events.filter((event) => event.type === 'drawing-candidate');
+		expect(candidates).toHaveLength(1);
+		const candidate = candidates[0];
+		expect(candidate?.type).toBe('drawing-candidate');
+		if (candidate?.type !== 'drawing-candidate') {
+			return;
+		}
+		expect(candidate.operation).toBe('delete');
+		expect(candidate.candidateDocument.drawings.map((drawing) => drawing.id))
+			.toEqual(['locked']);
+		expect(controller.commitDrawingChange(
+			candidate.requestId,
+			candidate.canonicalHash,
+		)).toBe(true);
+		expect(controller.confirmedDrawings.map((drawing) => drawing.id))
+			.toEqual(['locked']);
+		expect(controller.state).toBe('ready');
+	});
+
+	it('restores the complete before-state when a batch deletion is rejected', async () => {
+		const { engine, controller, events } = buildController('host-confirmed');
+		controller.restoreConfirmed([
+			snapshot('drawing-a', 12.5),
+			snapshot('drawing-b', 12.6),
+			snapshot('drawing-c', 12.7),
+		]);
+
+		expect(controller.removeDrawings(['drawing-a', 'drawing-b'])).toBe(true);
+		await flush(events);
+		const candidate = events.find((event) => event.type === 'drawing-candidate');
+		expect(candidate?.type).toBe('drawing-candidate');
+		if (candidate?.type !== 'drawing-candidate') {
+			return;
+		}
+		expect(controller.rejectDrawingChange(candidate.requestId)).toBe(true);
+		expect([...engine.drawings.keys()]).toEqual([
+			'drawing-a',
+			'drawing-b',
+			'drawing-c',
+		]);
+		expect(controller.confirmedDrawings.map((drawing) => drawing.id)).toEqual([
+			'drawing-a',
+			'drawing-b',
+			'drawing-c',
+		]);
+		expect(controller.state).toBe('ready');
+	});
+
 	it('rejects a candidate and restores the engine before-state', async () => {
 		const { engine, controller, events } = buildController('host-confirmed');
 		controller.restoreConfirmed([snapshot('drawing-before', 12.5)]);

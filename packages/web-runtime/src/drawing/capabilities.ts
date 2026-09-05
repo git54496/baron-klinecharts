@@ -38,6 +38,8 @@ export interface DrawingRuntimeCapability {
 	updateDrawingText(id: string, text: string): EngineDrawingSnapshot;
 	updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot;
 	removeDrawing(id: string): boolean;
+	/** 将多个 Drawing 的删除收敛为一次 Runtime 变更。 */
+	removeDrawings(ids: readonly string[]): boolean;
 	requestDrawingDelete(id: string): void;
 	selectDrawing(id: string | null): void;
 	getSelectedDrawingId(): string | undefined;
