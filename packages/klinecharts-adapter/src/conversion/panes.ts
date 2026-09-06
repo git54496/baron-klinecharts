@@ -1,10 +1,11 @@
 import type { ChartScene, YAxis as SceneYAxis } from '@baron1996/kline-scene-schema';
 import { SceneError } from '@baron1996/kline-scene-schema';
-import type { Chart, YAxis } from 'klinecharts';
+import type { AxisCreateTicksParams, Chart, YAxis } from 'klinecharts';
 
 import type { EngineIdMap } from './id-map.js';
 import { requireMappedId } from './id-map.js';
 import { createPaneIndicators } from './indicators.js';
+import { createLogPriceTicks } from './log-price-ticks.js';
 
 interface IdentifiedYAxis extends YAxis {
 	readonly id: string;
@@ -18,6 +19,7 @@ export function formatDefaultPriceAxisValue(value: number): string {
 }
 
 function axisOverride(
+	chart: Chart,
 	axis: SceneYAxis,
 	enginePaneId: string,
 	engineAxisId: string,
@@ -27,6 +29,13 @@ function axisOverride(
 		id: engineAxisId,
 		paneId: enginePaneId,
 		name: axis.scale === 'logarithmic' ? 'logarithm' : 'normal',
+		// Explicit passthrough also clears our callback when switching to linear.
+		createTicks: (params: AxisCreateTicksParams) => formatAsPrice && axis.scale === 'logarithmic'
+			? createLogPriceTicks(params, axis.reverse, {
+				textHeight: chart.getStyles().yAxis.tickText.size,
+				formatText: (text) => chart.getDecimalFold().format(chart.getThousandsSeparator().format(text)),
+			})
+			: params.defaultTicks,
 		reverse: axis.reverse,
 		inside: axis.inside,
 		position: axis.position,
@@ -53,7 +62,7 @@ export function overrideSceneYAxis(
 ): void {
 	const enginePaneId = requireMappedId(idMap.paneToEngine, paneId, `${path}/paneId`, 'Pane');
 	const engineAxisId = requireMappedId(idMap.yAxisToEngine, axis.id, `${path}/id`, 'Y-axis');
-	chart.overrideYAxis(axisOverride(axis, enginePaneId, engineAxisId, formatAsPrice));
+	chart.overrideYAxis(axisOverride(chart, axis, enginePaneId, engineAxisId, formatAsPrice));
 }
 
 /** 按 Scene 顺序创建 Pane、Y 轴和指标，并核对每个映射。 */
@@ -92,6 +101,7 @@ export function applyPanes(scene: ChartScene, chart: Chart, idMap: EngineIdMap):
 				'Y-axis',
 			);
 			const override = axisOverride(
+				chart,
 				axis,
 				enginePaneId,
 				engineAxisId,
