@@ -1,6 +1,6 @@
 {
   "name": "@baron1996/klinecharts-adapter",
-  "version": "0.9.21",
+  "version": "0.9.22",
   "description": "Controlled ChartScene adapter for KLineCharts.",
   "type": "module",
   "license": "Apache-2.0",
@@ -38,7 +38,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@baron1996/kline-scene-schema": "0.9.21",
+    "@baron1996/kline-scene-schema": "0.9.22",
     "klinecharts": "10.0.0"
   }
 }

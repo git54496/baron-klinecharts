@@ -5,6 +5,7 @@ import type { Chart } from 'klinecharts';
 import { toKLineChartsOptions } from './conversion/chart-options.js';
 import { createStaticDataLoader } from './static-data-loader.js';
 import { engineDataForScene } from './gap-aware-series.js';
+import { installScalePreservingPan } from './engine-pan.js';
 import {
 	KLINECHARTS_ENGINE_VERSION,
 	KLINECHARTS_RUNTIME_VERSION,
@@ -144,6 +145,7 @@ export async function createEngine(
 		);
 	}
 	engineRoot.style.touchAction = 'none';
+	installScalePreservingPan(chart);
 	chart.setSymbol({
 		ticker: scene.symbol.ticker,
 		pricePrecision: scene.symbol.pricePrecision,

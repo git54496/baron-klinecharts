@@ -36,13 +36,13 @@ tests                          跨语言、浏览器、视觉与安装门禁
 安装 Web Runtime：
 
 ```bash
-npm install --save-exact @baron1996/klinecharts-runtime@0.9.21
+npm install --save-exact @baron1996/klinecharts-runtime@0.9.22
 ```
 
 安装 CLI：
 
 ```bash
-npm install --global @baron1996/klinecharts-cli@0.9.21
+npm install --global @baron1996/klinecharts-cli@0.9.22
 baron-kline install-browser
 ```
 
@@ -104,7 +104,7 @@ Workspace 示例一致。
 - 禁止把本仓库路径加入其他工程或 Agent 的可写 workspace。
 
 消费方必须安装明确版本并提交自己的 lockfile，例如
-`@baron1996/klinecharts-runtime@0.9.21` 和 `baron-klinecharts==0.9.20`。升级只能
+`@baron1996/klinecharts-runtime@0.9.22` 和 `baron-klinecharts==0.9.20`。升级只能
 通过本仓库发布新版本后，由消费方主动修改依赖版本完成；不得直接修改本仓库来
 适配某个业务工程。
 
@@ -183,10 +183,11 @@ CI 分别使用 `tests/rendering/baselines/github-macos-15` 和
 
 ## 发布
 
-当前 npm 发布版本为 `0.9.21`，Python 发布版本为 `0.9.20`。本次同步发布 Web Runtime、
-Adapter、Scene Schema 和 CLI，私有 Render Runtime 也同步到 `0.9.21`，所有内部依赖
-使用精确版本。该版本将设置面板中的复权、价格轴和主序列拆为三个独立设置项，其中
-复权和价格轴使用二选一胶囊控件，主序列继续使用下拉选择。该改动兼容已有 Scene，
+当前 npm 发布版本为 `0.9.22`，Python 发布版本为 `0.9.20`。本次同步发布 Web Runtime、
+Adapter、Scene Schema 和 CLI，私有 Render Runtime 也同步到 `0.9.22`，所有内部依赖
+使用精确版本。该版本修复图表拖动时的比例变化：主图支持任意方向平移，保持 K 线间距
+和数值轴缩放不变；对数价格轴在对数坐标中平移。首次拖动固定当前范围，松手后保持，
+双击价格轴可恢复自动适配。单击、绘图和轴缩放操作保留原行为。该改动兼容已有 Scene，
 不改变宿主持久化接口，也不提升 Drawing/Workspace Schema 版本或 Runtime 事件协议版本。
 ChartScene `version` 仍为 `1`；Runtime protocol `0.2.0` 增加显式线性/对数轴、
 价格量度、精确命中与过程事件，同时继续读取 Runtime `0.1.0` 的 M1 场景。

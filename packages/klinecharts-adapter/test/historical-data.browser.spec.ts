@@ -145,7 +145,7 @@ test('@browser earlier data locks pending scroll and keeps the visible timestamp
 	expect(Math.abs(restoredX - pendingReference.x)).toBeGreaterThan(1);
 });
 
-test('@browser Gap-aware earlier bars remain visible after a native prepend', async ({ page }) => {
+test('@browser Gap-aware earlier bars render after a native prepend and explicit price fit', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	await page.evaluate(async (sourceWorkspace) => {
 		const { KLineChartsSceneAdapter } = await import('/src/index.ts');
@@ -232,6 +232,12 @@ test('@browser Gap-aware earlier bars remain visible after a native prepend', as
 		requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
 	)));
 
+	// Panning now deliberately keeps the original price scale. These older bars
+	// trade below that range; explicitly fit Y before checking their rendered pixels.
+	await page.mouse.dblclick(980, 280);
+	await page.evaluate(() => new Promise<void>((resolve) => (
+		requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+	)));
 	const historicalUpPixels = await page.evaluate((color) => {
 		const rgb = color.match(/\d+/gu)!.slice(0, 3).map(Number);
 		let count = 0;
