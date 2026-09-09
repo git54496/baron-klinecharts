@@ -35,7 +35,7 @@ export interface WorkspaceToolbarTimezoneChoice {
 export interface ChartWorkspaceToolbarOptions {
 	/** 顶部直接展示的周期动作；点击后仍通过 host-action-requested 交给宿主取数。 */
 	readonly periodActions?: readonly HostActionDescriptor[];
-	/** 收纳进设置面板的宿主动作用于前复权等业务配置。 */
+	/** 顶部直接展示的宿主动作用于前复权等业务配置。 */
 	readonly settingsHostActions?: readonly HostActionDescriptor[];
 	readonly displayTimezoneChoices?: readonly WorkspaceToolbarTimezoneChoice[];
 	readonly activeDisplayTimezoneValue?: string;
@@ -152,23 +152,23 @@ function createSection(label: string, end = false): HTMLDivElement {
 	return section;
 }
 
-function createSettingsRow(
+function createInlineSetting(
 	labelText: string,
 	settingName: string,
 ): {
-	readonly row: HTMLDivElement;
+	readonly setting: HTMLDivElement;
 	readonly control: HTMLDivElement;
 } {
-	const row = document.createElement('div');
-	row.className = 'baron-chart-workspace-popover__row';
-	row.dataset.settingName = settingName;
+	const setting = document.createElement('div');
+	setting.className = 'baron-chart-workspace-toolbar__setting';
+	setting.dataset.settingName = settingName;
 	const label = document.createElement('span');
-	label.className = 'baron-chart-workspace-popover__label';
+	label.className = 'baron-chart-workspace-toolbar__setting-label';
 	label.textContent = labelText;
 	const control = document.createElement('div');
-	control.className = 'baron-chart-workspace-popover__control';
-	row.append(label, control);
-	return { row, control };
+	control.className = 'baron-chart-workspace-toolbar__setting-control';
+	setting.append(label, control);
+	return { setting, control };
 }
 
 function createSegmentedControl(
@@ -176,7 +176,7 @@ function createSegmentedControl(
 	action: string,
 ): HTMLDivElement {
 	const control = document.createElement('div');
-	control.className = 'baron-chart-workspace-popover__segmented';
+	control.className = 'baron-chart-workspace-toolbar__segmented';
 	control.dataset.action = action;
 	control.setAttribute('role', 'group');
 	control.setAttribute('aria-label', label);
@@ -611,36 +611,27 @@ export function createChartWorkspaceToolbar(
 	primarySection.append(timezoneLabel);
 	top.append(primarySection);
 
-	const endSection = createSection('设置与全屏', true);
-	const settingsButton = createButton({ label: '图表设置', icon: 'settings' });
-	settingsButton.dataset.action = 'settings';
-	endSection.append(settingsButton);
-	const settingsPopover = createPopover(
-		settingsButton,
-		`baron-workspace-settings-${toolbarId}`,
-		cleanupCallbacks,
+	const settingsSection = createSection('图表设置');
+	settingsSection.classList.add(
+		'baron-chart-workspace-toolbar__section--settings',
 	);
-	openPopovers.push(settingsPopover);
-
-	const settingsList = document.createElement('div');
-	settingsList.className = 'baron-chart-workspace-popover__settings';
 	if ((options.settingsHostActions?.length ?? 0) > 0) {
-		const { row, control } = createSettingsRow('复权', 'adjustment');
+		const { setting, control } = createInlineSetting('复权', 'adjustment');
 		const segmented = createSegmentedControl('复权', 'host-settings');
 		for (const action of options.settingsHostActions ?? []) {
 			const hostControl = hostActionControls.get(action.actionId)!;
 			hostControl.button.classList.add(
-				'baron-chart-workspace-popover__segment',
+				'baron-chart-workspace-toolbar__segment',
 			);
 			segmented.append(hostControl.button);
 			control.append(hostControl.error);
 		}
 		control.prepend(segmented);
-		settingsList.append(row);
+		settingsSection.append(setting);
 	}
 
 	if (descriptor.valueAxis.mutable) {
-		const { row, control } = createSettingsRow('价格轴', 'price-scale');
+		const { setting, control } = createInlineSetting('价格轴', 'price-scale');
 		const segmented = createSegmentedControl('价格轴', 'price-scale');
 		const scaleButtons = new Map<
 			'linear' | 'logarithmic',
@@ -651,7 +642,7 @@ export function createChartWorkspaceToolbar(
 			const button = createButton({
 				label: `${label}价格轴`,
 				text: label,
-				className: 'baron-chart-workspace-popover__segment',
+				className: 'baron-chart-workspace-toolbar__segment',
 			});
 			button.dataset.priceScale = scale;
 			button.setAttribute(
@@ -683,11 +674,11 @@ export function createChartWorkspaceToolbar(
 			dataControls.push(button);
 		}
 		control.append(segmented);
-		settingsList.append(row);
+		settingsSection.append(setting);
 	}
 	if (descriptor.mainSeriesPresentation !== null) {
 		const mainSeries = descriptor.mainSeriesPresentation;
-		const { row, control } = createSettingsRow('主序列', 'main-series');
+		const { setting, control } = createInlineSetting('主序列', 'main-series');
 		const select = document.createElement('select');
 		select.className = 'baron-chart-workspace-toolbar__select';
 		select.dataset.action = 'main-series';
@@ -714,10 +705,17 @@ export function createChartWorkspaceToolbar(
 		);
 		dataControls.push(select);
 		control.append(select);
-		settingsList.append(row);
+		settingsSection.append(setting);
 	}
-	settingsPopover.element.append(settingsList);
+	if (settingsSection.childElementCount > 0) {
+		const settingsDivider = document.createElement('span');
+		settingsDivider.className = 'baron-chart-workspace-toolbar__divider';
+		settingsDivider.setAttribute('aria-hidden', 'true');
+		settingsSection.prepend(settingsDivider);
+		top.append(settingsSection);
+	}
 
+	const endSection = createSection('全屏', true);
 	if (options.fullscreenControl !== 'hidden') {
 		const fullscreenTarget =
 			options.fullscreenTarget ?? containers.top.parentElement;

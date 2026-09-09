@@ -56,9 +56,10 @@ toolbar can be dragged within the chart's visible bounds. Baron does not replace
 cancel the browser context menu; right-click never deletes a Drawing.
 
 For a chart Workspace, `createChartWorkspaceToolbar` provides the split layout used
-by professional charting screens: period and display controls at the top, and Drawing
-tools on the left. Period and adjustment actions remain opaque host actions. Main
-indicators are calculated by KLineCharts in the browser from the Scene OHLC data.
+by professional charting screens: period, display, adjustment, price-axis, and
+main-series controls are directly available at the top, while Drawing tools stay on
+the left. Period and adjustment actions remain opaque host actions. Main indicators
+are calculated by KLineCharts in the browser from the Scene OHLC data.
 
 ```ts
 const toolbar = createChartWorkspaceToolbar(

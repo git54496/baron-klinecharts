@@ -579,7 +579,7 @@ test('@browser chart Workspace toolbar has 22 tools and working main series cont
 	expect(result.candleType).toBe('area');
 });
 
-test('@browser composite chart toolbar separates market, settings, and Drawing controls', async ({ page }) => {
+test('@browser composite chart toolbar exposes settings directly beside market controls', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	const result = await page.evaluate(async (workspace) => {
 		const {
@@ -633,24 +633,46 @@ test('@browser composite chart toolbar separates market, settings, and Drawing c
 		const timezone = toolbar.topElement.querySelector<HTMLSelectElement>('[data-action="display-timezone"]')!;
 		timezone.value = 'utc';
 		timezone.dispatchEvent(new Event('change'));
-		const settingsButton = toolbar.topElement.querySelector<HTMLButtonElement>(
-			'[data-action="settings"]',
-		)!;
-		settingsButton.click();
-		const settingsPopover = document.querySelector<HTMLElement>('[id^="baron-workspace-settings-"]')!;
-		settingsPopover.querySelector<HTMLButtonElement>(
+		toolbar.topElement.querySelector<HTMLButtonElement>(
 			'[data-host-action="adjustment.qfq"]',
 		)!.click();
-		settingsPopover.querySelector<HTMLButtonElement>(
+		toolbar.topElement.querySelector<HTMLButtonElement>(
 			'[data-price-scale="logarithmic"]',
 		)!.click();
 		await new Promise((resolve) => setTimeout(resolve, 0));
-		const mainSeriesSelect = settingsPopover.querySelector<HTMLSelectElement>(
+		const mainSeriesSelect = toolbar.topElement.querySelector<HTMLSelectElement>(
 			'[data-action="main-series"]',
 		)!;
 		mainSeriesSelect.value = 'area';
 		mainSeriesSelect.dispatchEvent(new Event('change'));
-		settingsButton.click();
+		const topContainer = document.querySelector<HTMLElement>('#toolbar')!;
+		topContainer.style.width = '650px';
+		const topBounds = toolbar.topElement.getBoundingClientRect();
+		const settingsBounds = toolbar.topElement.querySelector<HTMLElement>(
+			'.baron-chart-workspace-toolbar__section--settings',
+		)!.getBoundingClientRect();
+		const forwardAdjustment = toolbar.topElement.querySelector<HTMLButtonElement>(
+			'[data-host-action="adjustment.qfq"]',
+		)!;
+		toolbar.setHostActionState('adjustment.qfq', {
+			disabled: true,
+			pending: true,
+			errorMessage: '前复权数据加载失败',
+		});
+		const adjustmentError = document.querySelector<HTMLElement>(
+			`#${forwardAdjustment.getAttribute('aria-errormessage')}`,
+		)!;
+		const pendingAdjustment = {
+			disabled: forwardAdjustment.disabled,
+			busy: forwardAdjustment.getAttribute('aria-busy'),
+			errorText: adjustmentError.textContent,
+			errorPosition: getComputedStyle(adjustmentError).position,
+		};
+		toolbar.setHostActionState('adjustment.qfq', {
+			disabled: false,
+			pending: false,
+			errorMessage: null,
+		});
 		const annotationButton = toolbar.leftElement.querySelector<HTMLButtonElement>(
 			'[data-overlay-type="simpleAnnotation"]',
 		)!;
@@ -671,30 +693,36 @@ test('@browser composite chart toolbar separates market, settings, and Drawing c
 			displayTimezone: runtime.getDisplayTimezone(),
 			sceneTimezone: scene.chart.timezone,
 			originalSceneTimezone: workspace.scene.document.chart.timezone,
-			settingRows: [...settingsPopover.querySelectorAll<HTMLElement>('[data-setting-name]')]
+			settingRows: [...toolbar.topElement.querySelectorAll<HTMLElement>('[data-setting-name]')]
 				.map((row) => row.dataset.settingName),
-			settingLabels: [...settingsPopover.querySelectorAll<HTMLElement>(
-				'.baron-chart-workspace-popover__label',
+			settingLabels: [...toolbar.topElement.querySelectorAll<HTMLElement>(
+				'.baron-chart-workspace-toolbar__setting-label',
 			)].map((label) => label.textContent),
-			groupTitles: settingsPopover.querySelectorAll(
-				'.baron-chart-workspace-popover__title',
-			).length,
-			hasAdjustment: settingsPopover.querySelector('[data-host-action="adjustment.qfq"]') !== null,
-			hasPriceScale: settingsPopover.querySelector('[data-action="price-scale"]') !== null,
-			hasMainSeries: settingsPopover.querySelector('[data-action="main-series"]') !== null,
-			adjustmentOptions: [...settingsPopover.querySelectorAll<HTMLButtonElement>(
+			hasSettingsButton: toolbar.topElement.querySelector('[data-action="settings"]') !== null,
+			hasSettingsPopover: document.querySelector('[id^="baron-workspace-settings-"]') !== null,
+			hasAdjustment: toolbar.topElement.querySelector('[data-host-action="adjustment.qfq"]') !== null,
+			hasPriceScale: toolbar.topElement.querySelector('[data-action="price-scale"]') !== null,
+			hasMainSeries: toolbar.topElement.querySelector('[data-action="main-series"]') !== null,
+			adjustmentOptions: [...toolbar.topElement.querySelectorAll<HTMLButtonElement>(
 				'[data-action="host-settings"] [data-host-action]',
 			)].map((button) => ({
 				label: button.textContent,
 				pressed: button.getAttribute('aria-pressed'),
 			})),
-			priceScaleOptions: [...settingsPopover.querySelectorAll<HTMLButtonElement>(
+			priceScaleOptions: [...toolbar.topElement.querySelectorAll<HTMLButtonElement>(
 				'[data-action="price-scale"] [data-price-scale]',
 			)].map((button) => ({
 				label: button.textContent,
 				pressed: button.getAttribute('aria-pressed'),
 			})),
 			mainSeriesTag: mainSeriesSelect.tagName,
+			topHeight: topBounds.height,
+			topClientWidth: toolbar.topElement.clientWidth,
+			topScrollWidth: toolbar.topElement.scrollWidth,
+			settingsWithinTop: settingsBounds.left >= topBounds.left
+				&& settingsBounds.right <= topBounds.right
+				&& settingsBounds.bottom <= topBounds.bottom,
+			pendingAdjustment,
 			priceScale: scene.panes[0].yAxes[0].scale,
 			mainSeries: scene.chart.candle.type,
 			annotationPressed: annotationButton.getAttribute('aria-pressed'),
@@ -723,7 +751,8 @@ test('@browser composite chart toolbar separates market, settings, and Drawing c
 		originalSceneTimezone: result.originalSceneTimezone,
 		settingRows: ['adjustment', 'price-scale', 'main-series'],
 		settingLabels: ['复权', '价格轴', '主序列'],
-		groupTitles: 0,
+		hasSettingsButton: false,
+		hasSettingsPopover: false,
 		hasAdjustment: true,
 		hasPriceScale: true,
 		hasMainSeries: true,
@@ -736,6 +765,16 @@ test('@browser composite chart toolbar separates market, settings, and Drawing c
 			{ label: '对数', pressed: 'true' },
 		],
 		mainSeriesTag: 'SELECT',
+		topHeight: expect.any(Number),
+		topClientWidth: 650,
+		topScrollWidth: 650,
+		settingsWithinTop: true,
+		pendingAdjustment: {
+			disabled: true,
+			busy: 'true',
+			errorText: '前复权数据加载失败',
+			errorPosition: 'absolute',
+		},
 		priceScale: 'logarithmic',
 		mainSeries: 'area',
 		annotationPressed: 'true',
@@ -744,6 +783,7 @@ test('@browser composite chart toolbar separates market, settings, and Drawing c
 		adjustmentRequested: true,
 		remaining: 0,
 	});
+	expect(result.topHeight).toBeGreaterThan(44);
 });
 
 test('@browser chart remains draggable after enabling every main indicator', async ({ page }) => {
@@ -1127,11 +1167,11 @@ test('@browser selected Drawing toolbar remains visible inside workspace fullscr
 		.toBe('fullscreen-host');
 	await expect(drawingToolbar).toBeVisible();
 
-	await page.locator('#fullscreen-host [data-action="settings"]').click();
-	const settingsPopover = page.locator('[id^="baron-workspace-settings-"]');
-	await expect.poll(() => settingsPopover.evaluate((element) => element.parentElement?.id))
+	await page.locator('#fullscreen-host [data-action="main-indicators"]').click();
+	const indicatorPopover = page.locator('[id^="baron-workspace-indicators-"]');
+	await expect.poll(() => indicatorPopover.evaluate((element) => element.parentElement?.id))
 		.toBe('fullscreen-host');
-	await expect(settingsPopover).toBeVisible();
+	await expect(indicatorPopover).toBeVisible();
 
 	await drawingToolbar.locator('[data-action="line-style"]').selectOption('dotted');
 	await expect.poll(() => page.evaluate(() => {
@@ -1147,7 +1187,7 @@ test('@browser selected Drawing toolbar remains visible inside workspace fullscr
 
 	await page.locator('#fullscreen-host [data-action="fullscreen"]').click();
 	await expect.poll(() => page.evaluate(() => document.fullscreenElement)).toBeNull();
-	await expect.poll(() => settingsPopover.evaluate((element) => element.parentElement?.tagName))
+	await expect.poll(() => indicatorPopover.evaluate((element) => element.parentElement?.tagName))
 		.toBe('BODY');
 	await expect.poll(() => drawingToolbar.evaluate((element) => element.parentElement?.tagName))
 		.toBe('BODY');
