@@ -12,6 +12,7 @@ import {
 	SceneError,
 } from '@baron1996/kline-scene-schema';
 import type { Chart, Coordinate, Overlay, Point } from 'klinecharts';
+import type { DataLoader, KLineData } from 'klinecharts';
 
 import { createEngine, type EngineHandle } from './engine.js';
 import { toKLineChartsOptions } from './conversion/chart-options.js';
@@ -248,6 +249,11 @@ function containsBootstrapConfig(expected: unknown, actual: unknown): boolean {
 	return Object.is(expected, actual);
 }
 
+export interface LiveBarProjectionResult {
+	readonly action: 'replaced_current' | 'appended' | 'reconciled_previous' | 'unchanged';
+	readonly timestamp: number;
+}
+
 /**
  * ChartScene 与 KLineCharts 之间的唯一边界。
  * 引擎对象和内部 ID 永不从该类的公共接口泄露。
@@ -336,6 +342,10 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	readonly #idMap: EngineIdMap;
 	/** 当前最后一次成功提交、可导出的规范化场景。 */
 	#scene: ChartScene;
+	/** 仅用于画面展示的实时 K 投影，不进入 #scene 与任何导出结果。 */
+	readonly #liveBarProjections = new Map<number, MarketData>();
+	/** KLineCharts 当前实时单 K 回调；DataLoader 重建后由 subscribeBar 重新绑定。 */
+	#liveBarCallback: ((data: KLineData) => void) | undefined;
 	/** 空图表只属于浏览器加载生命周期；安装首份正式 Scene 后永久关闭。 */
 	#emptyRuntime: boolean;
 	/** 当前引擎容器。 */
@@ -566,7 +576,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		});
 		this.#chart.setPeriod(structuredClone(candidate.period));
 		this.#replaceMainPaneIndicators(this.#scene, candidate);
-		this.#chart.setDataLoader(createStaticDataLoader(engineDataForScene(candidate)));
+		this.#liveBarProjections.clear();
+		this.#chart.setDataLoader(this.#staticDataLoader(candidate));
 		this.#chart.resetData();
 		applyViewport(this.#chart, candidate.viewport);
 		this.#scene = candidate;
@@ -780,8 +791,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	}
 
 	#historicalDataLoader(scene: ChartScene): import('klinecharts').DataLoader {
-		const snapshot = structuredClone(engineDataForScene(scene)) as import('klinecharts').KLineData[];
-		return {
+		const snapshot = this.#engineDataWithLiveProjection(scene);
+		return this.#withLiveSubscription({
 			getBars: ({ type, timestamp, callback }): void => {
 				if (type === 'init') {
 					callback(structuredClone(snapshot), {
@@ -814,7 +825,141 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 					listener(structuredClone(request));
 				}
 			},
+		});
+	}
+
+	#staticDataLoader(scene: ChartScene): DataLoader {
+		return this.#withLiveSubscription(
+			createStaticDataLoader(this.#engineDataWithLiveProjection(scene)),
+		);
+	}
+
+	#withLiveSubscription(loader: DataLoader): DataLoader {
+		return {
+			...loader,
+			subscribeBar: ({ callback }): void => {
+				this.#liveBarCallback = callback;
+			},
+			unsubscribeBar: (): void => {
+				this.#liveBarCallback = undefined;
+			},
 		};
+	}
+
+	#projectedScene(scene: ChartScene): ChartScene {
+		if (this.#liveBarProjections.size === 0) {
+			return scene;
+		}
+		const projectedTimestamps = new Set(this.#liveBarProjections.keys());
+		const byTimestamp = new Map(
+			scene.data.map((bar) => [bar.timestamp, structuredClone(bar)] as const),
+		);
+		for (const [timestamp, bar] of this.#liveBarProjections) {
+			byTimestamp.set(timestamp, structuredClone(bar));
+		}
+		return parseChartScene({
+			...structuredClone(scene),
+			data: [...byTimestamp.values()].sort((left, right) => left.timestamp - right.timestamp),
+			gaps: scene.gaps?.filter((gap) => !projectedTimestamps.has(gap.timestamp)),
+		});
+	}
+
+	#engineDataWithLiveProjection(scene: ChartScene): KLineData[] {
+		return structuredClone(engineDataForScene(this.#projectedScene(scene))) as KLineData[];
+	}
+
+	#resetProjectedDataPreservingViewport(): void {
+		const before = this.#chart.getDataList();
+		const range = this.#chart.getVisibleRange();
+		const anchorIndex = Math.max(
+			0,
+			Math.min(before.length - 1, Math.round((range.from + range.to) / 2)),
+		);
+		const anchorTimestamp = before[anchorIndex]?.timestamp;
+		const barSpace = this.#chart.getBarSpace().bar;
+		const rightOffsetDistance = this.#chart.getOffsetRightDistance();
+		this.#chart.setDataLoader(
+			this.#historicalDataLoading === undefined
+				? this.#staticDataLoader(this.#scene)
+				: this.#historicalDataLoader(this.#scene),
+		);
+		this.#chart.setBarSpace(barSpace);
+		this.#chart.setOffsetRightDistance(rightOffsetDistance);
+		if (anchorTimestamp !== undefined) {
+			this.#chart.scrollToTimestamp(anchorTimestamp, 0);
+		}
+	}
+
+	/**
+	 * 将一根完整实时 K 投影到当前或下一时间键；上一根历史校准允许受控重载。
+	 * 该方法不会修改可导出的 ChartScene。
+	 */
+	public projectLiveBar(data: MarketData): LiveBarProjectionResult {
+		this.#assertActive();
+		this.#assertNotTerminated();
+		if (this.#emptyRuntime) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/data',
+				'Install the initial historical Scene before projecting live bars.',
+			);
+		}
+		const projectedScene = this.#projectedScene(this.#scene);
+		const projected = projectedScene.data;
+		const validationData = new Map(
+			projected.map((bar) => [bar.timestamp, structuredClone(bar)] as const),
+		);
+		validationData.set(data.timestamp, structuredClone(data));
+		const validatedScene = parseChartScene({
+			...structuredClone(projectedScene),
+			data: [...validationData.values()].sort(
+				(left, right) => left.timestamp - right.timestamp,
+			),
+			gaps: projectedScene.gaps?.filter((gap) => gap.timestamp !== data.timestamp),
+		});
+		const validated = validatedScene.data.find((bar) => bar.timestamp === data.timestamp)!;
+		const current = projected.at(-1)!;
+		const previous = projected.at(-2);
+		let action: LiveBarProjectionResult['action'];
+		if (validated.timestamp === current.timestamp) {
+			action = 'replaced_current';
+		} else if (validated.timestamp > current.timestamp) {
+			action = 'appended';
+		} else if (previous !== undefined && validated.timestamp === previous.timestamp) {
+			action = 'reconciled_previous';
+		} else {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				'/data/timestamp',
+				'Live bar can only replace the current bar, append a new bar, or reconcile the previous bar.',
+			);
+		}
+		const existing = projected.find((bar) => bar.timestamp === validated.timestamp);
+		if (existing !== undefined && JSON.stringify(existing) === JSON.stringify(validated)) {
+			return { action: 'unchanged', timestamp: validated.timestamp };
+		}
+		this.#liveBarProjections.set(validated.timestamp, structuredClone(validated));
+		if (action === 'reconciled_previous' || this.#liveBarCallback === undefined) {
+			this.#resetProjectedDataPreservingViewport();
+		} else {
+			const engineBar = engineHistoricalDataForScene(
+				this.#projectedScene(this.#scene),
+				[validated],
+			)[0]!;
+			this.#liveBarCallback(engineBar);
+		}
+		return { action, timestamp: validated.timestamp };
+	}
+
+	/** 清空全部实时投影并恢复权威历史 Scene。 */
+	public clearLiveBarProjection(): boolean {
+		this.#assertActive();
+		if (this.#liveBarProjections.size === 0) {
+			return false;
+		}
+		this.#liveBarProjections.clear();
+		this.#resetProjectedDataPreservingViewport();
+		return true;
 	}
 
 	#lockHistoricalScroll(): void {
@@ -2235,6 +2380,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			);
 		}
 		const previous = this.#scene;
+		const previousLiveBarProjections = new Map(this.#liveBarProjections);
+		this.#liveBarProjections.clear();
 		const previousBackground = this.#container.style.backgroundColor;
 		const previousHistoricalHasMore = this.#historicalDataLoading?.hasMore;
 		let indicatorsReplaced = false;
@@ -2255,7 +2402,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			}
 			this.#chart.setDataLoader(
 				this.#historicalDataLoading === undefined
-					? createStaticDataLoader(engineDataForScene(candidate))
+					? this.#staticDataLoader(candidate)
 					: this.#historicalDataLoader(candidate),
 			);
 			this.#chart.resetData();
@@ -2266,6 +2413,10 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			this.#renderSelectionAnchors();
 			return structuredClone(candidate);
 		} catch (error) {
+			this.#liveBarProjections.clear();
+			for (const [timestamp, bar] of previousLiveBarProjections) {
+				this.#liveBarProjections.set(timestamp, bar);
+			}
 			try {
 				if (indicatorsReplaced) {
 					this.#replaceMainPaneIndicators(candidate, previous);
@@ -2286,7 +2437,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				}
 				this.#chart.setDataLoader(
 					this.#historicalDataLoading === undefined
-						? createStaticDataLoader(engineDataForScene(previous))
+						? this.#staticDataLoader(previous)
 						: this.#historicalDataLoader(previous),
 				);
 				this.#chart.resetData();

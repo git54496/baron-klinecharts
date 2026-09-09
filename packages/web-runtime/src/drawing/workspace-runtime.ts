@@ -39,6 +39,7 @@ import type {
 	DisplayTimezoneRuntimeCapability,
 	DrawingRuntimeCapability,
 	HistoricalDataRuntimeCapability,
+	LiveBarRuntimeCapability,
 	MainIndicatorRuntimeCapability,
 	RuntimeAuxiliaryCapability,
 } from './capabilities.js';
@@ -77,6 +78,7 @@ export interface DrawableWorkspaceRuntimeOptions {
 export interface DrawableWorkspaceRuntimeHandle
 	extends DrawingRuntimeCapability,
 		HistoricalDataRuntimeCapability,
+		LiveBarRuntimeCapability,
 		MainIndicatorRuntimeCapability,
 		DisplayTimezoneRuntimeCapability,
 		RuntimeAuxiliaryCapability {}
@@ -703,6 +705,27 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		this.#scene = applied;
 		this.#emit({ type: 'scene-replaced', scene: { kind: this.#sceneKind(), document: applied } });
 		return structuredClone(applied);
+	}
+
+	/** 投影一根不进入 Drawable Workspace 与 Scene 导出的实时 K。 */
+	public projectLiveBar(data: MarketData): ReturnType<LiveBarRuntimeCapability['projectLiveBar']> {
+		this.#assertUsable();
+		const engine = this.#engine as unknown as {
+			projectLiveBar(value: MarketData): {
+				readonly action: 'replaced_current' | 'appended' | 'reconciled_previous' | 'unchanged';
+				readonly timestamp: number;
+			};
+		};
+		return structuredClone(engine.projectLiveBar(data));
+	}
+
+	/** 清空实时 K 临时投影，不改变 Drawing 与权威 Scene。 */
+	public clearLiveBarProjection(): boolean {
+		this.#assertUsable();
+		const engine = this.#engine as unknown as {
+			clearLiveBarProjection(): boolean;
+		};
+		return engine.clearLiveBarProjection();
 	}
 
 	public commitHistoricalData(

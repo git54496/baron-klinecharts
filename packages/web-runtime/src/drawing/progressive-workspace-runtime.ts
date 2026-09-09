@@ -416,6 +416,18 @@ export class ProgressiveDrawableWorkspaceRuntime
 		return this.#requireReady().replaceScene(scene, options) as ChartScene;
 	}
 
+	/** 投影一根仅用于展示、不会进入 Workspace 导出的实时 K。 */
+	public projectLiveBar(
+		data: MarketData,
+	): ReturnType<DrawableWorkspaceRuntime['projectLiveBar']> {
+		return this.#requireReady().projectLiveBar(data);
+	}
+
+	/** 清空实时 K 临时投影并恢复权威历史 Scene。 */
+	public clearLiveBarProjection(): boolean {
+		return this.#requireReady().clearLiveBarProjection();
+	}
+
 	public commitHistoricalData(
 		requestId: string,
 		data: readonly MarketData[],

@@ -1,6 +1,7 @@
 import {
 	serializeCanonicalScene,
 	type ChartScene,
+	type MarketData,
 	type SceneIndicator,
 	type SceneOverlay,
 } from '@baron1996/kline-scene-schema';
@@ -17,6 +18,7 @@ import {
 	type EngineDrawingSnapshot,
 	type EnginePixelCoordinate,
 	type MainSeriesPresentation,
+	type LiveBarProjectionResult,
 	type OverlayHitResult,
 	type OverlayDrawingRequest,
 	type PixelCoordinate,
@@ -225,6 +227,18 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 
 	public exportScene(): ChartScene {
 		return this.getScene();
+	}
+
+	/** 投影一根不进入 Scene 导出的实时 K。 */
+	public projectLiveBar(data: MarketData): LiveBarProjectionResult {
+		this.#assertActive();
+		return this.#adapter.projectLiveBar(data);
+	}
+
+	/** 清空实时 K 临时投影并恢复权威历史数据。 */
+	public clearLiveBarProjection(): boolean {
+		this.#assertActive();
+		return this.#adapter.clearLiveBarProjection();
 	}
 
 	public async setPriceScale(scale: PriceScale): Promise<ChartScene> {

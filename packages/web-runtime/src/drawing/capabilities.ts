@@ -8,6 +8,7 @@ import type {
 	EngineHistoricalDataCommitResult,
 	EngineDrawingSnapshot,
 	EnginePixelCoordinate,
+	LiveBarProjectionResult,
 	MainSeriesPresentation,
 } from '@baron1996/klinecharts-adapter';
 import type {
@@ -72,6 +73,12 @@ export interface HistoricalDataRuntimeCapability {
 		hasMore: boolean,
 	): EngineHistoricalDataCommitResult;
 	rejectHistoricalData(requestId: string, message: string): boolean;
+}
+
+/** 仅投影到浏览器图表、不会进入 Scene 或 Workspace 导出的实时 K 能力。 */
+export interface LiveBarRuntimeCapability {
+	projectLiveBar(data: MarketData): LiveBarProjectionResult;
+	clearLiveBarProjection(): boolean;
 }
 
 /** 主图指标配置能力；指标值由浏览器内图表引擎基于 OHLC 数据计算。 */

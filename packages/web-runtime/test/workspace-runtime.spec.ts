@@ -41,6 +41,7 @@ class MockEngine implements DrawingEnginePort {
 	public replacedScene: unknown = null;
 	public historicalListener: ((request: EngineHistoricalDataRequest) => void) | null = null;
 	public displayTimezone = this.scene.chart.timezone;
+	public liveBars = new Map<number, MarketData>();
 
 	public restoreDrawings(drawings: readonly EngineDrawingSnapshot[]): void {
 		this.drawings = new Map(drawings.map((drawing) => [drawing.id, drawing]));
@@ -159,6 +160,35 @@ class MockEngine implements DrawingEnginePort {
 		this.replacedScene = scene;
 		this.scene = structuredClone(scene) as unknown as ChartScene;
 		return structuredClone(scene);
+	}
+
+	public projectLiveBar(data: MarketData): {
+		readonly action: 'replaced_current' | 'appended' | 'reconciled_previous' | 'unchanged';
+		readonly timestamp: number;
+	} {
+		const current = [...this.scene.data, ...this.liveBars.values()]
+			.sort((left, right) => left.timestamp - right.timestamp);
+		const latest = current.at(-1)!;
+		const previous = current.at(-2);
+		const existing = current.find((item) => item.timestamp === data.timestamp);
+		if (existing !== undefined && JSON.stringify(existing) === JSON.stringify(data)) {
+			return { action: 'unchanged', timestamp: data.timestamp };
+		}
+		const action = data.timestamp > latest.timestamp
+			? 'appended'
+			: data.timestamp === latest.timestamp
+				? 'replaced_current'
+				: previous?.timestamp === data.timestamp
+					? 'reconciled_previous'
+					: 'unchanged';
+		this.liveBars.set(data.timestamp, structuredClone(data));
+		return { action, timestamp: data.timestamp };
+	}
+
+	public clearLiveBarProjection(): boolean {
+		const changed = this.liveBars.size > 0;
+		this.liveBars.clear();
+		return changed;
 	}
 
 	public listIndicators(): readonly SceneIndicator[] {
@@ -547,6 +577,20 @@ describe('DrawableWorkspaceRuntime', () => {
 			(exported.scene as { document: ChartScene }).document.data[0].close,
 		).toBe(12.6);
 		expect(runtime.getDrawingSessionState()).toBe('ready');
+	});
+
+	it('projects live bars without changing exported Scene or Drawing', async () => {
+		const { runtime } = await makeRuntime(chartWorkspaceFixture);
+		const before = runtime.exportWorkspace();
+		const latest = (before.scene.document as ChartScene).data.at(-1)!;
+		const update = { ...structuredClone(latest), close: latest.close + 0.1 };
+		expect(runtime.projectLiveBar(update)).toEqual({
+			action: 'replaced_current',
+			timestamp: latest.timestamp,
+		});
+		expect(runtime.exportWorkspace()).toEqual(before);
+		expect(runtime.clearLiveBarProjection()).toBe(true);
+		expect(runtime.clearLiveBarProjection()).toBe(false);
 	});
 
 	it('manages main indicators in the browser and preserves them across period Scene replacement', async () => {
