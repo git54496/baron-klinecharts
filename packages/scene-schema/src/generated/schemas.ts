@@ -1223,7 +1223,10 @@ export const DrawingDocumentSchema = {
       "const": "@baron1996/drawing-document"
     },
     "version": {
-      "const": 1
+      "enum": [
+        1,
+        2
+      ]
     },
     "scopeKey": {
       "type": "string",
@@ -1298,6 +1301,12 @@ export const DrawingDocumentSchema = {
           "type": "integer",
           "minimum": 0,
           "maximum": 16
+        },
+        "scale": {
+          "enum": [
+            "linear",
+            "logarithmic"
+          ]
         }
       }
     },
@@ -2013,7 +2022,47 @@ export const DrawingDocumentSchema = {
         }
       ]
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "version": {
+            "const": 2
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "then": {
+        "properties": {
+          "coordinateSystem": {
+            "type": "object",
+            "properties": {
+              "valueAxes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "scale": {
+                      "enum": [
+                        "linear",
+                        "logarithmic"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "scale"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 } as const;
 
 export const DrawableWorkspaceSchema = {

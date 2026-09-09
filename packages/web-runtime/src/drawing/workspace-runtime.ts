@@ -433,8 +433,11 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		if (
 			document.scopeKey !== expected.scopeKey ||
 			document.coordinateSystem.timezone !== expected.coordinateSystem.timezone ||
-			JSON.stringify(document.coordinateSystem.valueAxes) !==
-				JSON.stringify(expected.coordinateSystem.valueAxes) ||
+			!sameDrawingCoordinateAxes(
+				document.coordinateSystem.valueAxes,
+				expected.coordinateSystem.valueAxes,
+				document.version === 1,
+			) ||
 			!containsMetadataIdentity(document.metadata, this.#drawingMetadataIdentity)
 		) {
 			throw new DrawingSessionError(
@@ -806,7 +809,7 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		const workspace = this.#workspace;
 		return parseDrawingDocument({
 			schema: '@baron1996/drawing-document',
-			version: 1,
+			version: workspace.drawings.version,
 			scopeKey: workspace.drawings.scopeKey,
 			coordinateSystem: structuredClone(workspace.drawings.coordinateSystem),
 			drawings: drawings.map((snapshot) => snapshotToDrawing(snapshot)),
@@ -959,6 +962,28 @@ function containsMetadataIdentity(
 	}
 	return Object.entries(expected).every(([key, value]) =>
 		JSON.stringify(actual[key]) === JSON.stringify(value));
+}
+
+/** v1 没有价格轴类型，只在首次接入 v2 Runtime 时按其余稳定轴身份兼容读取。 */
+function sameDrawingCoordinateAxes(
+	actual: DrawingDocument['coordinateSystem']['valueAxes'],
+	expected: DrawingDocument['coordinateSystem']['valueAxes'],
+	allowLegacyMissingScale: boolean,
+): boolean {
+	if (actual.length !== expected.length) {
+		return false;
+	}
+	return actual.every((axis, index) => {
+		const target = expected[index];
+		return target !== undefined
+			&& axis.paneRole === target.paneRole
+			&& axis.yAxisRole === target.yAxisRole
+			&& axis.valuePrecision === target.valuePrecision
+			&& (
+				axis.scale === target.scale
+				|| (allowLegacyMissingScale && axis.scale === undefined)
+			);
+	});
 }
 
 export async function createDrawableWorkspaceRuntime(

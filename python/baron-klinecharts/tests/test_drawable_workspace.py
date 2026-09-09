@@ -107,6 +107,25 @@ class DrawableWorkspaceContractTest(unittest.TestCase):
             "DRAWABLE_WORKSPACE_SCHEMA_INVALID",
         )
 
+    def test_rejects_empty_version_two_document_with_mismatched_scale(self) -> None:
+        workspace = load_drawable_workspace(WORKSPACES / "chart-minimal.json")
+        value = workspace.to_dict()
+        value["drawings"]["version"] = 2
+        value["drawings"]["drawings"] = []
+        value["drawings"]["coordinateSystem"]["valueAxes"][0]["scale"] = (
+            "logarithmic"
+        )
+        value["binding"]["valueAxes"] = value["drawings"][
+            "coordinateSystem"
+        ]["valueAxes"]
+        with self.assertRaises(DrawableWorkspaceError) as context:
+            DrawableWorkspaceDocument.from_dict(value)
+        self.assertEqual(context.exception.code, "DRAWING_TARGET_INVALID")
+        self.assertEqual(
+            context.exception.path,
+            "/drawings/coordinateSystem/valueAxes/0/scale",
+        )
+
     def test_save_force_and_reload(self) -> None:
         workspace = load_drawable_workspace(WORKSPACES / "chart-minimal.json")
         with tempfile.TemporaryDirectory() as directory:

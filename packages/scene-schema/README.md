@@ -16,3 +16,9 @@ import {
 ```
 
 ChartScene accepts only embedded, normalized, strictly increasing static OHLCV data.
+
+`DrawingDocument` v2 requires every coordinate-system value axis to declare its
+`scale` as `linear` or `logarithmic`. The scale is part of the Drawing coordinate
+identity, so a v2 document must match the bound Scene axis and must not be reused
+across scale types. Version 1 remains readable for backward compatibility and may
+omit the field.

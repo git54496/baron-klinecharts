@@ -62,6 +62,9 @@ function isTopLevelStructuralError(
 	error: StructuralError,
 	all: readonly StructuralError[],
 ): boolean {
+	if (error.keyword === 'if') {
+		return false;
+	}
 	if (error.keyword === 'oneOf') {
 		return true;
 	}

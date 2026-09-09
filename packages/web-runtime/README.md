@@ -78,10 +78,36 @@ const toolbar = createChartWorkspaceToolbar(
       { value: 'utc', label: 'UTC', timezone: 'UTC' },
     ],
     activeDisplayTimezoneValue: 'instrument',
+    priceScaleStates: {
+      linear: { drawingCount: 2 },
+      logarithmic: { drawingCount: 0 },
+    },
+    async onPriceScaleChangeRequested(scale) {
+      // Load the DrawingDocument whose coordinate identity includes this scale,
+      // then update the toolbar state after the replacement succeeds.
+      await hostWorkspaceController.switchPriceScale(scale);
+    },
     fullscreenTarget: chartWorkspaceElement,
   },
 );
+
+toolbar.setPriceScaleState('linear', { drawingCount: 0, pressed: false });
+toolbar.setPriceScaleState('logarithmic', { drawingCount: 3, pressed: true });
 ```
+
+`DrawingDocument` v2 makes each value-axis `scale` (`linear` or `logarithmic`)
+part of the Drawing coordinate identity. A strict v2 document can only be installed
+into a Scene with matching value-axis scales, including when the document is empty.
+The Runtime therefore does not convert or share Drawings across linear and
+logarithmic axes. Version 1 documents remain readable as legacy documents without
+an explicit scale.
+
+The Runtime only knows the currently installed document. A persistence host that
+owns documents for inactive axes supplies their counts through `priceScaleStates`
+and `setPriceScaleState()`. When `onPriceScaleChangeRequested` is provided, clicking
+the price-axis control delegates the complete save/load/replace operation to that
+host. Without the callback, the toolbar preserves its original behavior and changes
+the current Runtime Scene directly.
 
 The indicator menu currently manages main-pane `MA`, `EMA`, `SMA`, `BOLL`, `SAR`,
 and `BBI`. `replaceScene()` preserves these Runtime-owned selections by default, so

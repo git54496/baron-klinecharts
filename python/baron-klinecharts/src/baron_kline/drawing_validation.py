@@ -482,9 +482,91 @@ def _same_axes(
             left_item["paneRole"] == right_item["paneRole"]
             and left_item["yAxisRole"] == right_item["yAxisRole"]
             and left_item["valuePrecision"] == right_item["valuePrecision"]
+            and left_item.get("scale") == right_item.get("scale")
         )
         for left_item, right_item in zip(left, right)
     )
+
+
+def _chart_value_axis_scale_issues(
+    scene: dict[str, Any],
+    drawings: dict[str, Any],
+    issues: list[DrawableWorkspaceIssue],
+) -> None:
+    indicators = [
+        indicator
+        for pane in scene["panes"]
+        for indicator in pane["indicators"]
+    ]
+    for index, axis in enumerate(
+        drawings["coordinateSystem"]["valueAxes"]
+    ):
+        scale = axis.get("scale")
+        if scale is None:
+            continue
+        expected_scale: str | None = None
+        if axis["paneRole"] == "candle":
+            candle_pane = next(
+                (pane for pane in scene["panes"] if pane["kind"] == "candle"),
+                None,
+            )
+            if candle_pane is not None:
+                primary_axis = next(
+                    (
+                        candidate
+                        for candidate in candle_pane["yAxes"]
+                        if candidate["role"] == "primary"
+                    ),
+                    None,
+                )
+                expected_scale = (
+                    primary_axis.get("scale", "linear")
+                    if primary_axis is not None
+                    else "linear"
+                )
+        elif axis["paneRole"].startswith("indicator:"):
+            indicator_id = axis["paneRole"][len("indicator:"):]
+            indicator = next(
+                (
+                    candidate
+                    for candidate in indicators
+                    if candidate["id"] == indicator_id
+                ),
+                None,
+            )
+            pane = next(
+                (
+                    candidate
+                    for candidate in scene["panes"]
+                    if candidate["id"] == (
+                        indicator["paneId"] if indicator is not None else None
+                    )
+                ),
+                None,
+            )
+            if indicator is not None and pane is not None:
+                primary_axis = next(
+                    (
+                        candidate
+                        for candidate in pane["yAxes"]
+                        if candidate["role"] == "primary"
+                    ),
+                    None,
+                )
+                expected_scale = (
+                    primary_axis.get("scale", "linear")
+                    if primary_axis is not None
+                    else "linear"
+                )
+        if expected_scale is not None and scale != expected_scale:
+            issues.append(
+                DrawableWorkspaceIssue(
+                    "DRAWING_TARGET_INVALID",
+                    f"/drawings/coordinateSystem/valueAxes/{index}/scale",
+                    "Drawing value-axis scale must match its Scene "
+                    f"primary axis: {expected_scale}.",
+                )
+            )
 
 
 def _chart_target_issues(
@@ -497,6 +579,7 @@ def _chart_target_issues(
         for pane in scene["panes"]
         for indicator in pane["indicators"]
     ]
+    _chart_value_axis_scale_issues(scene, drawings, issues)
     for index, drawing in enumerate(drawings["drawings"]):
         path = f"/drawings/{index}/target"
         target = drawing["target"]
@@ -524,7 +607,7 @@ def _chart_target_issues(
                     DrawableWorkspaceIssue(
                         "DRAWING_TARGET_INVALID",
                         path,
-                        "Candle target precision must equal symbol.pricePrecision.",
+                        "Candle target precision must match the Scene symbol precision.",
                     )
                 )
             continue
@@ -578,7 +661,7 @@ def _chart_target_issues(
                     DrawableWorkspaceIssue(
                         "DRAWING_TARGET_INVALID",
                         path,
-                        "Indicator target precision must equal the indicator precision.",
+                        "Indicator target precision must match its Scene indicator precision.",
                     )
                 )
             continue
@@ -605,12 +688,16 @@ def _time_series_target_issues(
         ),
         None,
     )
-    if axis is None or axis["valuePrecision"] != shared_precision:
+    if (
+        axis is None
+        or axis["valuePrecision"] != shared_precision
+        or axis.get("scale") not in (None, "linear")
+    ):
         issues.append(
             DrawableWorkspaceIssue(
                 "DRAWING_TARGET_INVALID",
                 "/binding/valueAxes",
-                "TimeSeries primary binding precision must equal the shared series precision.",
+                "TimeSeries primary binding precision must match and its scale must be linear.",
             )
         )
     for index, drawing in enumerate(drawings["drawings"]):

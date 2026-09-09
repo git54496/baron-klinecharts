@@ -137,6 +137,25 @@ describe('KLineDrawingProjectionPolicy', () => {
 		expect(binding.scale).toBe('logarithmic');
 	});
 
+	it('rejects an explicit Drawing axis scale that differs from the Scene', () => {
+		const scene = structuredClone(chartWorkspaceFixture.scene.document);
+		const pane = scene.panes.find(
+			(candidate: { kind: string }) => candidate.kind === 'candle',
+		);
+		pane.yAxes[0].scale = 'logarithmic';
+		expectTargetError(
+			chartInput(scene, candleDrawing(), [
+				{
+					paneRole: 'candle',
+					yAxisRole: 'primary',
+					valuePrecision: 2,
+					scale: 'linear',
+				},
+			]),
+			'/drawings/0/target',
+		);
+	});
+
 	it('resolves a primary-bound indicator with its own precision', () => {
 		const drawing = candleDrawing();
 		drawing.target = {

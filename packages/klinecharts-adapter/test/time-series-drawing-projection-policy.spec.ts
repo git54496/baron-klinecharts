@@ -81,6 +81,26 @@ describe('TimeSeriesDrawingProjectionPolicy', () => {
 		}
 	});
 
+	it('rejects an explicit logarithmic Drawing axis', () => {
+		try {
+			new TimeSeriesDrawingProjectionPolicy().resolveAxisBinding(
+				input(drawing(), [
+					{
+						paneRole: 'time-series',
+						yAxisRole: 'primary',
+						valuePrecision: 2,
+						scale: 'logarithmic',
+					},
+				]),
+			);
+			expect.fail('Expected DrawingProjectionError.');
+		} catch (error) {
+			expect((error as DrawingProjectionError).code).toBe(
+				'DRAWING_TARGET_INVALID',
+			);
+		}
+	});
+
 	it('rejects a chart scene', () => {
 		const inputValue: ResolveAxisBindingInput = {
 			scene: {

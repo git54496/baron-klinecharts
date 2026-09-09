@@ -34,6 +34,18 @@ describe('DrawingDocument schema and semantics', () => {
 		expect(parsed.drawings).toHaveLength(22);
 	});
 
+	it('requires an explicit value-axis scale for v2 documents', () => {
+		const versionTwo = structuredClone(allDrawings);
+		versionTwo.version = 2;
+		expectIssue(
+			versionTwo,
+			'DRAWING_DOCUMENT_SCHEMA_INVALID',
+			'/coordinateSystem/valueAxes/0/scale',
+		);
+		versionTwo.coordinateSystem.valueAxes[0]!.scale = 'logarithmic';
+		expect(parseDrawingDocument(versionTwo)).toEqual(versionTwo);
+	});
+
 	it('rejects unknown top-level and drawing fields', () => {
 		expectIssue(invalidExtraField, 'DRAWING_DOCUMENT_SCHEMA_INVALID', '/drawings/0/extra');
 	});

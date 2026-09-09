@@ -42,6 +42,19 @@ class DrawingDocumentContractTest(unittest.TestCase):
         self.assertIn('"a":2', canonical)
         self.assertIn('"b":1', canonical)
 
+    def test_version_two_requires_explicit_value_axis_scale(self) -> None:
+        document = load_drawing_document(DRAWINGS / "all-drawings.json")
+        value = document.to_dict()
+        value["version"] = 2
+        with self.assertRaises(DrawingDocumentError) as context:
+            DrawingDocument.from_dict(value)
+        self.assertEqual(
+            context.exception.path,
+            "/coordinateSystem/valueAxes/0/scale",
+        )
+        value["coordinateSystem"]["valueAxes"][0]["scale"] = "logarithmic"
+        self.assertEqual(DrawingDocument.from_dict(value).to_dict(), value)
+
     def test_decimal_normalization_matches_type_script_rules(self) -> None:
         self.assertEqual(normalize_decimal_value(1.005, 2), 1.01)
         self.assertEqual(normalize_decimal_value(-1.005, 2), -1.01)

@@ -693,6 +693,25 @@ describe('DrawableWorkspaceRuntime', () => {
 		expect(descriptor.valueAxis.supportedScales).toEqual(['linear']);
 	});
 
+	it('rejects changing a v2 DrawingDocument to a different Scene scale', async () => {
+		const workspace = structuredClone(
+			chartWorkspaceFixture,
+		) as unknown as DrawableWorkspaceDocument;
+		workspace.drawings.version = 2;
+		workspace.drawings.coordinateSystem.valueAxes[0]!.scale = 'linear';
+		workspace.binding.valueAxes[0]!.scale = 'linear';
+		const { runtime } = await makeRuntime(workspace);
+
+		await expect(runtime.setValueAxisScale('logarithmic')).rejects.toThrow(
+			'DrawingDocument scale linear does not match Scene scale logarithmic',
+		);
+		expect(mockEngine!.appliedScale).toBeNull();
+		expect(
+			(runtime.exportWorkspace().scene.document as ChartScene)
+				.panes[0]!.yAxes[0]!.scale,
+		).toBe('linear');
+	});
+
 	it('isolates listener errors and destroys idempotently', async () => {
 		const events: WorkspaceRuntimeEvent[] = [];
 		const container = {} as HTMLElement;

@@ -786,6 +786,105 @@ test('@browser composite chart toolbar exposes settings directly beside market c
 	expect(result.topHeight).toBeGreaterThan(44);
 });
 
+test('@browser price-scale controls expose host drawing state and delegate switching', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const result = await page.evaluate(async (workspace) => {
+		const {
+			createChartWorkspaceToolbar,
+			createDrawableWorkspaceRuntime,
+		} = await import('/src/index.ts');
+		const runtime = await createDrawableWorkspaceRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			workspace,
+			{ commitMode: 'immediate' },
+		);
+		const leftContainer = document.createElement('div');
+		document.body.append(leftContainer);
+		const requestedScales: string[] = [];
+		const toolbar = createChartWorkspaceToolbar(
+			{
+				top: document.querySelector<HTMLElement>('#toolbar')!,
+				left: leftContainer,
+			},
+			runtime,
+			{
+				priceScaleStates: {
+					linear: { drawingCount: 2 },
+					logarithmic: { drawingCount: 0 },
+				},
+				onPriceScaleChangeRequested(scale) {
+					requestedScales.push(scale);
+				},
+				fullscreenControl: 'hidden',
+			},
+		);
+		const linearButton = toolbar.topElement.querySelector<HTMLButtonElement>(
+			'[data-price-scale="linear"]',
+		)!;
+		const logarithmicButton = toolbar.topElement.querySelector<HTMLButtonElement>(
+			'[data-price-scale="logarithmic"]',
+		)!;
+		const before = {
+			linearCount: linearButton.dataset.drawingCount,
+			linearHasDrawings: linearButton.dataset.hasDrawings,
+			linearIndicatorHidden:
+				linearButton.querySelector<HTMLElement>('[data-drawing-indicator]')!.hidden,
+			linearLabel: linearButton.getAttribute('aria-label'),
+			logarithmicCount: logarithmicButton.dataset.drawingCount,
+			logarithmicIndicatorHidden:
+				logarithmicButton.querySelector<HTMLElement>('[data-drawing-indicator]')!.hidden,
+		};
+
+		logarithmicButton.click();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const sceneScaleAfterRequest = runtime.exportWorkspace().scene.document
+			.panes[0]!.yAxes[0]!.scale;
+		toolbar.setPriceScaleState('linear', { drawingCount: 0, pressed: false });
+		toolbar.setPriceScaleState('logarithmic', { drawingCount: 3, pressed: true });
+		const after = {
+			linearPressed: linearButton.getAttribute('aria-pressed'),
+			linearIndicatorHidden:
+				linearButton.querySelector<HTMLElement>('[data-drawing-indicator]')!.hidden,
+			logarithmicPressed: logarithmicButton.getAttribute('aria-pressed'),
+			logarithmicCount: logarithmicButton.dataset.drawingCount,
+			logarithmicHasDrawings: logarithmicButton.dataset.hasDrawings,
+			logarithmicIndicatorHidden:
+				logarithmicButton.querySelector<HTMLElement>('[data-drawing-indicator]')!.hidden,
+			logarithmicLabel: logarithmicButton.getAttribute('aria-label'),
+		};
+		toolbar.destroy();
+		runtime.destroy();
+		return {
+			before,
+			after,
+			requestedScales,
+			sceneScaleAfterRequest,
+		};
+	}, chartWorkspaceFixture);
+
+	expect(result).toEqual({
+		before: {
+			linearCount: '2',
+			linearHasDrawings: 'true',
+			linearIndicatorHidden: false,
+			linearLabel: '线性价格轴，有 2 个标注',
+			logarithmicCount: '0',
+			logarithmicIndicatorHidden: true,
+		},
+		after: {
+			linearPressed: 'false',
+			linearIndicatorHidden: true,
+			logarithmicPressed: 'true',
+			logarithmicCount: '3',
+			logarithmicHasDrawings: 'true',
+			logarithmicIndicatorHidden: false,
+			logarithmicLabel: '对数价格轴，有 3 个标注',
+		},
+		requestedScales: ['logarithmic'],
+		sceneScaleAfterRequest: 'linear',
+	});
+});
+
 test('@browser chart remains draggable after enabling every main indicator', async ({ page }) => {
 	const pageErrors: string[] = [];
 	page.on('pageerror', (error) => pageErrors.push(error.message));

@@ -32,12 +32,65 @@ function sameAxes(
 		return other !== undefined
 			&& axis.paneRole === other.paneRole
 			&& axis.yAxisRole === other.yAxisRole
-			&& axis.valuePrecision === other.valuePrecision;
+			&& axis.valuePrecision === other.valuePrecision
+			&& axis.scale === other.scale;
 	});
 }
 
 function indicatorsOf(scene: ChartScene): readonly SceneIndicator[] {
 	return scene.panes.flatMap((pane) => pane.indicators);
+}
+
+function validateChartValueAxisScales(
+	scene: ChartScene,
+	drawings: DrawingDocument,
+	issues: DrawableWorkspaceIssue[],
+): void {
+	const indicators = indicatorsOf(scene);
+	for (
+		let index = 0;
+		index < drawings.coordinateSystem.valueAxes.length;
+		index++
+	) {
+		const axis = drawings.coordinateSystem.valueAxes[index];
+		if (axis?.scale === undefined) {
+			continue;
+		}
+		let expectedScale: ValueAxis['scale'];
+		if (axis.paneRole === 'candle') {
+			const candlePane = scene.panes.find(
+				(candidate) => candidate.kind === 'candle',
+			);
+			expectedScale =
+				candlePane?.yAxes.find((candidate) => candidate.role === 'primary')
+					?.scale ?? 'linear';
+		} else if (axis.paneRole.startsWith('indicator:')) {
+			const indicatorId = axis.paneRole.slice('indicator:'.length);
+			const indicator = indicators.find(
+				(candidate) => candidate.id === indicatorId,
+			);
+			const pane = scene.panes.find(
+				(candidate) => candidate.id === indicator?.paneId,
+			);
+			if (indicator === undefined || pane === undefined) {
+				continue;
+			}
+			expectedScale =
+				pane.yAxes.find((candidate) => candidate.role === 'primary')?.scale ??
+				'linear';
+		} else {
+			continue;
+		}
+		if (axis.scale !== expectedScale) {
+			issues.push(
+				issue(
+					'DRAWING_TARGET_INVALID',
+					`/drawings/coordinateSystem/valueAxes/${index}/scale`,
+					`Drawing value-axis scale must match its Scene primary axis: ${expectedScale}.`,
+				),
+			);
+		}
+	}
 }
 
 function validateChartBinding(
@@ -46,6 +99,7 @@ function validateChartBinding(
 	issues: DrawableWorkspaceIssue[],
 ): void {
 	const indicators = indicatorsOf(scene);
+	validateChartValueAxisScales(scene, drawings, issues);
 	for (let index = 0; index < drawings.drawings.length; index++) {
 		const drawing = drawings.drawings[index];
 		if (drawing === undefined) {
@@ -75,7 +129,7 @@ function validateChartBinding(
 					issue(
 						'DRAWING_TARGET_INVALID',
 						path,
-						'Candle target precision must equal symbol.pricePrecision.',
+						'Candle target precision must match the Scene symbol precision.',
 					),
 				);
 			}
@@ -117,7 +171,7 @@ function validateChartBinding(
 					issue(
 						'DRAWING_TARGET_INVALID',
 						path,
-						'Indicator target precision must equal the indicator precision.',
+						'Indicator target precision must match its Scene indicator precision.',
 					),
 				);
 			}
@@ -144,12 +198,16 @@ function validateTimeSeriesBinding(
 			candidate.paneRole === 'time-series' &&
 			candidate.yAxisRole === 'primary',
 	);
-	if (axis === undefined || axis.valuePrecision !== sharedPrecision) {
+	if (
+		axis === undefined
+		|| axis.valuePrecision !== sharedPrecision
+		|| (axis.scale !== undefined && axis.scale !== 'linear')
+	) {
 		issues.push(
 			issue(
 				'DRAWING_TARGET_INVALID',
 				'/binding/valueAxes',
-				'TimeSeries primary binding precision must equal the shared series precision.',
+				'TimeSeries primary binding precision must match and its scale must be linear.',
 			),
 		);
 	}

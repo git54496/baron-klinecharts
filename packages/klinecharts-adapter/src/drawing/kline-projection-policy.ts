@@ -50,6 +50,7 @@ export class KLineDrawingProjectionPolicy implements DrawingProjectionPolicy {
 			);
 		}
 		if (target.paneRole === 'candle') {
+			const sceneScale = candlePrimaryScale(scene.document);
 			const axis = valueAxes.find(
 				(candidate) =>
 					candidate.paneRole === 'candle' &&
@@ -57,19 +58,20 @@ export class KLineDrawingProjectionPolicy implements DrawingProjectionPolicy {
 			);
 			if (
 				axis === undefined ||
-				axis.valuePrecision !== scene.document.symbol.pricePrecision
+				axis.valuePrecision !== scene.document.symbol.pricePrecision ||
+				(axis.scale !== undefined && axis.scale !== sceneScale)
 			) {
 				throw new DrawingProjectionError(
 					'DRAWING_TARGET_INVALID',
 					`${path}/target`,
-					'Candle target precision must equal symbol.pricePrecision.',
+					'Candle target precision and scale must match the Scene primary axis.',
 				);
 			}
 			return {
 				paneRole: 'candle',
 				yAxisRole: 'primary',
 				valuePrecision: axis.valuePrecision,
-				scale: candlePrimaryScale(scene.document),
+				scale: sceneScale,
 			};
 		}
 		if (target.paneRole.startsWith('indicator:')) {
@@ -102,19 +104,23 @@ export class KLineDrawingProjectionPolicy implements DrawingProjectionPolicy {
 					candidate.paneRole === target.paneRole &&
 					candidate.yAxisRole === 'primary',
 			);
-			if (axis === undefined || axis.valuePrecision !== indicator.precision) {
-				throw new DrawingProjectionError(
-					'DRAWING_TARGET_INVALID',
-					`${path}/target`,
-					'Indicator target precision must equal the indicator precision.',
-				);
-			}
 			const pane = scene.document.panes.find(
 				(candidate) => candidate.id === indicator.paneId,
 			);
 			const scale =
 				pane?.yAxes.find((candidate) => candidate.role === 'primary')?.scale
 				?? 'linear';
+			if (
+				axis === undefined
+				|| axis.valuePrecision !== indicator.precision
+				|| (axis.scale !== undefined && axis.scale !== scale)
+			) {
+				throw new DrawingProjectionError(
+					'DRAWING_TARGET_INVALID',
+					`${path}/target`,
+					'Indicator target precision and scale must match its Scene primary axis.',
+				);
+			}
 			return {
 				paneRole: target.paneRole,
 				yAxisRole: 'primary',

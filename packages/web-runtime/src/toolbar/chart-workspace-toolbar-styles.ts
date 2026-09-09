@@ -184,6 +184,17 @@ export const CHART_WORKSPACE_TOOLBAR_STYLES = String.raw`
 	border-radius: 5px;
 	font-size: 11px;
 }
+.baron-chart-workspace-toolbar__drawing-indicator {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 11px;
+	height: 11px;
+	margin-left: 3px;
+	color: currentcolor;
+}
+.baron-chart-workspace-toolbar__drawing-indicator[hidden] { display: none; }
+.baron-chart-workspace-toolbar__drawing-indicator svg { width: 11px; height: 11px; }
 .baron-chart-workspace-toolbar__setting .baron-chart-workspace-toolbar__select {
 	max-width: 104px;
 	background: rgba(247, 248, 250, 1);

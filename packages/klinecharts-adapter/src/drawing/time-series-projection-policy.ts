@@ -35,12 +35,13 @@ export class TimeSeriesDrawingProjectionPolicy implements DrawingProjectionPolic
 		);
 		if (
 			axis === undefined ||
-			axis.valuePrecision !== sharedPrecision
+			axis.valuePrecision !== sharedPrecision ||
+			(axis.scale !== undefined && axis.scale !== 'linear')
 		) {
 			throw new DrawingProjectionError(
 				'DRAWING_TARGET_INVALID',
 				`${path}/target`,
-				'TimeSeries primary binding precision must equal the shared series precision.',
+				'TimeSeries primary binding precision must match and its scale must be linear.',
 			);
 		}
 		return {

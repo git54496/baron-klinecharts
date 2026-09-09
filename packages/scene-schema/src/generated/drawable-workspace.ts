@@ -31,6 +31,19 @@ export type ChartScene = {
 	render: Render;
 	metadata: DrawableWorkspaceMetadata;
 };
+export type DrawingDocument = {
+	[k: string]: unknown | undefined;
+} & {
+	schema: '@baron1996/drawing-document';
+	version: 1 | 2;
+	scopeKey: string;
+	coordinateSystem: CoordinateSystem;
+	/**
+	 * @maxItems 10000
+	 */
+	drawings: Drawing[];
+	metadata: DrawableWorkspaceMetadata;
+};
 /**
  * @minItems 1
  * @maxItems 64
@@ -461,17 +474,6 @@ export interface TimeSeriesRender {
 export interface Metadata {
 	[k: string]: (null | boolean | number | string) | undefined;
 }
-export interface DrawingDocument {
-	schema: '@baron1996/drawing-document';
-	version: 1;
-	scopeKey: string;
-	coordinateSystem: CoordinateSystem;
-	/**
-	 * @maxItems 10000
-	 */
-	drawings: Drawing[];
-	metadata: DrawableWorkspaceMetadata;
-}
 export interface CoordinateSystem {
 	timezone: string;
 	valueAxes: ValueAxes;
@@ -480,6 +482,7 @@ export interface ValueAxis {
 	paneRole: string;
 	yAxisRole: string;
 	valuePrecision: number;
+	scale?: 'linear' | 'logarithmic';
 }
 export interface Target {
 	paneRole: string;

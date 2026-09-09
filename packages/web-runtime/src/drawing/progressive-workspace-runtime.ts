@@ -198,7 +198,7 @@ export class ProgressiveDrawableWorkspaceRuntime
 		}
 		const drawings: DrawingDocument = {
 			schema: '@baron1996/drawing-document',
-			version: 1,
+			version: 2,
 			scopeKey: this.#bootstrap.scopeKey,
 			coordinateSystem: {
 				timezone: scene.chart.timezone,
@@ -206,6 +206,7 @@ export class ProgressiveDrawableWorkspaceRuntime
 					paneRole: 'candle',
 					yAxisRole: 'primary',
 					valuePrecision: scene.symbol.pricePrecision,
+					scale: primaryAxis.scale ?? 'linear',
 				}],
 			},
 			drawings: [],

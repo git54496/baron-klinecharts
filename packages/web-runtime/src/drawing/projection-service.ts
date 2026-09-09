@@ -279,6 +279,7 @@ export class DrawingProjectionService {
 		readonly scene: ProjectionScene;
 		readonly drawings: DrawingDocument;
 	}): ProjectedDrawingDocument {
+		this.#assertDocumentAxisScales(input.scene, input.drawings);
 		const drawings = input.drawings.drawings.map((drawing, index) =>
 			this.projectDrawing({
 				scene: input.scene,
@@ -292,6 +293,45 @@ export class DrawingProjectionService {
 			timezone: input.drawings.coordinateSystem.timezone,
 			drawings,
 		};
+	}
+
+	#assertDocumentAxisScales(
+		scene: ProjectionScene,
+		document: DrawingDocument,
+	): void {
+		for (let index = 0; index < document.coordinateSystem.valueAxes.length; index++) {
+			const axis = document.coordinateSystem.valueAxes[index];
+			if (axis === undefined || axis.scale === undefined) {
+				continue;
+			}
+			let expectedScale: 'linear' | 'logarithmic' | undefined;
+			if (scene.kind === 'time-series') {
+				expectedScale = axis.paneRole === 'time-series' ? 'linear' : undefined;
+			} else if (axis.paneRole === 'candle') {
+				expectedScale = scene.document.panes
+					.find((pane) => pane.kind === 'candle')
+					?.yAxes.find((candidate) => candidate.role === axis.yAxisRole)?.scale
+					?? 'linear';
+			} else if (axis.paneRole.startsWith('indicator:')) {
+				const indicatorId = axis.paneRole.slice('indicator:'.length);
+				const indicator = scene.document.panes
+					.flatMap((pane) => pane.indicators)
+					.find((candidate) => candidate.id === indicatorId);
+				const pane = scene.document.panes.find(
+					(candidate) => candidate.id === indicator?.paneId,
+				);
+				expectedScale = pane?.yAxes.find(
+					(candidate) => candidate.role === axis.yAxisRole,
+				)?.scale ?? 'linear';
+			}
+			if (expectedScale !== undefined && axis.scale !== expectedScale) {
+				throw new DrawingProjectionError(
+					'VALUE_AXIS_SCALE_UNSUPPORTED',
+					`/coordinateSystem/valueAxes/${index}/scale`,
+					`DrawingDocument scale ${axis.scale} does not match Scene scale ${expectedScale}.`,
+				);
+			}
+		}
 	}
 
 	public reverseProjectAnchor(input: ReverseProjectAnchorInput): DrawingTimeAnchor {

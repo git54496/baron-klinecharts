@@ -10,7 +10,7 @@ import type { HostActionDescriptor } from '../drawing/runtime-capability-descrip
 import type { WorkspaceRuntimeListener } from '../drawing/workspace-events.js';
 import { MAIN_PANE_INDICATOR_PRESETS } from '../indicator-presentation.js';
 import { registerRuntimeTeardown } from '../lifecycle.js';
-import type { SupportedOverlayType } from '../types.js';
+import type { PriceScale, SupportedOverlayType } from '../types.js';
 import { CHART_WORKSPACE_TOOLBAR_STYLES } from './chart-workspace-toolbar-styles.js';
 import { createToolbarIcon, type ToolbarIconName } from './toolbar-icons.js';
 import {
@@ -32,6 +32,11 @@ export interface WorkspaceToolbarTimezoneChoice {
 	readonly timezone: string;
 }
 
+export interface WorkspaceToolbarPriceScaleState {
+	/** 当前坐标轴专属 DrawingDocument 中的用户标注数量。 */
+	readonly drawingCount: number;
+}
+
 export interface ChartWorkspaceToolbarOptions {
 	/** 顶部直接展示的周期动作；点击后仍通过 host-action-requested 交给宿主取数。 */
 	readonly periodActions?: readonly HostActionDescriptor[];
@@ -42,6 +47,14 @@ export interface ChartWorkspaceToolbarOptions {
 	readonly onDisplayTimezoneChange?: (
 		choice: WorkspaceToolbarTimezoneChoice,
 	) => void;
+	/** 未激活坐标轴的标注状态只能由持久化宿主提供。 */
+	readonly priceScaleStates?: Partial<
+		Readonly<Record<PriceScale, WorkspaceToolbarPriceScaleState>>
+	>;
+	/** 提供后，价格轴入口只请求宿主切换，不直接修改当前 Runtime。 */
+	readonly onPriceScaleChangeRequested?: (
+		scale: PriceScale,
+	) => void | Promise<void>;
 	readonly fullscreenTarget?: HTMLElement;
 	readonly fullscreenControl?: 'hidden' | 'enabled';
 }
@@ -66,6 +79,10 @@ export interface ChartWorkspaceToolbar {
 		},
 	): void;
 	setDisplayTimezoneChoice(value: string): void;
+	setPriceScaleState(
+		scale: PriceScale,
+		state: Partial<WorkspaceToolbarPriceScaleState> & { readonly pressed?: boolean },
+	): void;
 	destroy(): void;
 }
 
@@ -83,6 +100,12 @@ interface WorkspaceEventAware {
 interface HostActionControl {
 	readonly button: HTMLButtonElement;
 	readonly error: HTMLDivElement;
+}
+
+interface PriceScaleControl {
+	readonly button: HTMLButtonElement;
+	readonly label: string;
+	readonly drawingIndicator: HTMLSpanElement;
 }
 
 interface PopoverControl {
@@ -190,6 +213,26 @@ function selectSegment<Value extends string>(
 	for (const [value, button] of buttons) {
 		button.setAttribute('aria-pressed', String(value === activeValue));
 	}
+}
+
+function applyPriceScaleDrawingCount(
+	control: PriceScaleControl,
+	drawingCount: number,
+): void {
+	if (!Number.isSafeInteger(drawingCount) || drawingCount < 0) {
+		throw new TypeError('CHART_WORKSPACE_TOOLBAR_INVALID_DRAWING_COUNT');
+	}
+	const hasDrawings = drawingCount > 0;
+	control.drawingIndicator.hidden = !hasDrawings;
+	control.button.dataset.drawingCount = String(drawingCount);
+	control.button.dataset.hasDrawings = String(hasDrawings);
+	control.button.setAttribute(
+		'aria-label',
+		hasDrawings
+			? `${control.label}价格轴，有 ${drawingCount} 个标注`
+			: `${control.label}价格轴，无标注`,
+	);
+	control.button.title = hasDrawings ? `${drawingCount} 个标注` : '无标注';
 }
 
 function createPopover(
@@ -413,8 +456,8 @@ function defaultTimezoneChoices(
 }
 
 /**
- * 创建 Pro 风格的复合工具栏。Baron 只发出周期/复权宿主意图，
- * 指标、展示时区、价格轴和主序列在浏览器 Runtime 内即时生效。
+ * 创建 Pro 风格的复合工具栏。Baron 只发出周期/复权宿主意图；价格轴可由宿主
+ * 接管 DrawingDocument 切换，未接管时仍在浏览器 Runtime 内即时生效。
  */
 export function createChartWorkspaceToolbar(
 	containers: ChartWorkspaceToolbarContainers,
@@ -437,6 +480,9 @@ export function createChartWorkspaceToolbar(
 	> = [];
 	const drawingControls: HTMLButtonElement[] = [];
 	const hostActionControls = new Map<string, HostActionControl>();
+	const priceScaleControls = new Map<PriceScale, PriceScaleControl>();
+	const priceScaleButtons = new Map<PriceScale, HTMLButtonElement>();
+	let committedPriceScale = descriptor.valueAxis.activeScale;
 	const openPopovers: PopoverControl[] = [];
 	const style = document.createElement('style');
 	style.dataset.baronChartWorkspaceToolbarStyles = '';
@@ -633,10 +679,6 @@ export function createChartWorkspaceToolbar(
 	if (descriptor.valueAxis.mutable) {
 		const { setting, control } = createInlineSetting('价格轴', 'price-scale');
 		const segmented = createSegmentedControl('价格轴', 'price-scale');
-		const scaleButtons = new Map<
-			'linear' | 'logarithmic',
-			HTMLButtonElement
-		>();
 		for (const scale of descriptor.valueAxis.supportedScales) {
 			const label = scale === 'linear' ? '线性' : '对数';
 			const button = createButton({
@@ -649,21 +691,39 @@ export function createChartWorkspaceToolbar(
 				'aria-pressed',
 				String(scale === descriptor.valueAxis.activeScale),
 			);
-			scaleButtons.set(scale, button);
+			const drawingIndicator = document.createElement('span');
+			drawingIndicator.className = 'baron-chart-workspace-toolbar__drawing-indicator';
+			drawingIndicator.dataset.drawingIndicator = '';
+			drawingIndicator.setAttribute('aria-hidden', 'true');
+			drawingIndicator.append(createToolbarIcon('pencil'));
+			button.append(drawingIndicator);
+			const scaleControl = { button, label, drawingIndicator };
+			priceScaleControls.set(scale, scaleControl);
+			applyPriceScaleDrawingCount(
+				scaleControl,
+				options.priceScaleStates?.[scale]?.drawingCount ?? 0,
+			);
+			priceScaleButtons.set(scale, button);
 			segmented.append(button);
 		}
-		let committedScale = descriptor.valueAxis.activeScale;
-		for (const [scale, button] of scaleButtons) {
+		for (const [scale, button] of priceScaleButtons) {
 			const changeScale = async (): Promise<void> => {
-				if (scale === committedScale) {
+				if (scale === committedPriceScale) {
 					return;
 				}
 				try {
-					await runtime.setValueAxisScale(scale);
-					committedScale = scale;
-					selectSegment(scaleButtons, committedScale);
+					if (options.onPriceScaleChangeRequested === undefined) {
+						await runtime.setValueAxisScale(scale);
+					} else {
+						await options.onPriceScaleChangeRequested(scale);
+					}
+					if (destroyed) {
+						return;
+					}
+					committedPriceScale = scale;
+					selectSegment(priceScaleButtons, committedPriceScale);
 				} catch (error) {
-					selectSegment(scaleButtons, committedScale);
+					selectSegment(priceScaleButtons, committedPriceScale);
 					throw error;
 				}
 			};
@@ -969,6 +1029,28 @@ export function createChartWorkspaceToolbar(
 			runtime.setDisplayTimezone(choice.timezone);
 			timezoneSelect.value = value;
 			committedTimezoneValue = value;
+		},
+		setPriceScaleState(scale, state): void {
+			if (destroyed) {
+				throw new Error('CHART_WORKSPACE_TOOLBAR_DESTROYED');
+			}
+			const control = priceScaleControls.get(scale);
+			if (control === undefined) {
+				throw new TypeError(
+					`CHART_WORKSPACE_TOOLBAR_UNKNOWN_PRICE_SCALE: ${scale}`,
+				);
+			}
+			if (state.drawingCount !== undefined) {
+				applyPriceScaleDrawingCount(control, state.drawingCount);
+			}
+			if (state.pressed !== undefined) {
+				if (state.pressed) {
+					committedPriceScale = scale;
+					selectSegment(priceScaleButtons, committedPriceScale);
+				} else {
+					control.button.setAttribute('aria-pressed', 'false');
+				}
+			}
 		},
 		destroy(): void {
 			if (destroyed) {

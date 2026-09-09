@@ -75,6 +75,42 @@ describe('DrawableWorkspaceDocument schema and semantics', () => {
 		);
 	});
 
+	it('rejects an empty v2 DrawingDocument whose scale differs from the Scene', () => {
+		const workspace = structuredClone(chartMinimal) as typeof chartMinimal & {
+			drawings: {
+				version: number;
+				coordinateSystem: {
+					valueAxes: Array<{
+						paneRole: string;
+						yAxisRole: string;
+						valuePrecision: number;
+						scale?: string;
+					}>;
+				};
+				drawings: unknown[];
+			};
+	};
+		workspace.drawings.version = 2;
+		workspace.drawings.drawings = [];
+		workspace.drawings.coordinateSystem.valueAxes[0]!.scale = 'logarithmic';
+		workspace.binding.valueAxes = workspace.drawings.coordinateSystem.valueAxes;
+		expectIssue(
+			workspace,
+			'DRAWING_TARGET_INVALID',
+			'/drawings/coordinateSystem/valueAxes/0/scale',
+		);
+	});
+
+	it('reports the missing v2 scale at the Drawing value axis', () => {
+		const workspace = structuredClone(chartMinimal);
+		workspace.drawings.version = 2;
+		expectIssue(
+			workspace,
+			'DRAWABLE_WORKSPACE_SCHEMA_INVALID',
+			'/drawings/coordinateSystem/valueAxes/0/scale',
+		);
+	});
+
 	it('rejects pane roles the declared Scene cannot interpret', () => {
 		const workspace = structuredClone(chartMinimal);
 		workspace.drawings.coordinateSystem.valueAxes = [
