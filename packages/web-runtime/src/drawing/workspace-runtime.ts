@@ -38,6 +38,7 @@ import type { AddIndicatorOptions } from '../types.js';
 import type {
 	DisplayTimezoneRuntimeCapability,
 	DrawingRuntimeCapability,
+	DrawingUndoRuntimeCapability,
 	HistoricalDataRuntimeCapability,
 	LiveBarRuntimeCapability,
 	MainIndicatorRuntimeCapability,
@@ -73,10 +74,15 @@ export interface DrawableWorkspaceRuntimeOptions {
 	readonly displayTimezone?: string;
 	/** 可选输入策略；默认使用图表引擎原生 Drawing 交互。 */
 	readonly drawingInteraction?: DrawingInteractionOptions;
+	/** 可选 Drawing 键盘快捷键；撤回同时支持 macOS Command+Z 与 Ctrl+Z。 */
+	readonly drawingShortcuts?: {
+		readonly undo?: boolean;
+	};
 }
 
 export interface DrawableWorkspaceRuntimeHandle
 	extends DrawingRuntimeCapability,
+		DrawingUndoRuntimeCapability,
 		HistoricalDataRuntimeCapability,
 		LiveBarRuntimeCapability,
 		MainIndicatorRuntimeCapability,
@@ -119,6 +125,9 @@ function snapshotToDrawing(snapshot: EngineDrawingSnapshot): Drawing {
 	} as unknown as Drawing;
 }
 
+/** 同一页面有多个图表时，快捷键只作用于用户最后交互的图表容器。 */
+let activeDrawingShortcutContainer: HTMLElement | null = null;
+
 /**
  * 组合 Scene Adapter、Drawing 会话与公共能力的工作区 Runtime。
  * confirmed 文档唯一权威；宿主持久化只消费候选事件。
@@ -148,6 +157,30 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 	#drawingDocumentInstalled: boolean;
 	/** 首次 Scene 建立时固定的 Drawing 业务身份，不随投影 metadata 变化。 */
 	readonly #drawingMetadataIdentity: DrawingDocument['metadata'];
+	/** 当前 Runtime 是否接管 Drawing 撤回快捷键。 */
+	readonly #keyboardUndoEnabled: boolean;
+	/** 用户在图表内交互后，将当前容器标记为快捷键目标。 */
+	readonly #activateDrawingShortcuts = (): void => {
+		activeDrawingShortcutContainer = this.#container;
+	};
+	/** 文档级键盘监听；只消费当前激活图表可执行的撤回事件。 */
+	readonly #handleDrawingShortcut = (event: KeyboardEvent): void => {
+		if (
+			!this.#keyboardUndoEnabled ||
+			activeDrawingShortcutContainer !== this.#container ||
+			event.defaultPrevented ||
+			event.key.toLowerCase() !== 'z' ||
+			(!event.metaKey && !event.ctrlKey) ||
+			event.altKey ||
+			event.shiftKey ||
+			isTextEditingTarget(event.target, this.#container.ownerDocument)
+		) {
+			return;
+		}
+		if (this.canUndoDrawingChange() && this.undoDrawingChange()) {
+			event.preventDefault();
+		}
+	};
 
 	private constructor(
 		container: HTMLElement,
@@ -165,6 +198,7 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 			| ChartScene
 			| TimeSeriesScene;
 		this.#displayTimezone = options.displayTimezone ?? this.#scene.chart.timezone;
+		this.#keyboardUndoEnabled = options.drawingShortcuts?.undo === true;
 		this.#drawingDocumentInstalled = drawingDocumentInstalled;
 		this.#drawingMetadataIdentity = structuredClone(workspace.drawings.metadata);
 		this.#registration = getSceneRuntime(workspace.scene.kind);
@@ -186,6 +220,10 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		);
 		if (options.onEvent !== undefined) {
 			this.#listeners.add(options.onEvent);
+		}
+		if (this.#keyboardUndoEnabled) {
+			this.#container.addEventListener('pointerdown', this.#activateDrawingShortcuts, true);
+			this.#container.ownerDocument.addEventListener('keydown', this.#handleDrawingShortcut);
 		}
 		const historicalDataPort = this.#historicalDataPort();
 		this.#unsubscribeHistoricalData = options.historicalDataLoading === undefined
@@ -304,6 +342,14 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 
 	public removeDrawings(ids: readonly string[]): boolean {
 		return this.#session.removeDrawings(ids);
+	}
+
+	public canUndoDrawingChange(): boolean {
+		return this.#session.canUndoDrawingChange();
+	}
+
+	public undoDrawingChange(): boolean {
+		return this.#session.undoDrawingChange();
 	}
 
 	public requestDrawingDelete(id: string): void {
@@ -795,6 +841,13 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		}
 		this.#destroyed = true;
 		runRuntimeTeardowns(this);
+		if (this.#keyboardUndoEnabled) {
+			this.#container.removeEventListener('pointerdown', this.#activateDrawingShortcuts, true);
+			this.#container.ownerDocument.removeEventListener('keydown', this.#handleDrawingShortcut);
+			if (activeDrawingShortcutContainer === this.#container) {
+				activeDrawingShortcutContainer = null;
+			}
+		}
 		this.#unsubscribeHistoricalData?.();
 		this.#session.destroy();
 		this.#engine.dispose();
@@ -984,6 +1037,16 @@ function sameDrawingCoordinateAxes(
 				|| (allowLegacyMissingScale && axis.scale === undefined)
 			);
 	});
+}
+
+function isTextEditingTarget(target: EventTarget | null, ownerDocument: Document): boolean {
+	const ElementConstructor = ownerDocument.defaultView?.Element;
+	if (ElementConstructor === undefined || !(target instanceof ElementConstructor)) {
+		return false;
+	}
+	return target.closest(
+		'input, textarea, select, [contenteditable]:not([contenteditable="false"])',
+	) !== null;
 }
 
 export async function createDrawableWorkspaceRuntime(

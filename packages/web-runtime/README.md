@@ -4,7 +4,7 @@ Browser editing runtime and standard annotation toolbar for deterministic KLineC
 ChartScene files.
 
 ```bash
-npm install --save-exact @baron1996/kline-scene-schema@0.9.23 @baron1996/klinecharts-runtime@0.9.23
+npm install --save-exact @baron1996/kline-scene-schema@0.9.24 @baron1996/klinecharts-runtime@0.9.25
 ```
 
 ```ts
@@ -115,7 +115,22 @@ a host can fetch and install another historical period without adding indicator
 fields to its datafeed request. Pass `{ preserveMainIndicators: false }` only when an
 explicit reset is required. Secondary indicator panes are outside this API.
 
-The runtime does not provide undo or redo and does not fetch market data.
+`DrawableWorkspaceRuntime` can opt into session-scoped Drawing undo:
+
+```ts
+const runtime = await createDrawableWorkspaceRuntime(container, workspace, {
+  commitMode: 'host-confirmed',
+  drawingShortcuts: { undo: true },
+});
+```
+
+`Command+Z` on macOS and `Ctrl+Z` elsewhere restore the complete state before the
+last confirmed Drawing mutation. In `host-confirmed` mode that restored document is
+published as a new candidate, so the host persists it as the next forward revision.
+Rejected undo candidates restore the pre-undo state and remain undoable. The history
+is limited to the current page session, is cleared by an externally installed Drawing
+projection, and is never serialized. Redo is not provided. The runtime does not fetch
+market data.
 Runtime `0.2.0` events are structured-cloneable pure data with
 `sceneVersion: 1` and `runtimeVersion: '0.2.0'`. Measurement scenes persist only
 their two data-coordinate endpoints, styles, and opaque metadata; displayed absolute

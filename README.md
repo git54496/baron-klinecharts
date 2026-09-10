@@ -15,7 +15,8 @@ Baron 是基于 **KLineCharts 10.0.0** 的单引擎完整 K 线场景平台。�
   编辑并导出。
 - PNG 只使用 Playwright 1.61.0 对应的固定 Chromium 渲染，没有系统浏览器
   或其他截图方案。
-- 不提供撤销/重做，也不保留相关状态栈、UI 或快捷键。
+- Drawable Workspace 可选接管 `Command/Ctrl + Z`，按已确认的 Drawing 修改粒度在
+  当前页面会话内撤回；不提供重做，也不把历史栈写入 Scene 或 DrawingDocument。
 
 ## 工程结构
 
@@ -36,13 +37,13 @@ tests                          跨语言、浏览器、视觉与安装门禁
 安装 Web Runtime：
 
 ```bash
-npm install --save-exact @baron1996/klinecharts-runtime@0.9.23
+npm install --save-exact @baron1996/klinecharts-runtime@0.9.25
 ```
 
 安装 CLI：
 
 ```bash
-npm install --global @baron1996/klinecharts-cli@0.9.23
+npm install --global @baron1996/klinecharts-cli@0.9.24
 baron-kline install-browser
 ```
 
@@ -110,7 +111,7 @@ Workspace 示例一致。
 - 禁止把本仓库路径加入其他工程或 Agent 的可写 workspace。
 
 消费方必须安装明确版本并提交自己的 lockfile，例如
-`@baron1996/klinecharts-runtime@0.9.23` 和 `baron-klinecharts==0.9.20`。升级只能
+`@baron1996/klinecharts-runtime@0.9.25` 和 `baron-klinecharts==0.9.21`。升级只能
 通过本仓库发布新版本后，由消费方主动修改依赖版本完成；不得直接修改本仓库来
 适配某个业务工程。
 
@@ -189,11 +190,10 @@ CI 分别使用 `tests/rendering/baselines/github-macos-15` 和
 
 ## 发布
 
-当前 npm 发布版本为 `0.9.23`，Python 发布版本为 `0.9.20`。本次同步发布 Web Runtime、
-Adapter、Scene Schema 和 CLI，私有 Render Runtime 也同步到 `0.9.23`，所有内部依赖
-使用精确版本。该版本修复图表拖动时的比例变化：主图支持任意方向平移，保持 K 线间距
-和数值轴缩放不变；对数价格轴在对数坐标中平移。首次拖动固定当前范围，松手后保持，
-双击价格轴可恢复自动适配。单击、绘图和轴缩放操作保留原行为。该改动兼容已有 Scene，
+当前 Web Runtime 版本为 `0.9.25`，Adapter、Scene Schema、CLI 与私有 Render Runtime
+版本为 `0.9.24`，Python 版本为 `0.9.21`，所有内部依赖使用精确版本。本次 Web Runtime
+增加当前页面会话内的 Drawing 修改级撤回，并允许宿主选择启用 `Command/Ctrl + Z`。
+撤回仍发布普通候选文档，由宿主保存成新的前进 revision；该改动兼容已有 Scene，
 不改变宿主持久化接口，也不提升 Drawing/Workspace Schema 版本或 Runtime 事件协议版本。
 ChartScene `version` 仍为 `1`；Runtime protocol `0.2.0` 增加显式线性/对数轴、
 价格量度、精确命中与过程事件，同时继续读取 Runtime `0.1.0` 的 M1 场景。

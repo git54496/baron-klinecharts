@@ -49,6 +49,14 @@ export interface DrawingRuntimeCapability {
 	subscribeDrawingChanges(listener: () => void): () => void;
 }
 
+/** 带候选确认状态机的 Workspace Runtime 专属撤回能力。 */
+export interface DrawingUndoRuntimeCapability {
+	/** 当前会话是否有已确认的 Drawing 修改可以撤回。 */
+	canUndoDrawingChange(): boolean;
+	/** 将最后一次已确认修改的前态作为新候选提交。 */
+	undoDrawingChange(): boolean;
+}
+
 export interface RuntimeAuxiliaryCapability {
 	getRuntimeCapabilityDescriptor(options?: {
 		readonly hostActions?: readonly HostActionDescriptor[];

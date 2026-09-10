@@ -54,6 +54,36 @@ function snapshot(
 	};
 }
 
+function segmentSnapshot(
+	id: string,
+	start: { readonly timestamp: number; readonly value: number },
+): EngineDrawingSnapshot {
+	return {
+		id,
+		type: 'segment',
+		target: { paneRole: 'candle', yAxisRole: 'primary' },
+		geometry: {
+			points: [
+				{
+					timestamp: start.timestamp,
+					granularity: { type: 'day', span: 1 },
+					value: start.value,
+				},
+				{
+					timestamp: 1_784_908_800_000,
+					granularity: { type: 'day', span: 1 },
+					value: 12.74,
+				},
+			],
+		},
+		styles: structuredClone(STYLES),
+		locked: false,
+		visible: true,
+		zLevel: 0,
+		mode: 'normal',
+	};
+}
+
 class MockEngine implements DrawingEnginePort {
 	public readonly sceneKind = 'chart' as const;
 	public drawings = new Map<string, EngineDrawingSnapshot>();
@@ -179,6 +209,16 @@ class MockEngine implements DrawingEnginePort {
 		this.listener?.({ type: 'created', id, drawing });
 	}
 
+	public emitUpdated(drawing: EngineDrawingSnapshot): void {
+		this.drawings.set(drawing.id, structuredClone(drawing));
+		this.listener?.({
+			type: 'updated',
+			id: drawing.id,
+			drawing: structuredClone(drawing),
+			editDimensions: { horizontal: true, vertical: true },
+		});
+	}
+
 	public emitRemoved(id: string): void {
 		this.drawings.delete(id);
 		this.listener?.({ type: 'removed', id });
@@ -239,6 +279,18 @@ async function flush(
 			event.type === 'drawing-candidate' ||
 			event.type === 'drawing-committed'
 		)) {
+			return;
+		}
+		await new Promise<void>((resolve) => setTimeout(resolve, 10));
+	}
+}
+
+async function flushCandidateCount(
+	events: readonly WorkspaceRuntimeEvent[],
+	expectedCount: number,
+): Promise<void> {
+	for (let attempt = 0; attempt < 50; attempt += 1) {
+		if (events.filter((event) => event.type === 'drawing-candidate').length >= expectedCount) {
 			return;
 		}
 		await new Promise<void>((resolve) => setTimeout(resolve, 10));
@@ -306,6 +358,95 @@ describe('DrawingSessionController', () => {
 			.toBe(true);
 		expect(controller.confirmedDrawings).toHaveLength(1);
 		expect(controller.state).toBe('ready');
+	});
+
+	it('undoes the last confirmed segment anchor move as a new host-confirmed candidate', async () => {
+		const { engine, controller, events } = buildController('host-confirmed');
+		const original = segmentSnapshot('drawing-segment', {
+			timestamp: 1_784_736_000_000,
+			value: 12.34,
+		});
+		const moved = segmentSnapshot('drawing-segment', {
+			timestamp: 1_784_822_400_000,
+			value: 12.46,
+		});
+		controller.restoreConfirmed([original]);
+
+		engine.emitUpdated(moved);
+		await flushCandidateCount(events, 1);
+		const moveCandidate = events.filter(
+			(event) => event.type === 'drawing-candidate',
+		)[0];
+		expect(moveCandidate?.type).toBe('drawing-candidate');
+		if (moveCandidate?.type !== 'drawing-candidate') {
+			return;
+		}
+		controller.commitDrawingChange(
+			moveCandidate.requestId,
+			moveCandidate.canonicalHash,
+		);
+		expect(controller.canUndoDrawingChange()).toBe(true);
+		expect(controller.confirmedDrawings[0]?.geometry).toEqual(moved.geometry);
+
+		expect(controller.undoDrawingChange()).toBe(true);
+		expect(engine.drawings.get(original.id)?.geometry).toEqual(original.geometry);
+		await flushCandidateCount(events, 2);
+		const undoCandidate = events.filter(
+			(event) => event.type === 'drawing-candidate',
+		)[1];
+		expect(undoCandidate?.type).toBe('drawing-candidate');
+		if (undoCandidate?.type !== 'drawing-candidate') {
+			return;
+		}
+		expect(undoCandidate.operation).toBe('update');
+		expect(undoCandidate.before?.geometry).toEqual(moved.geometry);
+		expect(undoCandidate.candidate.geometry).toEqual(original.geometry);
+		expect(controller.confirmedDrawings[0]?.geometry).toEqual(moved.geometry);
+
+		controller.commitDrawingChange(
+			undoCandidate.requestId,
+			undoCandidate.canonicalHash,
+		);
+		expect(controller.confirmedDrawings[0]?.geometry).toEqual(original.geometry);
+		expect(controller.canUndoDrawingChange()).toBe(false);
+	});
+
+	it('restores the moved geometry and keeps undo available when the host rejects undo', async () => {
+		const { engine, controller, events } = buildController('host-confirmed');
+		const original = segmentSnapshot('drawing-segment', {
+			timestamp: 1_784_736_000_000,
+			value: 12.34,
+		});
+		const moved = segmentSnapshot('drawing-segment', {
+			timestamp: 1_784_822_400_000,
+			value: 12.46,
+		});
+		controller.restoreConfirmed([original]);
+		engine.emitUpdated(moved);
+		await flushCandidateCount(events, 1);
+		const moveCandidate = events.filter(
+			(event) => event.type === 'drawing-candidate',
+		)[0];
+		if (moveCandidate?.type !== 'drawing-candidate') {
+			return;
+		}
+		controller.commitDrawingChange(
+			moveCandidate.requestId,
+			moveCandidate.canonicalHash,
+		);
+
+		controller.undoDrawingChange();
+		await flushCandidateCount(events, 2);
+		const undoCandidate = events.filter(
+			(event) => event.type === 'drawing-candidate',
+		)[1];
+		if (undoCandidate?.type !== 'drawing-candidate') {
+			return;
+		}
+		expect(controller.rejectDrawingChange(undoCandidate.requestId)).toBe(true);
+		expect(controller.confirmedDrawings[0]?.geometry).toEqual(moved.geometry);
+		expect(engine.drawings.get(moved.id)?.geometry).toEqual(moved.geometry);
+		expect(controller.canUndoDrawingChange()).toBe(true);
 	});
 
 	it('publishes and commits multiple deletions as one host-confirmed candidate', async () => {

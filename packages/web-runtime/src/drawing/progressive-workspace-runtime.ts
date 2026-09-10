@@ -246,6 +246,9 @@ export class ProgressiveDrawableWorkspaceRuntime
 				...(this.#options.drawingInteraction === undefined
 					? {}
 					: { drawingInteraction: this.#options.drawingInteraction }),
+				...(this.#options.drawingShortcuts === undefined
+					? {}
+					: { drawingShortcuts: this.#options.drawingShortcuts }),
 			},
 		);
 		this.#stateElement.hidden = true;
@@ -291,6 +294,14 @@ export class ProgressiveDrawableWorkspaceRuntime
 
 	public removeDrawings(ids: readonly string[]): boolean {
 		return this.#requireReady().removeDrawings(ids);
+	}
+
+	public canUndoDrawingChange(): boolean {
+		return this.#inner?.canUndoDrawingChange() ?? false;
+	}
+
+	public undoDrawingChange(): boolean {
+		return this.#requireReady().undoDrawingChange();
 	}
 
 	public requestDrawingDelete(id: string): void {

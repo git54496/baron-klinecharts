@@ -53,10 +53,20 @@ interface SessionCandidate {
 	readonly document: DrawingDocument;
 	readonly canonicalHash: string;
 	/** 本次候选提交后应成为权威状态的完整 Drawing 集合。 */
-	readonly confirmedAfter?: readonly EngineDrawingSnapshot[];
-	/** 批量变更被宿主拒绝时需要原子恢复的完整前态。 */
-	readonly rollbackDrawings?: readonly EngineDrawingSnapshot[];
+	readonly confirmedAfter: readonly EngineDrawingSnapshot[];
+	/** 候选变更被宿主拒绝时需要原子恢复的完整前态。 */
+	readonly rollbackDrawings: readonly EngineDrawingSnapshot[];
+	/** 普通提交记录历史；撤回提交消费栈顶历史。 */
+	readonly historyAction: 'record' | 'undo';
+	readonly undoEntry?: DrawingUndoEntry;
 }
+
+interface DrawingUndoEntry {
+	readonly before: readonly EngineDrawingSnapshot[];
+	readonly after: readonly EngineDrawingSnapshot[];
+}
+
+const DRAWING_UNDO_HISTORY_LIMIT = 50;
 
 export interface DrawingSessionControllerOptions {
 	readonly runtimeId: string;
@@ -86,6 +96,8 @@ export class DrawingSessionController {
 	#state: DrawingSessionState = 'ready';
 	#confirmed: EngineDrawingSnapshot[] = [];
 	#candidate: SessionCandidate | null = null;
+	/** 当前页面会话内已确认的 Drawing 修改历史；不进入文档和持久化协议。 */
+	readonly #undoHistory: DrawingUndoEntry[] = [];
 	#selectedId: string | null = null;
 	/** 尚未完成首次创建提交的 Drawing；用于把引擎侧取消恢复为 ready。 */
 	#interactingDrawingId: string | null = null;
@@ -125,6 +137,7 @@ export class DrawingSessionController {
 		this.#suppressEngineEvents = true;
 		try {
 			this.#confirmed = drawings.map((drawing) => structuredClone(drawing));
+			this.#undoHistory.length = 0;
 			this.#options.engine.restoreDrawings(this.#confirmed);
 		} finally {
 			this.#suppressEngineEvents = false;
@@ -236,6 +249,41 @@ export class DrawingSessionController {
 			confirmedAfter,
 			rollbackDrawings,
 		);
+		return true;
+	}
+
+	/** 只有已成功确认且当前没有进行中变更时，才允许撤回最后一次 Drawing 修改。 */
+	public canUndoDrawingChange(): boolean {
+		this.#assertUsable();
+		return this.#state === 'ready' && this.#undoHistory.length > 0;
+	}
+
+	/**
+	 * 将最后一次已确认修改的完整前态作为新候选提交。
+	 * host-confirmed 模式下，撤回只有在宿主持久化确认后才会消费历史记录。
+	 */
+	public undoDrawingChange(): boolean {
+		this.#assertReady();
+		const entry = this.#undoHistory.at(-1);
+		if (entry === undefined) {
+			return false;
+		}
+		const transition = describeDrawingTransition(entry.after, entry.before);
+		if (transition === undefined) {
+			this.#undoHistory.pop();
+			return false;
+		}
+		this.#state = 'interacting';
+		try {
+			this.#restoreDrawingSet(entry.before);
+		} catch (error) {
+			this.#enterTerminalError(
+				'DRAWING_PROJECTION_INVALID',
+				`Failed to preview Drawing undo: ${String(error)}`,
+			);
+			return false;
+		}
+		void this.#onUndo(entry, transition);
 		return true;
 	}
 
@@ -376,13 +424,7 @@ export class DrawingSessionController {
 			);
 		}
 		try {
-			if (candidate.rollbackDrawings !== undefined) {
-				this.#restoreDrawingSet(candidate.rollbackDrawings);
-			} else if (candidate.before !== undefined) {
-				this.#options.engine.restoreDrawing(candidate.before);
-			} else {
-				this.#options.engine.removeDrawing(candidate.after.id);
-			}
+			this.#restoreDrawingSet(candidate.rollbackDrawings);
 		} catch (error) {
 			this.#enterTerminalError(
 				'DRAWING_PROJECTION_INVALID',
@@ -414,6 +456,7 @@ export class DrawingSessionController {
 		this.#candidate = null;
 		this.#interactingDrawingId = null;
 		this.#confirmed = [];
+		this.#undoHistory.length = 0;
 		this.#unsubscribeEngine();
 	}
 
@@ -514,6 +557,7 @@ export class DrawingSessionController {
 		readonly after: EngineDrawingSnapshot;
 	}): Promise<void> {
 		if (this.#state === 'awaiting-host-confirmation') {
+			this.#restoreDrawingSet(this.#confirmed);
 			throw new DrawingSessionError(
 				'DRAWING_CHANGE_IN_PROGRESS',
 				'/drawings',
@@ -521,12 +565,18 @@ export class DrawingSessionController {
 			);
 		}
 		if (this.#state === 'interacting' && input.operation !== 'create') {
+			this.#restoreDrawingSet(this.#confirmed);
 			return;
 		}
-		const candidateDocument = this.#options.buildDocument(
-			this.#confirmedWith(input.operation, input.before, input.after),
+		const rollbackDrawings = cloneDrawingSet(this.#confirmed);
+		const confirmedAfter = this.#confirmedWith(
+			input.operation,
+			input.before,
+			input.after,
 		);
+		this.#state = 'interacting';
 		try {
+			const candidateDocument = this.#options.buildDocument(confirmedAfter);
 			const projected = this.#options.projectionService.projectDocument({
 				scene: this.#scene,
 				drawings: candidateDocument,
@@ -543,45 +593,21 @@ export class DrawingSessionController {
 					);
 				}
 			}
-		} catch (error) {
-			if (error instanceof DrawingSessionError) {
-				this.#restoreBefore(input.before, input.after);
-				if (input.operation === 'create' && this.#state === 'interacting') {
-					this.#state = 'ready';
-				}
-				this.#options.emit({
-					type: 'workspace-error',
-					code: error.code,
-					message: error.message,
-				});
-			}
-			return;
-		}
-		const canonicalHash = await hashCanonicalDrawingDocument(candidateDocument);
-		const candidate: SessionCandidate = {
-			requestId: `change-${++this.#requestSequence}`,
-			operation: input.operation,
-			...(input.before === undefined ? {} : { before: structuredClone(input.before) }),
-			after: structuredClone(input.after),
-			document: structuredClone(candidateDocument),
-			canonicalHash,
-		};
-		this.#candidate = candidate;
-		this.#options.emit(
-			deepFreeze({
-				type: 'drawing-candidate',
-				requestId: candidate.requestId,
+			const canonicalHash = await hashCanonicalDrawingDocument(candidateDocument);
+			const candidate: SessionCandidate = {
+				requestId: `change-${++this.#requestSequence}`,
 				operation: input.operation,
 				...(input.before === undefined ? {} : { before: structuredClone(input.before) }),
-				candidate: structuredClone(input.after),
-				candidateDocument: structuredClone(candidateDocument),
+				after: structuredClone(input.after),
+				document: structuredClone(candidateDocument),
 				canonicalHash,
-			}),
-		);
-		if (this.#options.commitMode === 'immediate') {
-			this.#commitCandidate(candidate);
-		} else {
-			this.#state = 'awaiting-host-confirmation';
+				confirmedAfter: cloneDrawingSet(confirmedAfter),
+				rollbackDrawings,
+				historyAction: 'record',
+			};
+			this.#publishCandidate(candidate);
+		} catch (error) {
+			this.#restoreBatchAfterFailure(error, rollbackDrawings);
 		}
 	}
 
@@ -604,28 +630,66 @@ export class DrawingSessionController {
 				after: structuredClone(representative),
 				document: structuredClone(candidateDocument),
 				canonicalHash,
-				confirmedAfter: confirmedAfter.map((drawing) => structuredClone(drawing)),
-				rollbackDrawings: rollbackDrawings.map((drawing) => structuredClone(drawing)),
+				confirmedAfter: cloneDrawingSet(confirmedAfter),
+				rollbackDrawings: cloneDrawingSet(rollbackDrawings),
+				historyAction: 'record',
 			};
-			this.#candidate = candidate;
-			this.#options.emit(
-				deepFreeze({
-					type: 'drawing-candidate',
-					requestId: candidate.requestId,
-					operation: 'delete',
-					before: structuredClone(representative),
-					candidate: structuredClone(representative),
-					candidateDocument: structuredClone(candidateDocument),
-					canonicalHash,
-				}),
-			);
-			if (this.#options.commitMode === 'immediate') {
-				this.#commitCandidate(candidate);
-			} else {
-				this.#state = 'awaiting-host-confirmation';
-			}
+			this.#publishCandidate(candidate);
 		} catch (error) {
 			this.#restoreBatchAfterFailure(error, rollbackDrawings);
+		}
+	}
+
+	async #onUndo(
+		entry: DrawingUndoEntry,
+		transition: DrawingTransition,
+	): Promise<void> {
+		try {
+			const candidateDocument = this.#options.buildDocument(entry.before);
+			this.#options.projectionService.projectDocument({
+				scene: this.#scene,
+				drawings: candidateDocument,
+			});
+			const canonicalHash = await hashCanonicalDrawingDocument(candidateDocument);
+			const candidate: SessionCandidate = {
+				requestId: `change-${++this.#requestSequence}`,
+				operation: transition.operation,
+				...(transition.before === undefined
+					? {}
+					: { before: structuredClone(transition.before) }),
+				after: structuredClone(transition.after),
+				document: structuredClone(candidateDocument),
+				canonicalHash,
+				confirmedAfter: cloneDrawingSet(entry.before),
+				rollbackDrawings: cloneDrawingSet(entry.after),
+				historyAction: 'undo',
+				undoEntry: entry,
+			};
+			this.#publishCandidate(candidate);
+		} catch (error) {
+			this.#restoreBatchAfterFailure(error, entry.after);
+		}
+	}
+
+	#publishCandidate(candidate: SessionCandidate): void {
+		this.#candidate = candidate;
+		this.#options.emit(
+			deepFreeze({
+				type: 'drawing-candidate',
+				requestId: candidate.requestId,
+				operation: candidate.operation,
+				...(candidate.before === undefined
+					? {}
+					: { before: structuredClone(candidate.before) }),
+				candidate: structuredClone(candidate.after),
+				candidateDocument: structuredClone(candidate.document),
+				canonicalHash: candidate.canonicalHash,
+			}),
+		);
+		if (this.#options.commitMode === 'immediate') {
+			this.#commitCandidate(candidate);
+		} else {
+			this.#state = 'awaiting-host-confirmation';
 		}
 	}
 
@@ -646,13 +710,20 @@ export class DrawingSessionController {
 	}
 
 	#commitCandidate(candidate: SessionCandidate): void {
-		this.#confirmed = candidate.confirmedAfter === undefined
-			? this.#confirmedWith(
-					candidate.operation,
-					candidate.before,
-					candidate.after,
-				)
-			: candidate.confirmedAfter.map((drawing) => structuredClone(drawing));
+		this.#confirmed = cloneDrawingSet(candidate.confirmedAfter);
+		if (candidate.historyAction === 'record') {
+			if (!sameDrawingSet(candidate.rollbackDrawings, candidate.confirmedAfter)) {
+				this.#undoHistory.push({
+					before: cloneDrawingSet(candidate.rollbackDrawings),
+					after: cloneDrawingSet(candidate.confirmedAfter),
+				});
+				if (this.#undoHistory.length > DRAWING_UNDO_HISTORY_LIMIT) {
+					this.#undoHistory.shift();
+				}
+			}
+		} else if (this.#undoHistory.at(-1) === candidate.undoEntry) {
+			this.#undoHistory.pop();
+		}
 		this.#candidate = null;
 		this.#state = 'ready';
 		this.#options.emit({
@@ -662,24 +733,6 @@ export class DrawingSessionController {
 			document: structuredClone(candidate.document),
 			canonicalHash: candidate.canonicalHash,
 		});
-	}
-
-	#restoreBefore(
-		before: EngineDrawingSnapshot | undefined,
-		after: EngineDrawingSnapshot,
-	): void {
-		try {
-			if (before !== undefined) {
-				this.#options.engine.restoreDrawing(before);
-			} else {
-				this.#options.engine.removeDrawing(after.id);
-			}
-		} catch (error) {
-			this.#enterTerminalError(
-				'DRAWING_PROJECTION_INVALID',
-				`Failed to restore the rejected candidate: ${String(error)}`,
-			);
-		}
 	}
 
 	#restoreBatchAfterFailure(
@@ -741,6 +794,48 @@ export class DrawingSessionController {
 			);
 		}
 	}
+}
+
+interface DrawingTransition {
+	readonly operation: 'create' | 'update' | 'delete';
+	readonly before?: EngineDrawingSnapshot;
+	readonly after: EngineDrawingSnapshot;
+}
+
+function describeDrawingTransition(
+	current: readonly EngineDrawingSnapshot[],
+	target: readonly EngineDrawingSnapshot[],
+): DrawingTransition | undefined {
+	const currentById = new Map(current.map((drawing) => [drawing.id, drawing]));
+	const targetById = new Map(target.map((drawing) => [drawing.id, drawing]));
+	const removed = current.find((drawing) => !targetById.has(drawing.id));
+	if (removed !== undefined) {
+		return { operation: 'delete', before: removed, after: removed };
+	}
+	const added = target.find((drawing) => !currentById.has(drawing.id));
+	if (added !== undefined) {
+		return { operation: 'create', after: added };
+	}
+	for (const before of current) {
+		const after = targetById.get(before.id);
+		if (after !== undefined && JSON.stringify(before) !== JSON.stringify(after)) {
+			return { operation: 'update', before, after };
+		}
+	}
+	return undefined;
+}
+
+function cloneDrawingSet(
+	drawings: readonly EngineDrawingSnapshot[],
+): EngineDrawingSnapshot[] {
+	return drawings.map((drawing) => structuredClone(drawing));
+}
+
+function sameDrawingSet(
+	left: readonly EngineDrawingSnapshot[],
+	right: readonly EngineDrawingSnapshot[],
+): boolean {
+	return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function defaultStyles(): EngineDrawingSnapshot['styles'] {

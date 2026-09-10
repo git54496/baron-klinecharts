@@ -126,6 +126,8 @@ export interface DrawingFloatingToolbar {
 			' EngineHistoricalDataCommitResult,',
 			' HistoricalDataRuntimeCapability,',
 			', HistoricalDataRuntimeCapability',
+			'DrawingUndoRuntimeCapability, ',
+			', DrawingUndoRuntimeCapability',
 			`    readonly historicalDataLoading?: {
         readonly hasMore: boolean;
     };
@@ -136,12 +138,20 @@ export interface DrawingFloatingToolbar {
 			`    /** 可选输入策略；默认使用图表引擎原生 Drawing 交互。 */
     readonly drawingInteraction?: DrawingInteractionOptions;
 `,
+			`    /** 可选 Drawing 键盘快捷键；撤回同时支持 macOS Command+Z 与 Ctrl+Z。 */
+    readonly drawingShortcuts?: {
+        readonly undo?: boolean;
+    };
+`,
 			`    commitHistoricalData(requestId: string, data: readonly MarketData[], hasMore: boolean): EngineHistoricalDataCommitResult;
     rejectHistoricalData(requestId: string, message: string): boolean;
 `,
 			"import { DrawingSessionController } from './session-controller.js';\n",
 			'    updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot;\n',
 			'    removeDrawings(ids: readonly string[]): boolean;\n',
+			`    canUndoDrawingChange(): boolean;
+    undoDrawingChange(): boolean;
+`,
 			`    getDrawingMutationState(): 'ready' | 'busy';
     subscribeDrawingChanges(listener: () => void): () => void;
 `,
@@ -186,6 +196,14 @@ export interface DrawingFloatingToolbar {
 			`    /** 当前已确认的投影 Scene；仅返回深拷贝，协调层不能取得引擎对象。 */
     get projectionScene(): ProjectionScene;
 `,
+			`    /** 只有已成功确认且当前没有进行中变更时，才允许撤回最后一次 Drawing 修改。 */
+    canUndoDrawingChange(): boolean;
+    /**
+     * 将最后一次已确认修改的完整前态作为新候选提交。
+     * host-confirmed 模式下，撤回只有在宿主持久化确认后才会消费历史记录。
+     */
+    undoDrawingChange(): boolean;
+`,
 			`    /**
      * 在同一个 Adapter 内原子替换 Scene 投影上下文。
      * 候选 Scene 先以 confirmed Drawing 全量验证，成功应用引擎后才提升为当前投影 Scene。
@@ -215,6 +233,14 @@ export interface HistoricalDataRuntimeCapability {
 `,
 			`    getDrawingMutationState(): 'ready' | 'busy';
     subscribeDrawingChanges(listener: () => void): () => void;
+`,
+			`/** 带候选确认状态机的 Workspace Runtime 专属撤回能力。 */
+export interface DrawingUndoRuntimeCapability {
+    /** 当前会话是否有已确认的 Drawing 修改可以撤回。 */
+    canUndoDrawingChange(): boolean;
+    /** 将最后一次已确认修改的前态作为新候选提交。 */
+    undoDrawingChange(): boolean;
+}
 `,
 			'        readonly groupId?: string;\n',
 			"        readonly metadata?: NonNullable<Drawing['metadata']>;\n",
