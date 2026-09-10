@@ -15,16 +15,20 @@ export const CHART_WORKSPACE_TOOLBAR_STYLES = String.raw`
 
 .baron-chart-workspace-toolbar.baron-chart-workspace-toolbar--top {
 	align-items: center;
-	align-content: center;
-	flex-wrap: wrap;
+	flex-wrap: nowrap;
 	width: 100%;
+	max-width: 100%;
 	min-width: 0;
 	min-height: 44px;
 	height: auto;
 	padding: 5px 8px;
 	border-bottom: 1px solid rgba(229, 231, 235, 1);
-	overflow: visible;
+	overflow-x: auto;
+	overflow-y: hidden;
+	overscroll-behavior-x: contain;
 	scrollbar-width: none;
+	touch-action: pan-x pan-y;
+	-webkit-overflow-scrolling: touch;
 }
 
 .baron-chart-workspace-toolbar--top::-webkit-scrollbar,
@@ -126,15 +130,37 @@ export const CHART_WORKSPACE_TOOLBAR_STYLES = String.raw`
 .baron-chart-workspace-toolbar__divider { width: 1px; height: 20px; margin: 0 5px; background: rgba(229, 231, 235, 1); }
 
 .baron-chart-workspace-toolbar__timezone {
-	display: flex;
+	position: relative;
+	display: inline-flex;
+	flex: 0 0 auto;
 	align-items: center;
-	gap: 3px;
-	height: 32px;
-	padding-left: 7px;
+	gap: 5px;
+	min-width: 64px;
+	height: 28px;
+	padding: 0 10px;
 	color: rgba(70, 75, 88, 1);
+	background: rgba(247, 248, 250, 1);
+	border: 1px solid rgba(226, 228, 233, 1);
+	border-radius: 999px;
+	cursor: pointer;
+	overflow: hidden;
 }
 
-.baron-chart-workspace-toolbar__timezone svg { width: 16px; height: 16px; }
+.baron-chart-workspace-toolbar__timezone:focus-within {
+	outline: 2px solid rgba(41, 98, 255, .9);
+	outline-offset: 1px;
+}
+.baron-chart-workspace-toolbar__timezone svg {
+	flex: 0 0 auto;
+	width: 16px;
+	height: 16px;
+}
+.baron-chart-workspace-toolbar__timezone-value {
+	font-size: 11px;
+	font-weight: 500;
+	line-height: 1;
+	white-space: nowrap;
+}
 .baron-chart-workspace-toolbar__select {
 	max-width: 164px;
 	height: 30px;
@@ -146,6 +172,15 @@ export const CHART_WORKSPACE_TOOLBAR_STYLES = String.raw`
 	font-size: 11px;
 	cursor: pointer;
 }
+.baron-chart-workspace-toolbar__timezone .baron-chart-workspace-toolbar__timezone-select {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	max-width: none;
+	height: 100%;
+	padding: 0;
+	opacity: 0;
+}
 
 .baron-chart-workspace-toolbar__section--settings { gap: 6px; }
 .baron-chart-workspace-toolbar__setting {
@@ -153,14 +188,7 @@ export const CHART_WORKSPACE_TOOLBAR_STYLES = String.raw`
 	display: inline-flex;
 	flex: 0 0 auto;
 	align-items: center;
-	gap: 4px;
 	height: 32px;
-}
-.baron-chart-workspace-toolbar__setting-label {
-	color: rgba(102, 108, 122, 1);
-	font-size: 10px;
-	font-weight: 600;
-	white-space: nowrap;
 }
 .baron-chart-workspace-toolbar__setting-control {
 	display: inline-flex;
@@ -269,7 +297,6 @@ export const CHART_WORKSPACE_TOOLBAR_STYLES = String.raw`
 
 @media (max-width: 640px) {
 	.baron-chart-workspace-toolbar.baron-chart-workspace-toolbar--top { min-height: 42px; padding: 5px 4px; }
-	.baron-chart-workspace-toolbar__timezone { padding-left: 3px; }
 	.baron-chart-workspace-toolbar__select { max-width: 112px; }
 	.baron-chart-workspace-toolbar__section--settings { gap: 4px; }
 	.baron-chart-workspace-toolbar__setting { gap: 3px; }

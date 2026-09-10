@@ -13,6 +13,7 @@ export interface TouchPrecisionBounds {
 export type TouchPrecisionDrawingPhase =
 	| 'move-start'
 	| 'confirm-start'
+	| 'move-end'
 	| 'confirm-end';
 
 export const TOUCH_PRECISION_CURSOR_OFFSET = Object.freeze({
@@ -211,6 +212,8 @@ function promptForPhase(phase: TouchPrecisionDrawingPhase): {
 			return { progress: '1 / 4', message: '将光标移至起点' };
 		case 'confirm-start':
 			return { progress: '2 / 4', message: '点击设置第一个点' };
+		case 'move-end':
+			return { progress: '3 / 4', message: '将光标移至终点' };
 		case 'confirm-end':
 			return { progress: '4 / 4', message: '点击即可完成' };
 	}

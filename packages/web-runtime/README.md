@@ -183,10 +183,12 @@ Drawing projection, or host alerts. Omit it to use the Scene chart timezone.
 
 `drawingInteraction.touch: 'precision-cursor'` enables the mobile precision flow for
 `segment`: moving a touch positions an offset virtual crosshair, while a stationary
-tap confirms each endpoint. The mode is selected from the actual touch pointer type,
-so mouse input keeps KLineCharts' native two-click behavior even when the option is
-enabled. The guide UI and interaction state are transient and are never written into
-the Workspace. Omit the option (or use `touch: 'native'`) for native touch behavior.
+tap confirms the previously positioned endpoint without relocating it. Start and end
+each have separate positioning and confirmation phases. The mode is selected from the
+actual touch pointer type, so mouse input keeps KLineCharts' native two-click behavior
+even when the option is enabled. The guide UI and interaction state are transient and
+are never written into the Workspace. Omit the option (or use `touch: 'native'`) for
+native touch behavior.
 
 `drawingInteraction.exclusiveSelection` routes existing Drawing selection and dragging
 through the adapter. While a Drawing is selected, chart scrolling, zooming, and the

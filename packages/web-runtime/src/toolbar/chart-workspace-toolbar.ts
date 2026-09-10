@@ -185,12 +185,11 @@ function createInlineSetting(
 	const setting = document.createElement('div');
 	setting.className = 'baron-chart-workspace-toolbar__setting';
 	setting.dataset.settingName = settingName;
-	const label = document.createElement('span');
-	label.className = 'baron-chart-workspace-toolbar__setting-label';
-	label.textContent = labelText;
+	setting.setAttribute('role', 'group');
+	setting.setAttribute('aria-label', labelText);
 	const control = document.createElement('div');
 	control.className = 'baron-chart-workspace-toolbar__setting-control';
-	setting.append(label, control);
+	setting.append(control);
 	return { setting, control };
 }
 
@@ -455,6 +454,23 @@ function defaultTimezoneChoices(
 	];
 }
 
+function compactTimezoneLabel(choice: WorkspaceToolbarTimezoneChoice): string {
+	const normalizedValue = choice.value.trim().toLowerCase();
+	if (normalizedValue === 'instrument' || normalizedValue === 'chart') {
+		return '标的';
+	}
+	if (normalizedValue === 'local') {
+		return '本机';
+	}
+	if (normalizedValue === 'utc' || choice.timezone.toUpperCase() === 'UTC') {
+		return 'UTC';
+	}
+	const separatorIndex = choice.label.indexOf('·');
+	return separatorIndex < 0
+		? choice.label
+		: choice.label.slice(0, separatorIndex).trim();
+}
+
 /**
  * 创建 Pro 风格的复合工具栏。Baron 只发出周期/复权宿主意图；价格轴可由宿主
  * 接管 DrawingDocument 切换，未接管时仍在浏览器 Runtime 内即时生效。
@@ -614,8 +630,12 @@ export function createChartWorkspaceToolbar(
 	const timezoneLabel = document.createElement('label');
 	timezoneLabel.className = 'baron-chart-workspace-toolbar__timezone';
 	timezoneLabel.append(createToolbarIcon('timezone'));
+	const timezoneValue = document.createElement('span');
+	timezoneValue.className = 'baron-chart-workspace-toolbar__timezone-value';
+	timezoneValue.setAttribute('aria-hidden', 'true');
 	const timezoneSelect = document.createElement('select');
-	timezoneSelect.className = 'baron-chart-workspace-toolbar__select';
+	timezoneSelect.className =
+		'baron-chart-workspace-toolbar__select baron-chart-workspace-toolbar__timezone-select';
 	timezoneSelect.dataset.action = 'display-timezone';
 	timezoneSelect.setAttribute('aria-label', '显示时区');
 	for (const choice of timezoneChoices) {
@@ -633,6 +653,19 @@ export function createChartWorkspaceToolbar(
 		timezoneSelect.value = initialTimezoneValue;
 	}
 	let committedTimezoneValue = timezoneSelect.value;
+	const updateTimezonePresentation = (
+		choice: WorkspaceToolbarTimezoneChoice | undefined,
+	): void => {
+		timezoneValue.textContent = choice === undefined
+			? ''
+			: compactTimezoneLabel(choice);
+		timezoneLabel.title = choice?.label ?? '';
+	};
+	updateTimezonePresentation(
+		timezoneChoices.find(
+			(choice) => choice.value === committedTimezoneValue,
+		),
+	);
 	const changeTimezone = (): void => {
 		const choice = timezoneChoices.find(
 			(candidate) => candidate.value === timezoneSelect.value,
@@ -643,6 +676,7 @@ export function createChartWorkspaceToolbar(
 		try {
 			runtime.setDisplayTimezone(choice.timezone);
 			committedTimezoneValue = choice.value;
+			updateTimezonePresentation(choice);
 			options.onDisplayTimezoneChange?.(choice);
 		} catch (error) {
 			timezoneSelect.value = committedTimezoneValue;
@@ -653,7 +687,7 @@ export function createChartWorkspaceToolbar(
 	cleanupCallbacks.push(() =>
 		timezoneSelect.removeEventListener('change', changeTimezone),
 	);
-	timezoneLabel.append(timezoneSelect);
+	timezoneLabel.append(timezoneValue, timezoneSelect);
 	primarySection.append(timezoneLabel);
 	top.append(primarySection);
 
@@ -1029,6 +1063,7 @@ export function createChartWorkspaceToolbar(
 			runtime.setDisplayTimezone(choice.timezone);
 			timezoneSelect.value = value;
 			committedTimezoneValue = value;
+			updateTimezonePresentation(choice);
 		},
 		setPriceScaleState(scale, state): void {
 			if (destroyed) {

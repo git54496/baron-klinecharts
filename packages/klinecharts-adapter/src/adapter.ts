@@ -191,12 +191,16 @@ interface TouchPrecisionDrawingState {
 	readonly id: string;
 	readonly paneId: string;
 	phase: TouchPrecisionDrawingPhase;
+	/** 最近一次移动完成后的虚拟光标；确认轻点只能提交该位置。 */
+	cursor?: TouchPrecisionPoint;
 }
 
 interface TouchPrecisionPointerInteraction {
 	readonly pointerId: number;
 	readonly origin: TouchPrecisionPoint;
 	current: TouchPrecisionPoint;
+	/** 是否已进入定位手势；确认轻点的阈值内抖动不得改写光标。 */
+	positioning: boolean;
 }
 
 interface ChartInteractionSnapshot {
@@ -1457,6 +1461,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			pointer,
 			this.#touchPrecisionBounds(drawing.paneId),
 		);
+		drawing.cursor = cursor;
 		this.#touchPrecisionGuide?.updateCursor(cursor);
 		this.#dispatchTouchPrecisionMouseMove(cursor);
 		return cursor;
@@ -1815,10 +1820,13 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		guide.setPhase(drawing.phase);
 		guide.show();
 		const point = this.#pointerCoordinate(event);
+		const positioning =
+			drawing.phase === 'move-start' || drawing.phase === 'move-end';
 		this.#touchPrecisionPointer = {
 			pointerId: event.pointerId,
 			origin: point,
 			current: point,
+			positioning,
 		};
 		try {
 			this.#container.setPointerCapture(event.pointerId);
@@ -1826,7 +1834,9 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			// Synthetic PointerEvents do not own browser pointer capture.
 		}
 		this.#suppressCompatibilityMouseUntil = performance.now() + 800;
-		this.#updateTouchPrecisionCursor(drawing, point);
+		if (positioning) {
+			this.#updateTouchPrecisionCursor(drawing, point);
+		}
 		return true;
 	}
 
@@ -1845,7 +1855,15 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		const point = this.#pointerCoordinate(event);
 		pointer.current = point;
 		this.#suppressCompatibilityMouseUntil = performance.now() + 800;
-		this.#updateTouchPrecisionCursor(drawing, point);
+		if (
+			!pointer.positioning &&
+			!isTouchPrecisionTap(pointer.origin, pointer.current)
+		) {
+			pointer.positioning = true;
+		}
+		if (pointer.positioning) {
+			this.#updateTouchPrecisionCursor(drawing, point);
+		}
 		return true;
 	}
 
@@ -1863,29 +1881,38 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		event.stopImmediatePropagation();
 		const point = this.#pointerCoordinate(event);
 		pointer.current = point;
-		const cursor = this.#updateTouchPrecisionCursor(drawing, point);
-		const tap = isTouchPrecisionTap(pointer.origin, pointer.current);
+		if (
+			!pointer.positioning &&
+			!isTouchPrecisionTap(pointer.origin, pointer.current)
+		) {
+			pointer.positioning = true;
+		}
+		if (pointer.positioning) {
+			this.#updateTouchPrecisionCursor(drawing, point);
+		}
 		this.#stopTouchPrecisionPointerCapture();
 		this.#touchPrecisionPointer = undefined;
 		this.#suppressCompatibilityMouseUntil = performance.now() + 800;
-		if (drawing.phase === 'move-start') {
-			drawing.phase = 'confirm-start';
-			this.#touchPrecisionGuide?.setPhase('confirm-start');
+		if (drawing.phase === 'move-start' || drawing.phase === 'move-end') {
+			const nextPhase =
+				drawing.phase === 'move-start' ? 'confirm-start' : 'confirm-end';
+			drawing.phase = nextPhase;
+			this.#touchPrecisionGuide?.setPhase(nextPhase);
 			return true;
 		}
-		if (!tap) {
+		if (pointer.positioning || drawing.cursor === undefined) {
 			return true;
 		}
 		const phase = drawing.phase;
-		this.#dispatchTouchPrecisionClick(cursor);
+		this.#dispatchTouchPrecisionClick(drawing.cursor);
 		const active = this.#touchPrecisionDrawing;
 		if (
 			phase === 'confirm-start' &&
 			active !== undefined &&
 			active.id === drawing.id
 		) {
-			active.phase = 'confirm-end';
-			this.#touchPrecisionGuide?.setPhase('confirm-end');
+			active.phase = 'move-end';
+			this.#touchPrecisionGuide?.setPhase('move-end');
 		}
 		return true;
 	}

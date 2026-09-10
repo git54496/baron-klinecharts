@@ -625,44 +625,69 @@ test.describe('DrawingEnginePort precision touch Drawing', () => {
 				window as unknown as { __drawingEvents: string[] }
 			).__drawingEvents)).not.toContain('created:port-segment-0');
 
-			// A stationary tap commits the first anchor.
-			await dispatchTouchPointer(page, 'pointerdown', { x: 700, y: 470 });
-			await dispatchTouchPointer(page, 'pointerup', { x: 700, y: 470 });
-			await expect(guide).toHaveAttribute('data-phase', 'confirm-end');
+			// A tap elsewhere, including threshold-level jitter, commits the saved cursor.
+			await dispatchTouchPointer(page, 'pointerdown', { x: 360, y: 260 });
+			await dispatchTouchPointer(page, 'pointermove', { x: 364, y: 264 });
+			await dispatchTouchPointer(page, 'pointerup', { x: 364, y: 264 });
+			await expect(guide).toHaveAttribute('data-phase', 'move-end');
+			await expect(guide).toHaveAttribute('data-cursor-x', '644');
+			await expect(guide).toHaveAttribute('data-cursor-y', '366');
 			expect(await page.evaluate(() => (
 				window as unknown as { __drawingEvents: string[] }
 			).__drawingEvents)).not.toContain('created:port-segment-0');
 
-			// Moving the end preview is still non-committing; the following tap completes it.
+			// Moving the end preview advances to its own confirmation phase without committing.
 			await dispatchTouchPointer(page, 'pointerdown', { x: 780, y: 500 });
 			await dispatchTouchPointer(page, 'pointermove', { x: 840, y: 540 });
 			await dispatchTouchPointer(page, 'pointerup', { x: 840, y: 540 });
+			await expect(guide).toHaveAttribute('data-phase', 'confirm-end');
+			await expect(guide).toHaveAttribute('data-cursor-x', '784');
+			await expect(guide).toHaveAttribute('data-cursor-y', '436');
 			expect(await page.evaluate(() => (
 				window as unknown as { __drawingEvents: string[] }
 			).__drawingEvents)).not.toContain('created:port-segment-0');
-			await dispatchTouchPointer(page, 'pointerdown', { x: 840, y: 540 });
-			await dispatchTouchPointer(page, 'pointerup', { x: 840, y: 540 });
+			await dispatchTouchPointer(page, 'pointerdown', { x: 500, y: 300 });
+			await dispatchTouchPointer(page, 'pointermove', { x: 505, y: 303 });
+			await dispatchTouchPointer(page, 'pointerup', { x: 505, y: 303 });
 			await settle(page);
 
 			await expect(guide).toBeHidden();
 			const result = await page.evaluate(() => {
 				const adapter = (window as unknown as {
 					__adapter: {
-						getDrawing(id: string): { readonly geometry: unknown } | undefined;
+						getDrawing(id: string): {
+							readonly geometry: {
+								readonly points?: readonly {
+									readonly timestamp: number;
+									readonly value: number;
+								}[];
+							};
+						} | undefined;
+						projectToPixel(
+							anchor: { readonly timestamp: number; readonly value: number },
+							paneRole: string,
+						): { readonly x: number; readonly y: number };
 					};
 					__baronGeometryComplete(geometry: unknown): boolean;
 					__drawingEvents: string[];
 				}).__adapter;
 				const drawing = adapter.getDrawing('port-segment-0');
+				const points = drawing?.geometry.points ?? [];
 				return {
 					complete: drawing !== undefined && (
 						window as unknown as { __baronGeometryComplete(geometry: unknown): boolean }
 					).__baronGeometryComplete(drawing.geometry),
 					events: (window as unknown as { __drawingEvents: string[] }).__drawingEvents,
+					anchors: points.map((point) => adapter.projectToPixel(point, 'candle')),
 				};
 			});
 			expect(result.complete).toBe(true);
 			expect(result.events).toContain('created:port-segment-0');
+			expect(result.anchors).toHaveLength(2);
+			expect(Math.abs((result.anchors[0]?.x ?? 0) - 644)).toBeLessThanOrEqual(3);
+			expect(Math.abs((result.anchors[0]?.y ?? 0) - 366)).toBeLessThanOrEqual(3);
+			expect(Math.abs((result.anchors[1]?.x ?? 0) - 784)).toBeLessThanOrEqual(3);
+			expect(Math.abs((result.anchors[1]?.y ?? 0) - 436)).toBeLessThanOrEqual(3);
 		} finally {
 			await context.close();
 		}

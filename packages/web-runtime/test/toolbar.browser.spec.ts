@@ -579,7 +579,7 @@ test('@browser chart Workspace toolbar has 22 tools and working main series cont
 	expect(result.candleType).toBe('area');
 });
 
-test('@browser composite chart toolbar exposes settings directly beside market controls', async ({ page }) => {
+test('@browser composite chart toolbar keeps controls in one horizontally scrollable row', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	const result = await page.evaluate(async (workspace) => {
 		const {
@@ -631,6 +631,14 @@ test('@browser composite chart toolbar exposes settings directly beside market c
 			button.click();
 		}
 		const timezone = toolbar.topElement.querySelector<HTMLSelectElement>('[data-action="display-timezone"]')!;
+		const timezonePill = timezone.closest<HTMLElement>(
+			'.baron-chart-workspace-toolbar__timezone',
+		)!;
+		const timezoneValue = timezonePill.querySelector<HTMLElement>(
+			'.baron-chart-workspace-toolbar__timezone-value',
+		)!;
+		const timezonePresentationBefore = timezoneValue.textContent;
+		const timezoneOptions = [...timezone.options].map((option) => option.textContent);
 		timezone.value = 'utc';
 		timezone.dispatchEvent(new Event('change'));
 		toolbar.topElement.querySelector<HTMLButtonElement>(
@@ -646,11 +654,15 @@ test('@browser composite chart toolbar exposes settings directly beside market c
 		mainSeriesSelect.value = 'area';
 		mainSeriesSelect.dispatchEvent(new Event('change'));
 		const topContainer = document.querySelector<HTMLElement>('#toolbar')!;
-		topContainer.style.width = '650px';
+		topContainer.style.width = '360px';
 		const topBounds = toolbar.topElement.getBoundingClientRect();
+		const periodBounds = periodButton.getBoundingClientRect();
 		const settingsBounds = toolbar.topElement.querySelector<HTMLElement>(
 			'.baron-chart-workspace-toolbar__section--settings',
 		)!.getBoundingClientRect();
+		const topStyles = getComputedStyle(toolbar.topElement);
+		const topMaxScrollLeft = toolbar.topElement.scrollWidth - toolbar.topElement.clientWidth;
+		toolbar.topElement.scrollLeft = topMaxScrollLeft;
 		const forwardAdjustment = toolbar.topElement.querySelector<HTMLButtonElement>(
 			'[data-host-action="adjustment.qfq"]',
 		)!;
@@ -691,6 +703,15 @@ test('@browser composite chart toolbar exposes settings directly beside market c
 			mainIndicators: scene.panes[0].indicators.map((indicator: { name: string }) => indicator.name),
 			maPressed: maButton.getAttribute('aria-pressed'),
 			displayTimezone: runtime.getDisplayTimezone(),
+			timezonePresentationBefore,
+			timezonePresentationAfter: timezoneValue.textContent,
+			timezoneOptions,
+			timezonePill: {
+				borderRadius: getComputedStyle(timezonePill).borderRadius,
+				selectOpacity: getComputedStyle(timezone).opacity,
+				selectPosition: getComputedStyle(timezone).position,
+				hasGlobe: timezonePill.querySelector('svg') !== null,
+			},
 			sceneTimezone: scene.chart.timezone,
 			originalSceneTimezone: workspace.scene.document.chart.timezone,
 			settingRows: [...toolbar.topElement.querySelectorAll<HTMLElement>('[data-setting-name]')]
@@ -719,9 +740,16 @@ test('@browser composite chart toolbar exposes settings directly beside market c
 			topHeight: topBounds.height,
 			topClientWidth: toolbar.topElement.clientWidth,
 			topScrollWidth: toolbar.topElement.scrollWidth,
-			settingsWithinTop: settingsBounds.left >= topBounds.left
-				&& settingsBounds.right <= topBounds.right
+			topOverflowsHorizontally: toolbar.topElement.scrollWidth > toolbar.topElement.clientWidth,
+			topScrolledToEnd: Math.abs(toolbar.topElement.scrollLeft - topMaxScrollLeft) <= 1,
+			controlsStayInOneRow: Math.abs(periodBounds.top - settingsBounds.top) <= 1
 				&& settingsBounds.bottom <= topBounds.bottom,
+			topLayout: {
+				flexWrap: topStyles.flexWrap,
+				overflowX: topStyles.overflowX,
+				overflowY: topStyles.overflowY,
+				touchAction: topStyles.touchAction,
+			},
 			pendingAdjustment,
 			priceScale: scene.panes[0].yAxes[0].scale,
 			mainSeries: scene.chart.candle.type,
@@ -747,10 +775,19 @@ test('@browser composite chart toolbar exposes settings directly beside market c
 		mainIndicators: ['MA', 'EMA', 'SMA', 'BOLL', 'SAR', 'BBI'],
 		maPressed: 'true',
 		displayTimezone: 'UTC',
+		timezonePresentationBefore: '标的',
+		timezonePresentationAfter: 'UTC',
+		timezoneOptions: ['标的时区', 'UTC'],
+		timezonePill: {
+			borderRadius: '999px',
+			selectOpacity: '0',
+			selectPosition: 'absolute',
+			hasGlobe: true,
+		},
 		sceneTimezone: result.originalSceneTimezone,
 		originalSceneTimezone: result.originalSceneTimezone,
 		settingRows: ['adjustment', 'price-scale', 'main-series'],
-		settingLabels: ['复权', '价格轴', '主序列'],
+		settingLabels: [],
 		hasSettingsButton: false,
 		hasSettingsPopover: false,
 		hasAdjustment: true,
@@ -766,9 +803,17 @@ test('@browser composite chart toolbar exposes settings directly beside market c
 		],
 		mainSeriesTag: 'SELECT',
 		topHeight: expect.any(Number),
-		topClientWidth: 650,
-		topScrollWidth: 650,
-		settingsWithinTop: true,
+		topClientWidth: 360,
+		topScrollWidth: expect.any(Number),
+		topOverflowsHorizontally: true,
+		topScrolledToEnd: true,
+		controlsStayInOneRow: true,
+		topLayout: {
+			flexWrap: 'nowrap',
+			overflowX: 'auto',
+			overflowY: 'hidden',
+			touchAction: 'pan-x pan-y',
+		},
 		pendingAdjustment: {
 			disabled: true,
 			busy: 'true',
@@ -783,7 +828,8 @@ test('@browser composite chart toolbar exposes settings directly beside market c
 		adjustmentRequested: true,
 		remaining: 0,
 	});
-	expect(result.topHeight).toBeGreaterThan(44);
+	expect(result.topHeight).toBeLessThanOrEqual(44);
+	expect(result.topScrollWidth).toBeGreaterThan(result.topClientWidth);
 });
 
 test('@browser price-scale controls expose host drawing state and delegate switching', async ({ page }) => {
