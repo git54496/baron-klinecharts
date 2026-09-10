@@ -142,21 +142,47 @@ async function installWorkspace(
 	options: {
 		readonly precisionTouch?: boolean;
 		readonly exclusiveSelection?: boolean;
+		readonly subUnitLogarithmic?: boolean;
 	} = {},
 ): Promise<void> {
 	await page.addInitScript(SNAPSHOT_BUILDER);
 	await page.goto('/test/fixture.html');
 	await page.evaluate(
-		async ({ kind, chartWorkspace, timeSeriesWorkspace, precisionTouch, exclusiveSelection }) => {
+		async ({
+			kind,
+			chartWorkspace,
+			timeSeriesWorkspace,
+			precisionTouch,
+			exclusiveSelection,
+			subUnitLogarithmic,
+		}) => {
 			const { KLineChartsSceneAdapter, TimeSeriesChartsAdapter } =
 				await import('/src/index.ts');
 			const container = document.querySelector<HTMLElement>(
 				kind === 'chart' ? '#chart' : '#chart-time-series',
 			)!;
+			const selectedChartWorkspace = structuredClone(chartWorkspace);
+			if (subUnitLogarithmic && kind === 'chart') {
+				const scene = selectedChartWorkspace.scene.document;
+				const prices = [
+					{ open: 0.72, high: 0.78, low: 0.69, close: 0.74 },
+					{ open: 0.74, high: 0.82, low: 0.71, close: 0.79 },
+					{ open: 0.79, high: 0.84, low: 0.73, close: 0.76 },
+				];
+				scene.data = scene.data.map((bar: Record<string, unknown>, index: number) => ({
+					...bar,
+					...prices[index],
+				}));
+				scene.symbol.pricePrecision = 3;
+				scene.panes[0].yAxes[0].scale = 'logarithmic';
+				selectedChartWorkspace.drawings.coordinateSystem.valueAxes[0].valuePrecision = 3;
+				selectedChartWorkspace.drawings.drawings = [];
+				selectedChartWorkspace.binding.valueAxes[0].valuePrecision = 3;
+			}
 			const adapter = kind === 'chart'
 				? await KLineChartsSceneAdapter.createWorkspace(
 						container,
-						chartWorkspace,
+						selectedChartWorkspace,
 						precisionTouch || exclusiveSelection
 							? {
 								drawingInteraction: {
@@ -179,6 +205,7 @@ async function installWorkspace(
 			timeSeriesWorkspace,
 			precisionTouch: options.precisionTouch,
 			exclusiveSelection: options.exclusiveSelection,
+			subUnitLogarithmic: options.subUnitLogarithmic,
 		},
 	);
 }
@@ -480,6 +507,74 @@ for (const kind of ['chart', 'time-series'] as const) {
 		});
 	});
 }
+
+test('@browser logarithmic sub-unit prices stay positive through projection and segment Drawing', async ({ page }) => {
+	await installWorkspace(page, 'chart', { subUnitLogarithmic: true });
+	const setup = await page.evaluate(() => {
+		const adapter = (window as unknown as {
+			__adapter: {
+				startDrawing(request: unknown): string;
+				subscribeDrawingEvents(
+					listener: (event: { readonly type: string; readonly id: string }) => void,
+				): () => void;
+				projectToPixel(
+					anchor: { readonly timestamp: number; readonly value: number },
+					paneRole: string,
+				): { readonly x: number; readonly y: number };
+				unprojectFromPixel(
+					point: { readonly x: number; readonly y: number },
+					paneRole: string,
+				): { readonly timestamp?: number; readonly value?: number };
+			};
+			__baronRequest(type: string, index: number, paneRole: string): unknown;
+		}).__adapter;
+		const events: string[] = [];
+		adapter.subscribeDrawingEvents((event) => events.push(`${event.type}:${event.id}`));
+		(window as unknown as { __drawingEvents: string[] }).__drawingEvents = events;
+		const projected = adapter.projectToPixel(
+			{ timestamp: 1784822400000, value: 0.79 },
+			'candle',
+		);
+		const unprojected = adapter.unprojectFromPixel(projected, 'candle');
+		adapter.startDrawing(
+			(window as unknown as {
+				__baronRequest(type: string, index: number, paneRole: string): unknown;
+			}).__baronRequest('segment', 0, 'candle'),
+		);
+		return { projected, unprojected };
+	});
+
+	expect(setup.unprojected.value).toBeCloseTo(0.79, 3);
+	for (const [x, y] of [[260, 260], [620, 360], [480, 300], [740, 340]] as const) {
+		await page.mouse.click(x, y);
+		await settle(page);
+		const created = await page.evaluate(() => (
+			window as unknown as { __drawingEvents: string[] }
+		).__drawingEvents.includes('created:port-segment-0'));
+		if (created) break;
+	}
+
+	const result = await page.evaluate(() => {
+		const adapter = (window as unknown as {
+			__adapter: {
+				getDrawing(id: string): {
+					readonly geometry: { readonly points: readonly { readonly value: number }[] };
+				} | undefined;
+			};
+			__drawingEvents: string[];
+		}).__adapter;
+		return {
+			drawing: adapter.getDrawing('port-segment-0'),
+			events: (window as unknown as { __drawingEvents: string[] }).__drawingEvents,
+		};
+	});
+	expect(result.events).toContain('created:port-segment-0');
+	expect(result.drawing?.geometry.points).toHaveLength(2);
+	for (const point of result.drawing!.geometry.points) {
+		expect(point.value).toBeGreaterThan(0);
+		expect(point.value).toBeLessThan(1);
+	}
+});
 
 test.describe('DrawingEnginePort precision touch Drawing', () => {
 	test('@browser touch drag moves the virtual cursor and only taps confirm segment anchors', async ({ browser }) => {

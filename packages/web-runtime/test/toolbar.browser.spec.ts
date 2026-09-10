@@ -1346,6 +1346,99 @@ test('@browser composite Drawing tool exits its selected state after geometry co
 	)).toBe('busy');
 });
 
+test('@browser sub-unit logarithmic segment commits and opens its floating toolbar', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const workspace = structuredClone(chartWorkspaceFixture);
+	const scene = workspace.scene.document;
+	const prices = [
+		{ open: 0.72, high: 0.78, low: 0.69, close: 0.74 },
+		{ open: 0.74, high: 0.82, low: 0.71, close: 0.79 },
+		{ open: 0.79, high: 0.84, low: 0.73, close: 0.76 },
+	];
+	scene.data = scene.data.map((bar: Record<string, unknown>, index: number) => ({
+		...bar,
+		...prices[index],
+	}));
+	scene.panes[0].yAxes[0].scale = 'logarithmic';
+	workspace.drawings.drawings = [];
+	await page.evaluate(async (input) => {
+		const {
+			createChartWorkspaceToolbar,
+			createDrawingFloatingToolbar,
+			createDrawableWorkspaceRuntime,
+		} = await import('/src/index.ts');
+		const chart = document.querySelector<HTMLElement>('#chart')!;
+		const left = document.createElement('div');
+		left.id = 'drawing-toolbar';
+		document.body.append(left);
+		const runtime = await createDrawableWorkspaceRuntime(
+			chart,
+			input,
+			{ commitMode: 'immediate' },
+		);
+		const workspaceToolbar = createChartWorkspaceToolbar(
+			{
+				top: document.querySelector<HTMLElement>('#toolbar')!,
+				left,
+			},
+			runtime,
+			{ fullscreenControl: 'hidden' },
+		);
+		const drawingToolbar = createDrawingFloatingToolbar(chart, runtime);
+		Object.assign(window, {
+			__subUnitRuntime: runtime,
+			__subUnitWorkspaceToolbar: workspaceToolbar,
+			__subUnitDrawingToolbar: drawingToolbar,
+		});
+	}, workspace);
+
+	const segment = page.locator('[data-overlay-type="segment"]');
+	await segment.click();
+	await expect(segment).toHaveAttribute('aria-pressed', 'true');
+	const canvas = page.locator('#chart canvas').nth(1);
+	for (const position of [
+		{ x: 240, y: 220 },
+		{ x: 520, y: 320 },
+		{ x: 700, y: 280 },
+		{ x: 420, y: 360 },
+	]) {
+		await canvas.click({ position });
+		await page.waitForTimeout(60);
+		const committed = await page.evaluate(() => (
+			window as unknown as { __subUnitRuntime: { listDrawings(): readonly unknown[] } }
+		).__subUnitRuntime.listDrawings().length === 1);
+		if (committed) break;
+	}
+
+	await expect.poll(() => page.evaluate(() => (
+		window as unknown as { __subUnitRuntime: { listDrawings(): readonly unknown[] } }
+	).__subUnitRuntime.listDrawings().length)).toBe(1);
+	await expect(page.locator('.baron-drawing-toolbar')).toBeVisible();
+	await expect(segment).toHaveAttribute('aria-pressed', 'false');
+	const result = await page.evaluate(() => {
+		const runtime = (window as unknown as {
+			__subUnitRuntime: {
+				getDrawingMutationState(): string;
+				getSelectedDrawingId(): string | undefined;
+				listDrawings(): ReadonlyArray<{
+					geometry: { points: readonly { value: number }[] };
+				}>;
+			};
+		}).__subUnitRuntime;
+		return {
+			state: runtime.getDrawingMutationState(),
+			selectedId: runtime.getSelectedDrawingId(),
+			values: runtime.listDrawings()[0]!.geometry.points.map((point) => point.value),
+		};
+	});
+	expect(result.state).toBe('ready');
+	expect(result.selectedId).toBeTruthy();
+	for (const value of result.values) {
+		expect(value).toBeGreaterThan(0);
+		expect(value).toBeLessThan(1);
+	}
+});
+
 test('@browser clear-all persists every unlocked Drawing deletion as one atomic candidate', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	const workspace = structuredClone(chartWorkspaceFixture);

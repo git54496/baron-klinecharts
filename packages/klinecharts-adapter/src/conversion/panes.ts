@@ -18,6 +18,18 @@ export function formatDefaultPriceAxisValue(value: number): string {
 	return (Object.is(rounded, -0) ? 0 : rounded).toFixed(2);
 }
 
+/**
+ * KLineCharts 10 的 logarithm 轴使用带符号的对数逆变换，因而会把
+ * 0 < price < 1 对应的负对数坐标还原成负价格。蜡烛主价格轴只接受正值，
+ * 可以在这里使用标准的正数域对数变换，保证像素投影与反投影互为逆运算。
+ */
+const positiveLogPriceAxisConversions = {
+	valueToRealValue: (value: number): number => Math.log10(value),
+	realValueToValue: (value: number): number => 10 ** value,
+	realValueToDisplayValue: (value: number): number => 10 ** value,
+	displayValueToRealValue: (value: number): number => Math.log10(value),
+};
+
 function axisOverride(
 	chart: Chart,
 	axis: SceneYAxis,
@@ -45,7 +57,10 @@ function axisOverride(
 			bottom: axis.bottomGap,
 		},
 		...(formatAsPrice
-			? { displayValueToText: (value: number) => formatDefaultPriceAxisValue(value) }
+			? {
+					displayValueToText: (value: number) => formatDefaultPriceAxisValue(value),
+					...(axis.scale === 'logarithmic' ? positiveLogPriceAxisConversions : {}),
+				}
 			: {}),
 		needWidget: true,
 	};
