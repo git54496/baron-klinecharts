@@ -368,6 +368,10 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	#deselectingPointerId: number | undefined;
 	/** 当前受控拖动事务；progress 永不写入 #scene。 */
 	#pointerInteraction: PointerInteraction | undefined;
+	/** 从坐标轴等非主绘图区开始的 Pointer；期间禁止引擎 Overlay 产生选择或编辑。 */
+	readonly #outsideMainPointerIds = new Set<number>();
+	/** 为隔离非主绘图区手势而临时锁定、手势结束后需恢复的 Overlay。 */
+	readonly #temporarilyLockedOverlayIds = new Set<string>();
 	/** 当前交互式量度的首锚点；只用于补偿引擎丢弃快速第二击，不进入 Scene。 */
 	#interactivePriceMeasurement: InteractivePriceMeasurement | undefined;
 	/** 当前引擎进行中的绘制 Overlay ID；非 null 时 pointerdown 只路由给新绘制，不做命中测试。 */
@@ -1257,17 +1261,29 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				this.#safelyCommitEngineOverlay(overlay, source, drawing ? 'created' : 'updated');
 			},
 			onPressedMoveStart: ({ overlay }) => {
+				if (this.#outsideMainPointerIds.size > 0) {
+					return;
+				}
 				this.#selectOverlay(overlay.id);
 			},
 			onPressedMoveEnd: ({ overlay }) => {
+				if (this.#outsideMainPointerIds.size > 0) {
+					return;
+				}
 				if (!isControlledInteractionOverlay(source as SceneOverlay)) {
 					this.#safelyCommitEngineOverlay(overlay, source, 'updated');
 				}
 			},
 			onSelected: ({ overlay }) => {
+				if (this.#outsideMainPointerIds.size > 0) {
+					return;
+				}
 				this.#selectOverlay(overlay.id);
 			},
 			onDeselected: (event) => {
+				if (this.#outsideMainPointerIds.size > 0) {
+					return;
+				}
 				const eventX = event.x;
 				const eventY = event.y;
 				const coordinate =
@@ -1497,6 +1513,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		});
 		window.addEventListener('keydown', this.#handleKeyDown);
 		window.addEventListener('blur', this.#handleWindowBlur);
+		window.addEventListener('pointerup', this.#handleOutsideMainPointerEnd, true);
+		window.addEventListener('pointercancel', this.#handleOutsideMainPointerEnd, true);
 	}
 
 	#removeInteractionListeners(): void {
@@ -1513,6 +1531,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#container.removeEventListener('touchcancel', this.#handleCompatibilityTouch, true);
 		window.removeEventListener('keydown', this.#handleKeyDown);
 		window.removeEventListener('blur', this.#handleWindowBlur);
+		window.removeEventListener('pointerup', this.#handleOutsideMainPointerEnd, true);
+		window.removeEventListener('pointercancel', this.#handleOutsideMainPointerEnd, true);
 	}
 
 	readonly #handleRightMouseDown = (event: MouseEvent): void => {
@@ -1565,6 +1585,68 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		const rect = this.#container.getBoundingClientRect();
 		return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 	}
+
+	#isInsidePaneMain(point: PixelCoordinate): boolean {
+		const containerRect = this.#container.getBoundingClientRect();
+		return this.#scene.panes.some((pane) => {
+			const enginePaneId = this.#idMap.paneToEngine.get(pane.id);
+			if (enginePaneId === undefined) {
+				return false;
+			}
+			const main = this.#chart.getDom(enginePaneId, 'main');
+			if (!(main instanceof HTMLElement)) {
+				return false;
+			}
+			const mainRect = main.getBoundingClientRect();
+			const left = mainRect.left - containerRect.left;
+			const top = mainRect.top - containerRect.top;
+			const right = mainRect.right - containerRect.left;
+			const bottom = mainRect.bottom - containerRect.top;
+			return point.x >= left && point.x < right && point.y >= top && point.y < bottom;
+		});
+	}
+
+	#beginOutsideMainInteraction(pointerId: number): void {
+		if (this.#outsideMainPointerIds.has(pointerId)) {
+			return;
+		}
+		if (this.#outsideMainPointerIds.size === 0) {
+			for (const overlay of this.#activeOverlays()) {
+				if (!overlay.locked && this.#chart.overrideOverlay({ id: overlay.id, lock: true })) {
+					this.#temporarilyLockedOverlayIds.add(overlay.id);
+				}
+			}
+		}
+		this.#outsideMainPointerIds.add(pointerId);
+	}
+
+	#restoreOutsideMainInteraction(): void {
+		if (this.#outsideMainPointerIds.size > 0) {
+			return;
+		}
+		const ids = [...this.#temporarilyLockedOverlayIds];
+		this.#temporarilyLockedOverlayIds.clear();
+		if (this.#disposed) {
+			return;
+		}
+		const overlays = this.#activeOverlays();
+		for (const id of ids) {
+			const overlay = overlays.find((candidate) => candidate.id === id);
+			if (overlay !== undefined) {
+				this.#chart.overrideOverlay({ id, lock: overlay.locked });
+			}
+		}
+	}
+
+	readonly #handleOutsideMainPointerEnd = (event: PointerEvent): void => {
+		if (!this.#outsideMainPointerIds.has(event.pointerId)) {
+			return;
+		}
+		window.setTimeout(() => {
+			this.#outsideMainPointerIds.delete(event.pointerId);
+			this.#restoreOutsideMainInteraction();
+		}, 0);
+	};
 
 	#primaryAxisFilter(paneId: string): { paneId: string; yAxisId: string; absolute: true } {
 		const pane = this.#scene.panes.find((candidate) => candidate.id === paneId);
@@ -1927,10 +2009,14 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		) {
 			return;
 		}
+		const coordinate = this.#pointerCoordinate(event);
+		if (!this.#isInsidePaneMain(coordinate)) {
+			this.#beginOutsideMainInteraction(event.pointerId);
+			return;
+		}
 		if (this.#routeTouchPrecisionPointerDown(event)) {
 			return;
 		}
-		const coordinate = this.#pointerCoordinate(event);
 		const measurement = this.#interactivePriceMeasurement;
 		if (measurement !== undefined) {
 			try {
@@ -2204,6 +2290,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	};
 
 	readonly #handleWindowBlur = (): void => {
+		this.#outsideMainPointerIds.clear();
+		this.#restoreOutsideMainInteraction();
 		if (this.#touchPrecisionDrawing !== undefined) {
 			this.#cancelTouchPrecisionDrawing(true);
 		}
@@ -3340,6 +3428,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#selectionAnchors = undefined;
 		this.#interactivePriceMeasurement = undefined;
 		this.#drawingInProgressId = null;
+		this.#outsideMainPointerIds.clear();
+		this.#temporarilyLockedOverlayIds.clear();
 		this.#disposed = true;
 		this.#removeInteractionListeners();
 		this.#unsubscribeCrosshair?.();

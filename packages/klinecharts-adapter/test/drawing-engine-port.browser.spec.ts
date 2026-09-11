@@ -443,6 +443,155 @@ for (const kind of ['chart', 'time-series'] as const) {
 			expect(drawingCount).toBe(1);
 		});
 
+		test('@browser axis clicks inside Drawing tolerance stay outside Drawing interaction', async ({ page }) => {
+			await installWorkspace(page, kind);
+			const paneRole = kind === 'chart' ? 'candle' : 'time-series';
+			await page.locator(
+				kind === 'chart' ? '#chart' : '#chart-time-series',
+			).scrollIntoViewIfNeeded();
+			const setup = await page.evaluate(({ kind, paneRole }) => {
+				const adapter = (window as unknown as {
+					__adapter: {
+						restoreDrawings(drawings: unknown[]): void;
+						projectToPixel(
+							anchor: { readonly timestamp: number; readonly value: number },
+							paneRole: string,
+						): { readonly x: number; readonly y: number };
+						subscribeDrawingEvents(
+							listener: (event: { readonly type: string; readonly id: string }) => void,
+						): () => void;
+					};
+					__baronSnapshots(types: string[], paneRole: string): unknown[];
+				}).__adapter;
+				adapter.restoreDrawings(
+					(window as unknown as {
+						__baronSnapshots(types: string[], paneRole: string): unknown[];
+					}).__baronSnapshots(
+						['horizontalStraightLine', 'verticalStraightLine'],
+						paneRole,
+					),
+				);
+				const events: string[] = [];
+				adapter.subscribeDrawingEvents((event) => {
+					events.push(`${event.type}:${event.id}`);
+				});
+				(window as unknown as { __drawingEvents: string[] }).__drawingEvents = events;
+
+				const container = document.querySelector<HTMLElement>(
+					kind === 'chart' ? '#chart' : '#chart-time-series',
+				)!;
+				const canvases = [...container.querySelectorAll('canvas')]
+					.map((canvas) => canvas.getBoundingClientRect());
+				const main = canvases.toSorted(
+					(left, right) => right.width * right.height - left.width * left.height,
+				)[0]!;
+				const yAxis = canvases.find((rect) =>
+					rect.width < main.width &&
+					Math.abs(rect.height - main.height) < 1 &&
+					(rect.left >= main.right - 0.5 || rect.right <= main.left + 0.5));
+				if (yAxis === undefined) {
+					throw new Error('Y-axis canvas was not found.');
+				}
+				const xAxis = kind === 'chart'
+					? canvases.find((rect) =>
+							rect.height < main.height &&
+							Math.abs(rect.width - main.width) < 1 &&
+							(rect.top >= main.bottom - 0.5 || rect.bottom <= main.top + 0.5))
+					: undefined;
+				if (kind === 'chart' && xAxis === undefined) {
+					throw new Error('X-axis canvas was not found.');
+				}
+				const projected = adapter.projectToPixel(
+					{ timestamp: 1784822400000, value: 12.55 },
+					paneRole,
+				);
+				const containerRect = container.getBoundingClientRect();
+				const rightSide = yAxis.left >= main.right - 0.5;
+				const yAxisX = rightSide ? yAxis.left + 6 : yAxis.right - 6;
+				const bottomSide = xAxis === undefined ? false : xAxis.top >= main.bottom - 0.5;
+				const xAxisY = xAxis === undefined
+					? null
+					: bottomSide ? xAxis.top + 6 : xAxis.bottom - 6;
+				return {
+					yAxisPoint: { x: yAxisX, y: containerRect.top + projected.y },
+					xAxisPoint: xAxisY === null
+						? null
+						: { x: containerRect.left + projected.x, y: xAxisY },
+					yAxisDistanceFromMain: rightSide
+						? yAxisX - main.right
+						: main.left - yAxisX,
+					xAxisDistanceFromMain: xAxisY === null ? null : bottomSide
+						? xAxisY - main.bottom
+						: main.top - xAxisY,
+					insideYAxis: yAxisX >= yAxis.left && yAxisX < yAxis.right,
+					insideXAxis: xAxisY !== null && xAxis !== undefined
+						? xAxisY >= xAxis.top && xAxisY < xAxis.bottom
+						: null,
+				};
+			}, { kind, paneRole });
+
+			expect(setup.insideYAxis).toBe(true);
+			expect(setup.yAxisDistanceFromMain).toBeGreaterThanOrEqual(0);
+			expect(setup.yAxisDistanceFromMain).toBeLessThan(12);
+			await page.mouse.click(setup.yAxisPoint.x, setup.yAxisPoint.y);
+			await settle(page);
+			let events = await page.evaluate(() => (
+				window as unknown as { __drawingEvents: string[] }
+			).__drawingEvents.splice(0));
+			expect(events).toEqual([]);
+
+			await page.mouse.move(setup.yAxisPoint.x, setup.yAxisPoint.y);
+			await page.mouse.down();
+			await page.mouse.move(setup.yAxisPoint.x, setup.yAxisPoint.y + 24, { steps: 3 });
+			await page.mouse.up();
+			await settle(page);
+			events = await page.evaluate(() => (
+				window as unknown as { __drawingEvents: string[] }
+			).__drawingEvents.splice(0));
+			expect(events).toEqual([]);
+
+			if (kind === 'chart') {
+				expect(setup.insideXAxis).toBe(true);
+				expect(setup.xAxisDistanceFromMain).toBeGreaterThanOrEqual(0);
+				expect(setup.xAxisDistanceFromMain).toBeLessThan(12);
+				await page.mouse.click(setup.xAxisPoint!.x, setup.xAxisPoint!.y);
+				await settle(page);
+				events = await page.evaluate(() => (
+					window as unknown as { __drawingEvents: string[] }
+				).__drawingEvents.splice(0));
+				expect(events).toEqual([]);
+			}
+
+			const mainPoint = await page.evaluate(({ kind, paneRole }) => {
+				const adapter = (window as unknown as {
+					__adapter: {
+						projectToPixel(
+							anchor: { readonly timestamp: number; readonly value: number },
+							paneRole: string,
+						): { readonly x: number; readonly y: number };
+					};
+				}).__adapter;
+				const container = document.querySelector<HTMLElement>(
+					kind === 'chart' ? '#chart' : '#chart-time-series',
+				)!;
+				const main = [...container.querySelectorAll('canvas')]
+					.map((canvas) => canvas.getBoundingClientRect())
+					.toSorted((left, right) =>
+						right.width * right.height - left.width * left.height)[0]!;
+				const projected = adapter.projectToPixel(
+					{ timestamp: 1784822400000, value: 12.55 },
+					paneRole,
+				);
+				return { x: main.right - 24, y: container.getBoundingClientRect().top + projected.y };
+			}, { kind, paneRole });
+			await page.mouse.click(mainPoint.x, mainPoint.y);
+			await settle(page);
+			events = await page.evaluate(() => (
+				window as unknown as { __drawingEvents: string[] }
+			).__drawingEvents.splice(0));
+			expect(events.some((event) => event.startsWith('selected:'))).toBe(true);
+		});
+
 		test('@browser starts and completes every Drawing type through engine interaction', async ({ page }) => {
 			await installWorkspace(page, kind);
 			const paneRole = kind === 'chart' ? 'candle' : 'time-series';

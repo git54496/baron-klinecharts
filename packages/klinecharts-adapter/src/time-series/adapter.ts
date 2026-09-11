@@ -228,6 +228,10 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 	readonly #crosshairListeners = new Set<TimeSeriesAdapterCrosshairListener>();
 	/** 当前受控拖拽会话。 */
 	#pointerInteraction: PointerInteraction | undefined;
+	/** 从坐标轴等非主绘图区开始的 Pointer；期间禁止引擎 Overlay 产生选择或编辑。 */
+	readonly #outsideMainPointerIds = new Set<number>();
+	/** 为隔离非主绘图区手势而临时锁定、手势结束后需恢复的 Overlay。 */
+	readonly #temporarilyLockedOverlayIds = new Set<string>();
 	/** 内部确定性交互序号。 */
 	#interactionSequence = 0;
 	/** 防止重复销毁底层引擎。 */
@@ -681,17 +685,29 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 				this.#safelyCommitEngineOverlay(overlay, source, drawing ? 'created' : 'updated');
 			},
 			onPressedMoveStart: ({ overlay }) => {
+				if (this.#outsideMainPointerIds.size > 0) {
+					return;
+				}
 				this.#selectOverlay(overlay.id);
 			},
 			onPressedMoveEnd: ({ overlay }) => {
+				if (this.#outsideMainPointerIds.size > 0) {
+					return;
+				}
 				if (!isControlledInteractionOverlay(source as SceneOverlay)) {
 					this.#safelyCommitEngineOverlay(overlay, source, 'updated');
 				}
 			},
 			onSelected: ({ overlay }) => {
+				if (this.#outsideMainPointerIds.size > 0) {
+					return;
+				}
 				this.#selectOverlay(overlay.id);
 			},
 			onDeselected: (event) => {
+				if (this.#outsideMainPointerIds.size > 0) {
+					return;
+				}
 				const eventX = event.x;
 				const eventY = event.y;
 				const coordinate =
@@ -862,6 +878,66 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 		};
 	}
 
+	#pointerCoordinate(event: PointerEvent): PixelCoordinate {
+		const rect = this.#container.getBoundingClientRect();
+		return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+	}
+
+	#isInsidePaneMain(point: PixelCoordinate): boolean {
+		const main = this.#chart.getDom(TIME_SERIES_PANE_ID, 'main');
+		if (!(main instanceof HTMLElement)) {
+			return false;
+		}
+		const containerRect = this.#container.getBoundingClientRect();
+		const mainRect = main.getBoundingClientRect();
+		const left = mainRect.left - containerRect.left;
+		const top = mainRect.top - containerRect.top;
+		const right = mainRect.right - containerRect.left;
+		const bottom = mainRect.bottom - containerRect.top;
+		return point.x >= left && point.x < right && point.y >= top && point.y < bottom;
+	}
+
+	#beginOutsideMainInteraction(pointerId: number): void {
+		if (this.#outsideMainPointerIds.has(pointerId)) {
+			return;
+		}
+		if (this.#outsideMainPointerIds.size === 0) {
+			for (const overlay of this.#drawings) {
+				if (!overlay.locked && this.#chart.overrideOverlay({ id: overlay.id, lock: true })) {
+					this.#temporarilyLockedOverlayIds.add(overlay.id);
+				}
+			}
+		}
+		this.#outsideMainPointerIds.add(pointerId);
+	}
+
+	#restoreOutsideMainInteraction(): void {
+		if (this.#outsideMainPointerIds.size > 0) {
+			return;
+		}
+		const ids = [...this.#temporarilyLockedOverlayIds];
+		this.#temporarilyLockedOverlayIds.clear();
+		if (this.#disposed) {
+			return;
+		}
+		for (const id of ids) {
+			const overlay = this.#drawings.find((candidate) => candidate.id === id);
+			if (overlay !== undefined) {
+				this.#chart.overrideOverlay({ id, lock: overlay.locked });
+			}
+		}
+	}
+
+	readonly #handleOutsideMainPointerEnd = (event: PointerEvent): void => {
+		if (!this.#outsideMainPointerIds.has(event.pointerId)) {
+			return;
+		}
+		window.setTimeout(() => {
+			this.#outsideMainPointerIds.delete(event.pointerId);
+			this.#restoreOutsideMainInteraction();
+		}, 0);
+	};
+
 	#overlayGeometries(): readonly OverlayPixelGeometry[] {
 		const geometries: OverlayPixelGeometry[] = [];
 		for (let index = 0; index < this.#drawings.length; index++) {
@@ -934,10 +1010,11 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 		) {
 			return;
 		}
-		const coordinate = (() => {
-			const rect = this.#container.getBoundingClientRect();
-			return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-		})();
+		const coordinate = this.#pointerCoordinate(event);
+		if (!this.#isInsidePaneMain(coordinate)) {
+			this.#beginOutsideMainInteraction(event.pointerId);
+			return;
+		}
 		const drawing = this.#interactiveDrawing;
 		if (drawing !== null) {
 			try {
@@ -1105,6 +1182,8 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 		this.#container.addEventListener('pointercancel', this.#handlePointerCancel, true);
 		window.addEventListener('keydown', this.#handleKeyDown);
 		window.addEventListener('blur', this.#handleWindowBlur);
+		window.addEventListener('pointerup', this.#handleOutsideMainPointerEnd, true);
+		window.addEventListener('pointercancel', this.#handleOutsideMainPointerEnd, true);
 	}
 
 	#removeInteractionListeners(): void {
@@ -1116,6 +1195,8 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 		this.#container.removeEventListener('pointercancel', this.#handlePointerCancel, true);
 		window.removeEventListener('keydown', this.#handleKeyDown);
 		window.removeEventListener('blur', this.#handleWindowBlur);
+		window.removeEventListener('pointerup', this.#handleOutsideMainPointerEnd, true);
+		window.removeEventListener('pointercancel', this.#handleOutsideMainPointerEnd, true);
 	}
 
 	readonly #handleRightMouseDown = (event: MouseEvent): void => {
@@ -1142,6 +1223,8 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 	};
 
 	readonly #handleWindowBlur = (): void => {
+		this.#outsideMainPointerIds.clear();
+		this.#restoreOutsideMainInteraction();
 		if (this.#pointerInteraction !== undefined) {
 			this.#pointerInteraction = undefined;
 			this.#selectedOverlayId = null;
@@ -1530,6 +1613,8 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 		if (this.#disposed) {
 			return;
 		}
+		this.#outsideMainPointerIds.clear();
+		this.#temporarilyLockedOverlayIds.clear();
 		this.#disposed = true;
 		this.#removeInteractionListeners();
 		this.#chart.unsubscribeAction('onCrosshairChange', this.#handleCrosshair);
