@@ -114,11 +114,12 @@ export async function clearDrawings(page: Page): Promise<void> {
 		const runtime = (window as unknown as {
 			__runtime: {
 				listDrawings(): readonly { readonly id: string }[];
-				removeDrawing(id: string): boolean;
+				removeDrawings(ids: readonly string[]): boolean;
 			};
 		}).__runtime;
-		for (const drawing of runtime.listDrawings()) {
-			runtime.removeDrawing(drawing.id);
+		const ids = runtime.listDrawings().map((drawing) => drawing.id);
+		if (ids.length > 0 && !runtime.removeDrawings(ids)) {
+			throw new Error('Workspace Drawings batch removal was rejected.');
 		}
 	});
 	for (let attempt = 0; attempt < 20; attempt++) {
@@ -261,24 +262,41 @@ export async function runBasicJourney(
 				exportWorkspace(): { readonly drawings: { readonly drawings: readonly unknown[] } };
 			};
 		}).__runtime;
+		const events = (window as unknown as {
+			__events: readonly { readonly type: string }[];
+		}).__events;
+		const committedCount = (): number =>
+			events.filter((event) => event.type === 'drawing-committed').length;
+		const waitForNextCommit = async (previousCount: number): Promise<void> => {
+			for (let attempt = 0; attempt < 25; attempt++) {
+				if (committedCount() > previousCount) return;
+				await new Promise<void>((resolve) => setTimeout(resolve, 20));
+			}
+			throw new Error('Drawing mutation was not committed before the next action.');
+		};
 		const drawing = runtime.getDrawing(id)!;
 		const exported = runtime.exportWorkspace();
+		let previousCount = committedCount();
 		const styleUpdated = Boolean(
 			runtime.updateDrawingStyles(id, {
 				...structuredClone(drawing.styles),
 				line: { ...structuredClone(drawing.styles.line), size: 3 },
 			}),
 		);
+		await waitForNextCommit(previousCount);
 		const textTypes = new Set(['simpleTag', 'simpleAnnotation', 'callout', 'text']);
 		let textUpdated = false;
 		if (textTypes.has(drawing.type)) {
+			previousCount = committedCount();
 			runtime.updateDrawingText(id, 'matrix-text');
+			await waitForNextCommit(previousCount);
 			textUpdated = true;
 		}
 		runtime.selectDrawing(id);
 		const selected = runtime.getSelectedDrawingId() ?? null;
+		previousCount = committedCount();
 		const removed = runtime.removeDrawing(id);
-		await new Promise<void>((resolve) => setTimeout(resolve, 80));
+		await waitForNextCommit(previousCount);
 		const finalCount = runtime.exportWorkspace().drawings.drawings.length;
 		return {
 			started: id,

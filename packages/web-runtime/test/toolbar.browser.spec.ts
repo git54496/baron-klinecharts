@@ -1163,10 +1163,14 @@ test('@browser chart controls stay in the main toolbar and Drawing controls use 
 	// 清空已有 Drawing，避免右键命中干扰。
 	await page.evaluate(() => {
 		const runtime = (window as unknown as {
-			__runtime: { listDrawings(): readonly { readonly id: string }[]; removeDrawing(id: string): boolean };
+			__runtime: {
+				listDrawings(): readonly { readonly id: string }[];
+				removeDrawings(ids: readonly string[]): boolean;
+			};
 		}).__runtime;
-		for (const drawing of runtime.listDrawings()) {
-			runtime.removeDrawing(drawing.id);
+		const ids = runtime.listDrawings().map((drawing) => drawing.id);
+		if (ids.length > 0 && !runtime.removeDrawings(ids)) {
+			throw new Error('Workspace Drawings batch removal was rejected.');
 		}
 	});
 	await expect.poll(() => page.evaluate(
