@@ -832,6 +832,67 @@ test('@browser composite chart toolbar keeps controls in one horizontally scroll
 	expect(result.topScrollWidth).toBeGreaterThan(result.topClientWidth);
 });
 
+test('@browser indicator menu independently toggles volume and turnover panes', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const result = await page.evaluate(async (workspace) => {
+		const scene = workspace.scene.document;
+		const colors = {
+			upColor: 'rgba(239, 83, 80, 1)',
+			downColor: 'rgba(38, 166, 154, 1)',
+			noChangeColor: 'rgba(120, 123, 134, 1)',
+		};
+		for (const [kind, name, order] of [
+			['volume', 'VOL', 1], ['turnover', 'TURNOVER', 2],
+		] as const) {
+			scene.panes.push({
+				id: `pane-${kind}`, kind: 'indicator', order,
+				height: 120, minHeight: 90, state: 'normal',
+				yAxes: [{ id: `axis-${kind}`, role: 'primary', position: 'right',
+					reverse: false, inside: false, scrollZoomEnabled: false,
+					topGap: 0.1, bottomGap: 0, scale: 'linear' }],
+				indicators: [{ id: `indicator-${kind}`, name, paneId: `pane-${kind}`,
+					yAxisId: `axis-${kind}`, calcParams: name === 'VOL' ? [5, 10, 20] : [],
+					precision: 8, visible: true, zLevel: 0,
+					styles: { lines: [], bars: [colors], circles: [] } }],
+			});
+		}
+		const { createChartWorkspaceToolbar, createDrawableWorkspaceRuntime } = await import('/src/index.ts');
+		const runtime = await createDrawableWorkspaceRuntime(
+			document.querySelector<HTMLElement>('#chart')!, workspace, { commitMode: 'immediate' },
+		);
+		const left = document.createElement('div');
+		document.body.append(left);
+		const toolbar = createChartWorkspaceToolbar({
+			top: document.querySelector<HTMLElement>('#toolbar')!, left,
+		}, runtime, {
+			indicatorPaneActions: [
+				{ paneId: 'pane-volume', label: '成交量', visible: true },
+				{ paneId: 'pane-turnover', label: '成交额', visible: true },
+			],
+			fullscreenControl: 'hidden',
+		});
+		toolbar.topElement.querySelector<HTMLButtonElement>('[data-action="main-indicators"]')!.click();
+		const volume = document.querySelector<HTMLButtonElement>('[data-indicator-pane-id="pane-volume"]')!;
+		const turnover = document.querySelector<HTMLButtonElement>('[data-indicator-pane-id="pane-turnover"]')!;
+		turnover.click();
+		const afterTurnover = (runtime.exportWorkspace().scene.document as typeof scene).panes
+			.slice(1).map((pane: { indicators: Array<{ visible: boolean }> }) => pane.indicators[0]!.visible);
+		volume.click();
+		const afterBoth = (runtime.exportWorkspace().scene.document as typeof scene).panes
+			.slice(1).map((pane: { indicators: Array<{ visible: boolean }> }) => pane.indicators[0]!.visible);
+		turnover.click();
+		const afterRestore = (runtime.exportWorkspace().scene.document as typeof scene).panes
+			.slice(1).map((pane: { indicators: Array<{ visible: boolean }> }) => pane.indicators[0]!.visible);
+		const pressed = [volume.getAttribute('aria-pressed'), turnover.getAttribute('aria-pressed')];
+		toolbar.destroy(); runtime.destroy(); left.remove();
+		return { afterTurnover, afterBoth, afterRestore, pressed };
+	}, chartWorkspaceFixture);
+	expect(result).toEqual({
+		afterTurnover: [true, false], afterBoth: [false, false],
+		afterRestore: [false, true], pressed: ['false', 'true'],
+	});
+});
+
 test('@browser price-scale controls expose host drawing state and delegate switching', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	const result = await page.evaluate(async (workspace) => {

@@ -83,79 +83,87 @@ export function overrideSceneYAxis(
 /** 按 Scene 顺序创建 Pane、Y 轴和指标，并核对每个映射。 */
 export function applyPanes(scene: ChartScene, chart: Chart, idMap: EngineIdMap): void {
 	for (let paneIndex = 0; paneIndex < scene.panes.length; paneIndex++) {
-		const pane = scene.panes[paneIndex];
-		if (pane === undefined) {
+		applyPane(scene, chart, idMap, paneIndex);
+	}
+}
+
+/** 恢复一个先前关闭的指标窗格，沿用初始创建时的轴与布局配置。 */
+export function applyPane(scene: ChartScene, chart: Chart, idMap: EngineIdMap, paneIndex: number): void {
+	const pane = scene.panes[paneIndex];
+	if (
+		pane === undefined ||
+		(pane.kind === 'indicator' && !pane.indicators.some((indicator) => indicator.visible))
+	) {
+		return;
+	}
+	const enginePaneId = requireMappedId(
+		idMap.paneToEngine,
+		pane.id,
+		`/panes/${paneIndex}/id`,
+		'Pane',
+	);
+	if (pane.indicators.length > 0) {
+		createPaneIndicators(chart, pane, paneIndex, idMap);
+	}
+	chart.setPaneOptions({
+		id: enginePaneId,
+		height: pane.height,
+		minHeight: pane.minHeight,
+		order: pane.order,
+		state: pane.state,
+		dragEnabled: false,
+	});
+	for (let axisIndex = 0; axisIndex < pane.yAxes.length; axisIndex++) {
+		const axis = pane.yAxes[axisIndex];
+		if (axis === undefined) {
 			continue;
 		}
-		const enginePaneId = requireMappedId(
-			idMap.paneToEngine,
-			pane.id,
-			`/panes/${paneIndex}/id`,
-			'Pane',
+		const engineAxisId = requireMappedId(
+			idMap.yAxisToEngine,
+			axis.id,
+			`/panes/${paneIndex}/yAxes/${axisIndex}/id`,
+			'Y-axis',
 		);
-		if (pane.indicators.length > 0) {
-			createPaneIndicators(chart, pane, paneIndex, idMap);
-		}
-		chart.setPaneOptions({
-			id: enginePaneId,
-			height: pane.height,
-			minHeight: pane.minHeight,
-			order: pane.order,
-			state: pane.state,
-			dragEnabled: false,
-		});
-		for (let axisIndex = 0; axisIndex < pane.yAxes.length; axisIndex++) {
-			const axis = pane.yAxes[axisIndex];
-			if (axis === undefined) {
-				continue;
-			}
-			const engineAxisId = requireMappedId(
-				idMap.yAxisToEngine,
-				axis.id,
-				`/panes/${paneIndex}/yAxes/${axisIndex}/id`,
-				'Y-axis',
-			);
-			const override = axisOverride(
-				chart,
-				axis,
-				enginePaneId,
-				engineAxisId,
-				pane.kind === 'candle' && axis.role === 'primary',
-			);
-			const axes = chart.getYAxes({ paneId: enginePaneId }) as IdentifiedYAxis[];
-			if (axes.some((candidate) => candidate.id === engineAxisId)) {
-				chart.overrideYAxis(override);
-			} else {
-				const createdId = chart.createYAxis(override);
-				if (createdId !== engineAxisId) {
-					throw new SceneError(
-						'RUNTIME_INIT_FAILED',
-						`/panes/${paneIndex}/yAxes/${axisIndex}`,
-						`KLineCharts failed to create Y-axis ${axis.id}.`,
-					);
-				}
-			}
-		}
-		const paneOptions = chart.getPaneOptions(enginePaneId);
-		if (paneOptions === null || Array.isArray(paneOptions)) {
-			throw new SceneError(
-				'RUNTIME_INIT_FAILED',
-				`/panes/${paneIndex}`,
-				`KLineCharts did not retain Pane ${pane.id}.`,
-			);
-		}
-		const actualAxisIds = new Set(
-			(chart.getYAxes({ paneId: enginePaneId }) as IdentifiedYAxis[]).map((axis) => axis.id),
+		const override = axisOverride(
+			chart,
+			axis,
+			enginePaneId,
+			engineAxisId,
+			pane.kind === 'candle' && axis.role === 'primary',
 		);
-		for (const axis of pane.yAxes) {
-			const mapped = idMap.yAxisToEngine.get(axis.id);
-			if (mapped === undefined || !actualAxisIds.has(mapped)) {
+		const axes = chart.getYAxes({ paneId: enginePaneId }) as IdentifiedYAxis[];
+		if (axes.some((candidate) => candidate.id === engineAxisId)) {
+			chart.overrideYAxis(override);
+		} else {
+			const createdId = chart.createYAxis(override);
+			if (createdId !== engineAxisId) {
 				throw new SceneError(
 					'RUNTIME_INIT_FAILED',
-					`/panes/${paneIndex}/yAxes`,
-					`KLineCharts did not retain Y-axis ${axis.id}.`,
+					`/panes/${paneIndex}/yAxes/${axisIndex}`,
+					`KLineCharts failed to create Y-axis ${axis.id}.`,
 				);
 			}
+		}
+	}
+	const paneOptions = chart.getPaneOptions(enginePaneId);
+	if (paneOptions === null || Array.isArray(paneOptions)) {
+		throw new SceneError(
+			'RUNTIME_INIT_FAILED',
+			`/panes/${paneIndex}`,
+			`KLineCharts did not retain Pane ${pane.id}.`,
+		);
+	}
+	const actualAxisIds = new Set(
+		(chart.getYAxes({ paneId: enginePaneId }) as IdentifiedYAxis[]).map((axis) => axis.id),
+	);
+	for (const axis of pane.yAxes) {
+		const mapped = idMap.yAxisToEngine.get(axis.id);
+		if (mapped === undefined || !actualAxisIds.has(mapped)) {
+			throw new SceneError(
+				'RUNTIME_INIT_FAILED',
+				`/panes/${paneIndex}/yAxes`,
+				`KLineCharts did not retain Y-axis ${axis.id}.`,
+			);
 		}
 	}
 }

@@ -132,6 +132,7 @@ export interface IndicatorEnginePort {
 	listIndicators(): readonly SceneIndicator[];
 	addIndicator(indicator: SceneIndicator): SceneIndicator;
 	removeIndicator(id: string): boolean;
+	setIndicatorPaneVisible?(paneId: string, visible: boolean): boolean;
 }
 
 /** 仅影响日期展示的时区端口，不修改 Scene 与 Drawing 坐标语义。 */

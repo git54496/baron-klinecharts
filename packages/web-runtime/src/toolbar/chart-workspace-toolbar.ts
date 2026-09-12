@@ -3,6 +3,7 @@ import { SUPPORTED_OVERLAYS } from '@baron1996/klinecharts-adapter';
 import type {
 	DisplayTimezoneRuntimeCapability,
 	DrawingRuntimeCapability,
+	IndicatorPaneRuntimeCapability,
 	MainIndicatorRuntimeCapability,
 	RuntimeAuxiliaryCapability,
 } from '../drawing/capabilities.js';
@@ -22,7 +23,14 @@ import {
 type ChartWorkspaceRuntime = DrawingRuntimeCapability &
 	RuntimeAuxiliaryCapability &
 	MainIndicatorRuntimeCapability &
-	DisplayTimezoneRuntimeCapability;
+	DisplayTimezoneRuntimeCapability &
+	Partial<IndicatorPaneRuntimeCapability>;
+
+export interface WorkspaceToolbarIndicatorPaneAction {
+	readonly paneId: string;
+	readonly label: string;
+	readonly visible: boolean;
+}
 
 export interface WorkspaceToolbarTimezoneChoice {
 	/** 宿主持久化使用的稳定语义值，例如 instrument、local、utc。 */
@@ -38,6 +46,9 @@ export interface WorkspaceToolbarPriceScaleState {
 }
 
 export interface ChartWorkspaceToolbarOptions {
+	/** “指标”菜单中的独立副图开关，由宿主决定显示哪些窗格。 */
+	readonly indicatorPaneActions?: readonly WorkspaceToolbarIndicatorPaneAction[];
+	readonly onIndicatorPaneVisibilityChange?: (paneId: string, visible: boolean) => void;
 	/** 顶部直接展示的周期动作；点击后仍通过 host-action-requested 交给宿主取数。 */
 	readonly periodActions?: readonly HostActionDescriptor[];
 	/** 顶部直接展示的宿主动作用于前复权等业务配置。 */
@@ -68,6 +79,7 @@ export interface ChartWorkspaceToolbar {
 	readonly topElement: HTMLElement;
 	readonly leftElement: HTMLElement;
 	setDataActionsDisabled(disabled: boolean): void;
+	setIndicatorPaneState(paneId: string, visible: boolean): void;
 	setDrawingActionsDisabled(disabled: boolean): void;
 	setHostActionState(
 		actionId: string,
@@ -566,7 +578,7 @@ export function createChartWorkspaceToolbar(
 	primarySection.append(divider);
 
 	const indicatorButton = createButton({
-		label: '主图指标',
+		label: '指标',
 		text: '指标',
 		icon: 'indicator',
 	});
@@ -624,6 +636,38 @@ export function createChartWorkspaceToolbar(
 		indicatorGrid.append(button);
 	}
 	indicatorPopover.element.append(indicatorTitle, indicatorGrid);
+	const indicatorPaneButtons = new Map<string, HTMLButtonElement>();
+	if ((options.indicatorPaneActions?.length ?? 0) > 0) {
+		if (typeof runtime.setIndicatorPaneVisible !== 'function') {
+			throw new TypeError('CHART_WORKSPACE_TOOLBAR_INDICATOR_PANES_UNSUPPORTED');
+		}
+		const paneTitle = document.createElement('div');
+		paneTitle.className = 'baron-chart-workspace-popover__title baron-chart-workspace-popover__title--secondary';
+		paneTitle.textContent = '副图 · 独立显示';
+		const paneGrid = document.createElement('div');
+		paneGrid.className = 'baron-chart-workspace-popover__grid baron-chart-workspace-popover__grid--secondary';
+		for (const action of options.indicatorPaneActions ?? []) {
+			if (indicatorPaneButtons.has(action.paneId)) {
+				throw new TypeError(`CHART_WORKSPACE_TOOLBAR_DUPLICATE_INDICATOR_PANE: ${action.paneId}`);
+			}
+			const button = createButton({ label: `${action.label}副图`, text: action.label });
+			button.dataset.indicatorPaneId = action.paneId;
+			button.setAttribute('aria-pressed', String(action.visible));
+			const toggle = (): void => {
+				const visible = button.getAttribute('aria-pressed') !== 'true';
+				if (runtime.setIndicatorPaneVisible?.(action.paneId, visible)) {
+					button.setAttribute('aria-pressed', String(visible));
+					options.onIndicatorPaneVisibilityChange?.(action.paneId, visible);
+				}
+			};
+			button.addEventListener('click', toggle);
+			cleanupCallbacks.push(() => button.removeEventListener('click', toggle));
+			dataControls.push(button);
+			indicatorPaneButtons.set(action.paneId, button);
+			paneGrid.append(button);
+		}
+		indicatorPopover.element.append(paneTitle, paneGrid);
+	}
 
 	const timezoneChoices =
 		options.displayTimezoneChoices ?? defaultTimezoneChoices(runtime);
@@ -1030,6 +1074,12 @@ export function createChartWorkspaceToolbar(
 			}
 			hostDataDisabled = disabled;
 			applyDisabledState();
+		},
+		setIndicatorPaneState(paneId, visible): void {
+			if (destroyed) throw new Error('CHART_WORKSPACE_TOOLBAR_DESTROYED');
+			const button = indicatorPaneButtons.get(paneId);
+			if (button === undefined) throw new TypeError(`CHART_WORKSPACE_TOOLBAR_UNKNOWN_INDICATOR_PANE: ${paneId}`);
+			button.setAttribute('aria-pressed', String(visible));
 		},
 		setDrawingActionsDisabled(disabled): void {
 			if (destroyed) {

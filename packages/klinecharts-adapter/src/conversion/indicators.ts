@@ -89,6 +89,7 @@ export function createPaneIndicators(
 		return leftPrimary - rightPrimary;
 	});
 	for (const indicator of ordered) {
+		if (pane.kind === 'indicator' && !indicator.visible) continue;
 		const originalIndex = pane.indicators.findIndex((candidate) => candidate.id === indicator.id);
 		const id = chart.createIndicator(
 			toIndicatorCreate(indicator, idMap, `/panes/${paneIndex}/indicators/${originalIndex}`),

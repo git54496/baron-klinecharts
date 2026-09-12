@@ -405,6 +405,10 @@ export class ProgressiveDrawableWorkspaceRuntime
 		return this.#requireReady().removeMainIndicator(id);
 	}
 
+	public setIndicatorPaneVisible(paneId: string, visible: boolean): boolean {
+		return this.#requireReady().setIndicatorPaneVisible(paneId, visible);
+	}
+
 	public getDisplayTimezone(): string {
 		return this.#inner?.getDisplayTimezone() ?? this.#displayTimezone;
 	}

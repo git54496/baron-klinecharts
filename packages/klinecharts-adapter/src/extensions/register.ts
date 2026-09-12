@@ -1,4 +1,4 @@
-import type { registerOverlay } from 'klinecharts';
+import type { registerIndicator, registerOverlay } from 'klinecharts';
 
 import { arrowOverlay } from './arrow.js';
 import { calloutOverlay } from './callout.js';
@@ -6,6 +6,7 @@ import { crossLineOverlay } from './cross-line.js';
 import { rectangleOverlay } from './rectangle.js';
 import { priceMeasurementOverlay } from './price-measurement.js';
 import { textOverlay } from './text.js';
+import { turnoverIndicator } from './turnover.js';
 
 type KLineOverlayTemplate = Parameters<typeof registerOverlay>[0];
 type RegisterOverlay = (template: KLineOverlayTemplate) => void;
@@ -34,4 +35,12 @@ export function registerProjectOverlays(register: RegisterOverlay): void {
 
 export function areProjectOverlaysRegistered(): boolean {
 	return registered;
+}
+
+let indicatorsRegistered = false;
+
+export function registerProjectIndicators(register: typeof registerIndicator): void {
+	if (indicatorsRegistered) return;
+	register(turnoverIndicator);
+	indicatorsRegistered = true;
 }

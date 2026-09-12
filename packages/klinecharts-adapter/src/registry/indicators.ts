@@ -6,6 +6,7 @@ export const SUPPORTED_INDICATORS = [
 	'SMA',
 	'BBI',
 	'VOL',
+	'TURNOVER',
 	'MACD',
 	'BOLL',
 	'KDJ',

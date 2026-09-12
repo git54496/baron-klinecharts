@@ -12,6 +12,7 @@ const INDICATOR_PARAM_COUNTS: Readonly<Record<SceneIndicator['name'], number>> =
 	SMA: 2,
 	BBI: 4,
 	VOL: 3,
+	TURNOVER: 0,
 	MACD: 3,
 	BOLL: 2,
 	KDJ: 3,

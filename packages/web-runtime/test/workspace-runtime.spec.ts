@@ -136,6 +136,10 @@ class MockEngine implements DrawingEnginePort {
 		};
 	}
 
+	public subscribeCrosshair(): () => void {
+		return () => {};
+	}
+
 	public dispose(): void {
 		this.listener = null;
 	}
@@ -210,6 +214,10 @@ class MockEngine implements DrawingEnginePort {
 			}
 		}
 		return false;
+	}
+
+	public setIndicatorPaneVisible(): boolean {
+		return true;
 	}
 
 	public getDisplayTimezone(): string {
@@ -627,6 +635,49 @@ describe('DrawableWorkspaceRuntime', () => {
 
 		expect(runtime.listMainIndicators()).toEqual([]);
 		expect((mockEngine!.replacedScene as ChartScene).panes[0]!.indicators).toEqual([]);
+	});
+
+	it('keeps independent indicator-pane switches through period Scene replacement', async () => {
+		const workspace = structuredClone(chartWorkspaceFixture) as unknown as DrawableWorkspaceDocument;
+		const scene = workspace.scene.document as ChartScene;
+		const makePane = (name: 'VOL' | 'TURNOVER', order: number): ChartScene['panes'][number] => ({
+			id: `pane-${name === 'VOL' ? 'volume' : 'turnover'}`,
+			kind: 'indicator',
+			order,
+			height: 140,
+			minHeight: 90,
+			state: 'normal',
+			yAxes: [{
+				id: `axis-${name === 'VOL' ? 'volume' : 'turnover'}`, role: 'primary', position: 'right',
+				reverse: false, inside: false, scrollZoomEnabled: false,
+				topGap: 0.1, bottomGap: 0, scale: 'linear',
+			}],
+			indicators: [{
+				id: `indicator-${name === 'VOL' ? 'volume' : 'turnover'}`, name,
+				paneId: `pane-${name === 'VOL' ? 'volume' : 'turnover'}`,
+				yAxisId: `axis-${name === 'VOL' ? 'volume' : 'turnover'}`,
+				calcParams: name === 'VOL' ? [5, 10, 20] : [],
+				precision: 8, visible: true, zLevel: 0,
+				styles: { lines: [], bars: [{
+					upColor: 'rgba(218, 76, 88, 1)',
+					downColor: 'rgba(24, 151, 119, 1)',
+					noChangeColor: 'rgba(130, 136, 145, 1)',
+				}], circles: [] },
+			}],
+		});
+		scene.panes.push(makePane('VOL', 1), makePane('TURNOVER', 2));
+		const { runtime } = await makeRuntime(workspace);
+		expect((runtime.exportWorkspace().scene.document as ChartScene).panes.map((pane) => pane.id)).toEqual(['pane-candle', 'pane-volume', 'pane-turnover']);
+		expect(runtime.setIndicatorPaneVisible('pane-volume', false)).toBe(true);
+		expect(runtime.setIndicatorPaneVisible('pane-turnover', false)).toBe(true);
+		expect(runtime.setIndicatorPaneVisible('pane-turnover', true)).toBe(true);
+		const next = structuredClone(scene);
+		next.period = { type: 'hour', span: 2 };
+		runtime.replaceScene(next);
+		const panes = (runtime.exportWorkspace().scene.document as ChartScene).panes;
+		expect(panes[1]!.indicators[0]!.visible).toBe(false);
+		expect(panes[2]!.indicators[0]!.visible).toBe(true);
+		expect((mockEngine!.replacedScene as ChartScene).panes.map((pane) => pane.order)).toEqual([0, 1, 2]);
 	});
 
 	it('forwards historical requests and atomically prepends confirmed data', async () => {
