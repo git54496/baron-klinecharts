@@ -31,6 +31,7 @@ const additiveDeclarationBlocks = new Map([
 	[
 		'packages/scene-schema/dist/generated/chart-scene.d.ts',
 		[
+			" | 'TURNOVER'",
 			`    /**
      * @maxItems 1000000
      */
@@ -49,6 +50,7 @@ const additiveDeclarationBlocks = new Map([
 	[
 		'packages/scene-schema/dist/generated/drawable-workspace.d.ts',
 		[
+			" | 'TURNOVER'",
 			`    /**
      * @maxItems 1000000
      */
@@ -63,6 +65,10 @@ const additiveDeclarationBlocks = new Map([
 }
 `,
 		],
+	],
+	[
+		'packages/scene-schema/dist/generated/drawing-document.d.ts',
+		["    scale?: 'linear' | 'logarithmic';\n"],
 	],
 	[
 		'packages/web-runtime/dist/types.d.ts',
@@ -94,6 +100,13 @@ export interface DrawingFloatingToolbar {
 	[
 		'packages/web-runtime/dist/runtime.d.ts',
 		[
+			', type MarketData',
+			', type LiveBarProjectionResult',
+			`    /** 投影一根不进入 Scene 导出的实时 K。 */
+    projectLiveBar(data: MarketData): LiveBarProjectionResult;
+    /** 清空实时 K 临时投影并恢复权威历史数据。 */
+    clearLiveBarProjection(): boolean;
+`,
 			'    updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot;\n',
 			'    removeDrawings(ids: readonly string[]): boolean;\n',
 			`    getDrawingMutationState(): 'ready';
@@ -114,6 +127,19 @@ export interface DrawingFloatingToolbar {
 	[
 		'packages/web-runtime/dist/drawing/workspace-runtime.d.ts',
 		[
+			', LiveBarRuntimeCapability',
+			', LiveBarRuntimeCapability',
+			`    /** 投影一根不进入 Drawable Workspace 与 Scene 导出的实时 K。 */
+    projectLiveBar(data: MarketData): ReturnType<LiveBarRuntimeCapability['projectLiveBar']>;
+    /** 清空实时 K 临时投影，不改变 Drawing 与权威 Scene。 */
+    clearLiveBarProjection(): boolean;
+`,
+			', IndicatorPaneRuntimeCapability',
+			', IndicatorPaneRuntimeCapability',
+			`    /** 隐藏绘图区内置 K 线信息，供宿主在图表工作区上方展示。 */
+    readonly hideCandleTooltip?: boolean;
+`,
+			'    setIndicatorPaneVisible(paneId: string, visible: boolean): boolean;\n',
 			', SceneIndicator',
 			"import type { AddIndicatorOptions } from '../types.js';\n",
 			'DisplayTimezoneRuntimeCapability, ',
@@ -217,6 +243,18 @@ export interface DrawingFloatingToolbar {
 	[
 		'packages/web-runtime/dist/drawing/capabilities.d.ts',
 		[
+			`/** 仅投影到浏览器图表、不会进入 Scene 或 Workspace 导出的实时 K 能力。 */
+export interface LiveBarRuntimeCapability {
+    projectLiveBar(data: MarketData): LiveBarProjectionResult;
+    clearLiveBarProjection(): boolean;
+}
+`,
+			', LiveBarProjectionResult',
+			`/** 每个指标副图独立显示，显示顺序由 Scene Pane order 决定。 */
+export interface IndicatorPaneRuntimeCapability {
+    setIndicatorPaneVisible(paneId: string, visible: boolean): boolean;
+}
+`,
 			', SceneIndicator',
 			"import type { AddIndicatorOptions } from '../types.js';\n",
 			', MarketData',
@@ -261,6 +299,17 @@ export interface DisplayTimezoneRuntimeCapability {
 	[
 		'packages/web-runtime/dist/drawing/workspace-events.d.ts',
 		[
+			` | {
+    readonly type: 'crosshair-changed';
+    readonly timestamp: number | null;
+    readonly bar: {
+        readonly open: number;
+        readonly high: number;
+        readonly low: number;
+        readonly close: number;
+        readonly volume: number | null;
+    } | null;
+}`,
 			', SceneIndicator',
 			"import type { EngineHistoricalDataRequest } from '@baron1996/klinecharts-adapter';\n",
 			` | ({
@@ -293,6 +342,33 @@ export interface DisplayTimezoneRuntimeCapability {
 function projectLegacyDeclaration(path, content) {
 	let legacyContent = content;
 	if (
+		path === 'packages/scene-schema/dist/generated/drawing-document.d.ts' ||
+		path === 'packages/scene-schema/dist/generated/drawable-workspace.d.ts'
+	) {
+		const originalDrawingDocument = legacyContent.match(/^export type DrawingDocument = \{[\s\S]*?^\};\n/m)?.[0];
+		assert.notEqual(originalDrawingDocument, undefined, `${path} is missing DrawingDocument`);
+		const drawingDocument = originalDrawingDocument
+			.replace(
+				`export type DrawingDocument = {
+    [k: string]: unknown | undefined;
+} & {
+    schema: '@baron1996/drawing-document';
+    version: 1 | 2;
+`,
+				`export interface DrawingDocument {
+    schema: '@baron1996/drawing-document';
+    version: 1;
+`,
+			)
+			.replace(
+				/    metadata: (DrawingMetadata|DrawableWorkspaceMetadata);\n\};\n/u,
+				'    metadata: $1;\n}\n',
+			);
+		legacyContent = legacyContent
+			.replace(originalDrawingDocument, '')
+			.replace('export interface CoordinateSystem {', `${drawingDocument}export interface CoordinateSystem {`);
+	}
+	if (
 		path === 'packages/scene-schema/dist/generated/chart-scene.d.ts' ||
 		path === 'packages/scene-schema/dist/generated/drawable-workspace.d.ts'
 	) {
@@ -318,6 +394,10 @@ function projectLegacyDeclaration(path, content) {
 		);
 	}
 	if (path === 'packages/scene-schema/dist/generated/drawable-workspace.d.ts') {
+		legacyContent = legacyContent.replace(
+			"    valuePrecision: number;\n    scale?: 'linear' | 'logarithmic';\n",
+			'    valuePrecision: number;\n',
+		);
 		const chartScene = legacyContent.match(/^export interface ChartScene \{[\s\S]*?^\}\n/m)?.[0];
 		assert.notEqual(chartScene, undefined, `${path} is missing ChartScene`);
 		legacyContent = legacyContent
@@ -339,7 +419,7 @@ ${chartScene}`,
 		assert.equal(
 			legacyContent.includes(block),
 			true,
-			`${path} is missing its expected additive API block`,
+			`${path} is missing its expected additive API block ${JSON.stringify(block)}`,
 		);
 		legacyContent = legacyContent.replace(block, '');
 	}
@@ -347,9 +427,11 @@ ${chartScene}`,
 }
 
 test('legacy schema errors and Runtime declaration projections remain byte-for-byte compatible', async () => {
+	const mismatches = [];
 	for (const [path, expectedHash] of legacyDeclarationHashes) {
 		const content = projectLegacyDeclaration(path, await readFile(path, 'utf8'));
 		const actualHash = createHash('sha256').update(content).digest('hex');
-		assert.equal(actualHash, expectedHash, `${path} changed unexpectedly`);
+		if (actualHash !== expectedHash) mismatches.push({ path, expectedHash, actualHash });
 	}
+	assert.deepEqual(mismatches, []);
 });
