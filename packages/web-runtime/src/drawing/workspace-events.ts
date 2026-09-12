@@ -59,6 +59,7 @@ export type WorkspaceRuntimeEvent =
 	  })
 	| { readonly type: 'selection-changed'; readonly id: string | null }
 	| { readonly type: 'scene-replaced'; readonly scene: WorkspaceSceneSnapshot }
+	| { readonly type: 'crosshair-changed'; readonly timestamp: number | null; readonly bar: { readonly open: number; readonly high: number; readonly low: number; readonly close: number; readonly volume: number | null } | null }
 	| ({ readonly type: 'historical-data-requested' } & EngineHistoricalDataRequest)
 	| {
 			readonly type: 'historical-data-appended';

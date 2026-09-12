@@ -140,6 +140,7 @@ export class ProgressiveDrawableWorkspaceRuntime
 			...(options.displayTimezone === undefined
 				? {}
 				: { displayTimezone: options.displayTimezone }),
+			...(options.hideCandleTooltip ? { hideCandleTooltip: true } : {}),
 			...(options.drawingInteraction === undefined
 				? {}
 				: { drawingInteraction: options.drawingInteraction }),
@@ -243,6 +244,7 @@ export class ProgressiveDrawableWorkspaceRuntime
 					? {}
 					: { historicalDataLoading: this.#options.historicalDataLoading }),
 				displayTimezone: this.#displayTimezone,
+				...(this.#options.hideCandleTooltip ? { hideCandleTooltip: true } : {}),
 				...(this.#options.drawingInteraction === undefined
 					? {}
 					: { drawingInteraction: this.#options.drawingInteraction }),

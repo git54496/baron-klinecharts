@@ -20,10 +20,11 @@ async function installRuntime(
 	workspace: unknown,
 	commitMode: 'immediate' | 'host-confirmed' = 'immediate',
 	historicalDataLoading = false,
+	hideCandleTooltip = false,
 ): Promise<void> {
 	await page.goto('/test/fixture.html');
 	await page.evaluate(
-		async ({ workspace, commitMode, historicalDataLoading }) => {
+		async ({ workspace, commitMode, historicalDataLoading, hideCandleTooltip }) => {
 			const { createDrawableWorkspaceRuntime } = await import('/src/index.ts');
 			const container = document.querySelector<HTMLElement>('#chart')!;
 			const events: Array<{
@@ -33,6 +34,7 @@ async function installRuntime(
 			}> = [];
 			const runtime = await createDrawableWorkspaceRuntime(container, workspace, {
 				commitMode,
+				hideCandleTooltip,
 				onEvent: (event) => events.push(event),
 				...(historicalDataLoading
 					? { historicalDataLoading: { hasMore: true } }
@@ -41,7 +43,7 @@ async function installRuntime(
 			(window as unknown as Record<string, unknown>).__runtime = runtime;
 			(window as unknown as Record<string, unknown>).__events = events;
 		},
-		{ workspace, commitMode, historicalDataLoading },
+		{ workspace, commitMode, historicalDataLoading, hideCandleTooltip },
 	);
 }
 
@@ -71,6 +73,15 @@ test('@browser Workspace Runtime restores and exports confirmed Drawings', async
 	expect(result.listed).toBe(22);
 	expect(result.exported).toBe(22);
 	expect(result.artifactKind).toContain('"schema":"@baron1996/drawable-workspace"');
+});
+
+test('@browser Workspace reports the hovered candle for an external information header', async ({ page }) => {
+	await installRuntime(page, chartWorkspace, 'immediate', false, true);
+	await page.locator('#chart').hover({ position: { x: 250, y: 180 } });
+	await expect.poll(async () => page.evaluate(() => {
+		const events = (window as unknown as { __events: Array<{ type: string; bar?: unknown }> }).__events;
+		return events.some((event) => event.type === 'crosshair-changed' && event.bar !== null);
+	})).toBe(true);
 });
 
 test('@browser Workspace Runtime creates a Drawing and commits immediately', async ({ page }) => {
@@ -114,6 +125,7 @@ test('@browser empty Workspace Runtime keeps chart and toolbar nodes while insta
 		delete viewport.anchorTimestamp;
 		const container = document.querySelector<HTMLElement>('#chart')!;
 		const toolbarContainer = document.querySelector<HTMLElement>('#toolbar')!;
+		const events: Array<{ readonly type: string; readonly bar?: unknown }> = [];
 		const runtime = await createEmptyDrawableWorkspaceRuntime(
 			container,
 			{
@@ -128,6 +140,8 @@ test('@browser empty Workspace Runtime keeps chart and toolbar nodes while insta
 			},
 			{
 				commitMode: 'host-confirmed',
+				hideCandleTooltip: true,
+				onEvent: (event) => events.push(event),
 				hostActions: [{ actionId: 'retry-history', label: '重试' }],
 			},
 		);
@@ -141,6 +155,7 @@ test('@browser empty Workspace Runtime keeps chart and toolbar nodes while insta
 			exportError = String(error);
 		}
 		(window as unknown as Record<string, unknown>).__runtime = runtime;
+		(window as unknown as Record<string, unknown>).__events = events;
 		(window as unknown as Record<string, unknown>).__toolbar = toolbar;
 		(window as unknown as Record<string, unknown>).__chartRoot = container.firstElementChild;
 		return {
@@ -205,6 +220,11 @@ test('@browser empty Workspace Runtime keeps chart and toolbar nodes while insta
 		bars: 3,
 		emptyHidden: true,
 	});
+	await page.locator('#chart').hover({ position: { x: 250, y: 180 } });
+	await expect.poll(async () => page.evaluate(() => {
+		const events = (window as unknown as { __events: Array<{ type: string; bar?: unknown }> }).__events;
+		return events.some((event) => event.type === 'crosshair-changed' && event.bar !== null);
+	})).toBe(true);
 
 	const hostDisabled = await page.evaluate(() => {
 		const toolbar = (window as unknown as {

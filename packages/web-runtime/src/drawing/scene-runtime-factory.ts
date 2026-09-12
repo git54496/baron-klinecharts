@@ -40,6 +40,8 @@ export interface SceneRuntimeAdapterOptions {
 	readonly historicalDataLoading?: { readonly hasMore: boolean };
 	/** 仅改变时间文本与坐标轴的展示时区，不改变 Scene/Drawings 的业务时区。 */
 	readonly displayTimezone?: string;
+	/** 宿主在绘图区外展示 K 线信息时隐藏引擎内置信息。 */
+	readonly hideCandleTooltip?: boolean;
 	/** 仅改变输入交互，不改变 Drawing 几何与持久化协议。 */
 	readonly drawingInteraction?: DrawingInteractionOptions;
 }

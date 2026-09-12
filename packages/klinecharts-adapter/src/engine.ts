@@ -119,13 +119,13 @@ function assertRuntimeIdentity(scene: ChartScene, actualEngineVersion: string): 
 export async function createEngine(
 	container: HTMLElement,
 	scene: ChartScene,
-	options?: { readonly displayTimezone?: string },
+	options?: { readonly displayTimezone?: string; readonly hideCandleTooltip?: boolean },
 ): Promise<EngineHandle> {
 	const engine = await import('klinecharts');
 	assertRuntimeIdentity(scene, engine.version());
 	const chart = engine.init(
 		container,
-		toKLineChartsOptions(scene.chart, options?.displayTimezone),
+		toKLineChartsOptions(scene.chart, options?.displayTimezone, options?.hideCandleTooltip),
 	);
 	if (chart === null) {
 		throw new SceneError(

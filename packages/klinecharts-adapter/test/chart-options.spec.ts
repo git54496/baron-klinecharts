@@ -54,3 +54,13 @@ describe('chart display timezone', () => {
 		expect(formatDate(options, 'tooltip')).toBe('2026-08-30 12:00');
 	});
 });
+
+describe('external candle information', () => {
+	it('hides the built-in candle tooltip only when requested by the host', () => {
+		const scene = loadScene('minimal-valid.json');
+		const standard = toKLineChartsOptions(scene.chart);
+		const external = toKLineChartsOptions(scene.chart, undefined, true);
+		expect(standard.styles?.candle?.tooltip?.showRule).toBeUndefined();
+		expect(external.styles?.candle?.tooltip?.showRule).toBe('none');
+	});
+});

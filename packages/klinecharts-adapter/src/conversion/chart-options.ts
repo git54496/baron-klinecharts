@@ -69,7 +69,7 @@ function formatLargeNumber(
 	return String(value);
 }
 
-function chartStyles(chart: ChartConfig): DeepPartial<Styles> {
+function chartStyles(chart: ChartConfig, hideCandleTooltip = false): DeepPartial<Styles> {
 	const text = {
 		color: chart.layout.textColor,
 		size: chart.layout.fontSize,
@@ -88,6 +88,7 @@ function chartStyles(chart: ChartConfig): DeepPartial<Styles> {
 		},
 		candle: {
 			type: chart.candle.type,
+			...(hideCandleTooltip ? { tooltip: { showRule: 'none' as const } } : {}),
 			bar: {
 				upColor: chart.candle.upColor,
 				downColor: chart.candle.downColor,
@@ -158,11 +159,12 @@ function timeSeriesChartStyles(
 export function toKLineChartsOptions(
 	chart: ChartConfig,
 	displayTimezone?: string,
+	hideCandleTooltip = false,
 ): Options {
 	return {
 		locale: chart.locale,
 		timezone: displayTimezone ?? chart.timezone,
-		styles: chartStyles(chart),
+		styles: chartStyles(chart, hideCandleTooltip),
 		formatter: {
 			formatDate: (params) =>
 				formatDate(params, chart.dateFormat, displayTimezone),

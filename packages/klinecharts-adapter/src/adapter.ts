@@ -474,6 +474,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		bootstrap: EmptyChartRuntimeBootstrap,
 		options?: {
 			readonly displayTimezone?: string;
+			readonly hideCandleTooltip?: boolean;
 			readonly drawingInteraction?: DrawingInteractionOptions;
 		},
 	): Promise<KLineChartsSceneAdapter> {
@@ -507,6 +508,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				...(options?.displayTimezone === undefined
 					? {}
 					: { displayTimezone: options.displayTimezone }),
+				...(options?.hideCandleTooltip ? { hideCandleTooltip: true } : {}),
 			});
 			registerProjectOverlays(handle.module.registerOverlay);
 			const idMap = createEngineIdMap(internalScene, handle.chart);
@@ -650,6 +652,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		options?: {
 			readonly historicalDataLoading?: { readonly hasMore: boolean };
 			readonly displayTimezone?: string;
+			readonly hideCandleTooltip?: boolean;
 			readonly drawingInteraction?: DrawingInteractionOptions;
 		},
 	): Promise<KLineChartsSceneAdapter> {
@@ -670,6 +673,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				...(options?.displayTimezone === undefined
 					? {}
 					: { displayTimezone: options.displayTimezone }),
+				...(options?.hideCandleTooltip ? { hideCandleTooltip: true } : {}),
 			});
 			installGapAwareMainSeries(
 				scene,
