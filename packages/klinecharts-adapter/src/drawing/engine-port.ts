@@ -140,6 +140,20 @@ export interface DisplayTimezoneEnginePort {
 	setDisplayTimezone(timezone: string): void;
 }
 
+/** 图表十字线所指 K 线的纯数据快照；空值表示当前没有指向有效 K 线。 */
+export interface ChartCrosshairEnginePort {
+	subscribeCrosshair(listener: (snapshot: {
+		readonly timestamp: number | null;
+		readonly bar: {
+			readonly open: number;
+			readonly high: number;
+			readonly low: number;
+			readonly close: number;
+			readonly volume: number | null;
+		} | null;
+	}) => void): () => void;
+}
+
 /**
  * 两个 Scene Adapter 共同实现的公共 Drawing 引擎端口。
  * 所有 DTO 都是纯数据；端口调用方不能取得 Chart/Overlay 实例或引擎内部 ID。

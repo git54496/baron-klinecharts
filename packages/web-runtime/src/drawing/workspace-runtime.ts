@@ -15,6 +15,7 @@ import {
 } from '@baron1996/kline-scene-schema';
 import type {
 	ActiveMainSeriesType,
+	ChartCrosshairEnginePort,
 	DisplayTimezoneEnginePort,
 	DrawingInteractionOptions,
 	DrawingEnginePort,
@@ -72,6 +73,8 @@ export interface DrawableWorkspaceRuntimeOptions {
 	readonly historicalDataLoading?: { readonly hasMore: boolean };
 	/** 仅用于 UI 展示；不会写入 Workspace，也不会改变投影与会话时区。 */
 	readonly displayTimezone?: string;
+	/** 隐藏绘图区内置 K 线信息，供宿主在图表工作区上方展示。 */
+	readonly hideCandleTooltip?: boolean;
 	/** 可选输入策略；默认使用图表引擎原生 Drawing 交互。 */
 	readonly drawingInteraction?: DrawingInteractionOptions;
 	/** 可选 Drawing 键盘快捷键；撤回同时支持 macOS Command+Z 与 Ctrl+Z。 */
@@ -146,6 +149,7 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 	readonly #drawingChangeListeners = new Set<() => void>();
 	/** 释放历史行情请求订阅，避免 Runtime 销毁后宿主收到旧请求。 */
 	readonly #unsubscribeHistoricalData: (() => void) | undefined;
+	readonly #unsubscribeCrosshair: (() => void) | undefined;
 	#sequence = 0;
 	/** 主图指标稳定 ID 的递增序号。 */
 	#indicatorSequence = 0;
@@ -226,6 +230,11 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 			this.#container.ownerDocument.addEventListener('keydown', this.#handleDrawingShortcut);
 		}
 		const historicalDataPort = this.#historicalDataPort();
+		this.#unsubscribeCrosshair = this.#sceneKind() === 'chart'
+			? (engine as DrawingEnginePort & ChartCrosshairEnginePort).subscribeCrosshair((snapshot) => {
+					this.#emit({ type: 'crosshair-changed', ...snapshot });
+				})
+			: undefined;
 		this.#unsubscribeHistoricalData = options.historicalDataLoading === undefined
 			? undefined
 			: historicalDataPort?.subscribeHistoricalDataRequests((request) => {
@@ -259,6 +268,7 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 			...(options.displayTimezone === undefined
 				? {}
 				: { displayTimezone: options.displayTimezone }),
+			...(options.hideCandleTooltip ? { hideCandleTooltip: true } : {}),
 			...(options.drawingInteraction === undefined
 				? {}
 				: { drawingInteraction: options.drawingInteraction }),
@@ -849,6 +859,7 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 			}
 		}
 		this.#unsubscribeHistoricalData?.();
+		this.#unsubscribeCrosshair?.();
 		this.#session.destroy();
 		this.#engine.dispose();
 		this.#listeners.clear();
