@@ -4,6 +4,7 @@ import {
 	createChartWorkspaceToolbar,
 	type WorkspaceRuntimeEvent,
 } from '@baron1996/klinecharts-runtime';
+import type { ChartScene, DrawableWorkspaceDocument } from '@baron1996/kline-scene-schema';
 import workspace from '../../tests/fixtures/workspaces/chart-minimal.json';
 
 import '../shared.css';
@@ -24,9 +25,41 @@ if (
 }
 
 const events: WorkspaceRuntimeEvent[] = [];
+const exampleWorkspace = structuredClone(workspace) as unknown as DrawableWorkspaceDocument;
+const exampleScene = exampleWorkspace.scene.document as ChartScene;
+const paneColors = {
+	upColor: 'rgba(239, 83, 80, 1)',
+	downColor: 'rgba(38, 166, 154, 1)',
+	noChangeColor: 'rgba(120, 123, 134, 1)',
+};
+for (const [kind, name, order] of [
+	['volume', 'VOL', 1],
+	['turnover', 'TURNOVER', 2],
+] as const) {
+	exampleScene.panes.push({
+		id: `pane-${kind}`,
+		kind: 'indicator',
+		order,
+		height: 120,
+		minHeight: 90,
+		state: 'normal',
+		yAxes: [{
+			id: `axis-${kind}`, role: 'primary', position: 'right', reverse: false,
+			inside: false, scrollZoomEnabled: false, topGap: 0.1, bottomGap: 0,
+			scale: 'linear',
+		}],
+		indicators: [{
+			id: `indicator-${kind}`, name,
+			paneId: `pane-${kind}`, yAxisId: `axis-${kind}`,
+			calcParams: name === 'VOL' ? [5, 10, 20] : [],
+			precision: 8, visible: true, zLevel: 0,
+			styles: { lines: [], bars: [paneColors], circles: [] },
+		}],
+	});
+}
 
 try {
-	const runtime = await createDrawableWorkspaceRuntime(chart, workspace, {
+	const runtime = await createDrawableWorkspaceRuntime(chart, exampleWorkspace, {
 		commitMode: 'immediate',
 		drawingInteraction: {
 			touch: 'precision-cursor',
@@ -42,6 +75,10 @@ try {
 		top: topToolbarRoot,
 		left: leftToolbarRoot,
 	}, runtime, {
+		indicatorPaneActions: [
+			{ paneId: 'pane-volume', label: '成交量', visible: true },
+			{ paneId: 'pane-turnover', label: '成交额', visible: true },
+		],
 		periodActions: [
 			{ actionId: 'period.1h', label: '1小时', pressed: true },
 			{ actionId: 'period.2h', label: '2小时' },
@@ -53,7 +90,7 @@ try {
 			{ actionId: 'adjustment.qfq', label: '前复权' },
 		],
 		displayTimezoneChoices: [
-			{ value: 'instrument', label: `标的 · ${workspace.scene.document.chart.timezone}`, timezone: workspace.scene.document.chart.timezone },
+			{ value: 'instrument', label: `标的 · ${exampleScene.chart.timezone}`, timezone: exampleScene.chart.timezone },
 			{ value: 'local', label: `本机 · ${Intl.DateTimeFormat().resolvedOptions().timeZone}`, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
 			{ value: 'utc', label: 'UTC', timezone: 'UTC' },
 		],

@@ -246,6 +246,7 @@ export interface SceneIndicator {
 		| 'SMA'
 		| 'BBI'
 		| 'VOL'
+		| 'TURNOVER'
 		| 'MACD'
 		| 'BOLL'
 		| 'KDJ'

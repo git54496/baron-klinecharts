@@ -261,7 +261,9 @@ export const CHART_WORKSPACE_TOOLBAR_STYLES = String.raw`
 .baron-chart-workspace-popover[hidden] { display: none; }
 .baron-chart-workspace-popover--open { opacity: 1; transform: translateY(0); }
 .baron-chart-workspace-popover__title { margin: 2px 4px 8px; color: rgba(102, 108, 122, 1); font-size: 11px; font-weight: 600; }
+.baron-chart-workspace-popover__title--secondary { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(231, 233, 238, 1); }
 .baron-chart-workspace-popover__grid { display: grid; grid-template-columns: repeat(3, minmax(58px, 1fr)); gap: 5px; }
+.baron-chart-workspace-popover__grid--secondary { grid-template-columns: repeat(2, minmax(82px, 1fr)); }
 .baron-chart-workspace-popover__grid .baron-chart-workspace-toolbar__button { width: 100%; border: 1px solid rgba(231, 233, 238, 1); }
 .baron-chart-workspace-popover__group + .baron-chart-workspace-popover__group { padding-top: 10px; margin-top: 10px; border-top: 1px solid rgba(233, 235, 239, 1); }
 .baron-chart-workspace-popover__text-form { display: flex; gap: 6px; }

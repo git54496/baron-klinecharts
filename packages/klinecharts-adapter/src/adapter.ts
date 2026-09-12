@@ -17,12 +17,12 @@ import type { DataLoader, KLineData } from 'klinecharts';
 import { createEngine, type EngineHandle } from './engine.js';
 import { toKLineChartsOptions } from './conversion/chart-options.js';
 import { toIndicatorCreate } from './conversion/indicators.js';
-import { registerProjectOverlays } from './extensions/register.js';
+import { registerProjectIndicators, registerProjectOverlays } from './extensions/register.js';
 import {
 	createEngineIdMap,
 	type EngineIdMap,
 } from './conversion/id-map.js';
-import { applyPanes, overrideSceneYAxis } from './conversion/panes.js';
+import { applyPane, applyPanes, overrideSceneYAxis } from './conversion/panes.js';
 import {
 	createSceneOverlays,
 	type EngineOverlayCallbacks,
@@ -262,6 +262,12 @@ export interface LiveBarProjectionResult {
  * ChartScene 与 KLineCharts 之间的唯一边界。
  * 引擎对象和内部 ID 永不从该类的公共接口泄露。
  */
+function indicatorPaneSignature(scene: ChartScene): string {
+	return JSON.stringify(scene.panes
+		.filter((pane) => pane.kind === 'indicator')
+		.map((pane) => ({ id: pane.id, indicators: pane.indicators })));
+}
+
 export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDataEnginePort, MainSeriesPresentationPort {
 	/** KLineCharts 实例，仅在 Adapter 内部使用。 */
 	readonly #chart: Chart;
@@ -509,6 +515,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 					: { displayTimezone: options.displayTimezone }),
 			});
 			registerProjectOverlays(handle.module.registerOverlay);
+			registerProjectIndicators(handle.module.registerIndicator);
 			const idMap = createEngineIdMap(internalScene, handle.chart);
 			applyPanes(internalScene, handle.chart, idMap);
 			adapter = new KLineChartsSceneAdapter(
@@ -613,6 +620,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				handle.module.registerIndicator,
 			);
 			registerProjectOverlays(handle.module.registerOverlay);
+			registerProjectIndicators(handle.module.registerIndicator);
 			const idMap = createEngineIdMap(scene, handle.chart);
 			applyPanes(scene, handle.chart, idMap);
 			adapter = new KLineChartsSceneAdapter(
@@ -677,6 +685,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				handle.module.registerIndicator,
 			);
 			registerProjectOverlays(handle.module.registerOverlay);
+			registerProjectIndicators(handle.module.registerIndicator);
 			const idMap = createEngineIdMap(scene, handle.chart);
 			applyPanes(scene, handle.chart, idMap);
 			adapter = new KLineChartsSceneAdapter(
@@ -2610,6 +2619,9 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				'Scene replacement requires an identical Pane structure.',
 			);
 		}
+		if (indicatorPaneSignature(candidate) !== indicatorPaneSignature(this.#scene)) {
+			throw new SceneError('INVALID_REFERENCE', '/panes', 'Set indicator Pane visibility before replacing the Scene.');
+		}
 		const previous = this.#scene;
 		const previousLiveBarProjections = new Map(this.#liveBarProjections);
 		this.#liveBarProjections.clear();
@@ -3418,6 +3430,28 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	public listIndicators(): readonly SceneIndicator[] {
 		this.#assertActive();
 		return structuredClone(this.#scene.panes.flatMap((pane) => pane.indicators));
+	}
+
+	/** 指标副图的开关会增删引擎 Pane，但保留 Scene 中的固定顺序与指标配置。 */
+	public setIndicatorPaneVisible(paneId: string, visible: boolean): boolean {
+		this.#assertActive();
+		const paneIndex = this.#scene.panes.findIndex((pane) => pane.id === paneId && pane.kind === 'indicator');
+		if (paneIndex < 0) return false;
+		const pane = this.#scene.panes[paneIndex]!;
+		if (pane.indicators.length !== 1) {
+			throw new SceneError('INVALID_REFERENCE', `/panes/${paneIndex}/indicators`, 'Toggle requires one Indicator in the Pane.');
+		}
+		if (pane.indicators[0]!.visible === visible) return true;
+		const panes = structuredClone(this.#scene.panes);
+		panes[paneIndex]!.indicators[0]!.visible = visible;
+		const candidate = parseChartScene({ ...structuredClone(this.#scene), panes });
+		if (visible) {
+			applyPane(candidate, this.#chart, this.#idMap, paneIndex);
+		} else if (!this.#chart.removeIndicator({ id: pane.indicators[0]!.id })) {
+			return false;
+		}
+		this.#scene = candidate;
+		return true;
 	}
 
 	public addIndicator(value: SceneIndicator): SceneIndicator {

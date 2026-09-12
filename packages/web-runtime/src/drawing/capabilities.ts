@@ -96,6 +96,11 @@ export interface MainIndicatorRuntimeCapability {
 	removeMainIndicator(id: string): boolean;
 }
 
+/** 每个指标副图独立显示，显示顺序由 Scene Pane order 决定。 */
+export interface IndicatorPaneRuntimeCapability {
+	setIndicatorPaneVisible(paneId: string, visible: boolean): boolean;
+}
+
 /** 展示时区能力；不改变 Scene 的证券时区与 Drawing 坐标语义。 */
 export interface DisplayTimezoneRuntimeCapability {
 	getDisplayTimezone(): string;

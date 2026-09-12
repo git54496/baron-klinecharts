@@ -40,6 +40,7 @@ import type {
 	DrawingRuntimeCapability,
 	DrawingUndoRuntimeCapability,
 	HistoricalDataRuntimeCapability,
+	IndicatorPaneRuntimeCapability,
 	LiveBarRuntimeCapability,
 	MainIndicatorRuntimeCapability,
 	RuntimeAuxiliaryCapability,
@@ -86,6 +87,7 @@ export interface DrawableWorkspaceRuntimeHandle
 		HistoricalDataRuntimeCapability,
 		LiveBarRuntimeCapability,
 		MainIndicatorRuntimeCapability,
+		IndicatorPaneRuntimeCapability,
 		DisplayTimezoneRuntimeCapability,
 		RuntimeAuxiliaryCapability {}
 
@@ -701,6 +703,24 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		return true;
 	}
 
+	public setIndicatorPaneVisible(paneId: string, visible: boolean): boolean {
+		this.#assertUsable();
+		if (this.#sceneKind() !== 'chart') return false;
+		const scene = this.#scene as ChartScene;
+		const paneIndex = scene.panes.findIndex((pane) => pane.id === paneId && pane.kind === 'indicator');
+		if (paneIndex < 0 || scene.panes[paneIndex]!.indicators.length !== 1) return false;
+		if (scene.panes[paneIndex]!.indicators[0]!.visible === visible) return true;
+		const port = this.#requireIndicatorPort();
+		if (typeof port.setIndicatorPaneVisible !== 'function') {
+			throw new Error('INDICATOR_PANE_UNSUPPORTED: the current Scene Adapter cannot toggle indicator panes.');
+		}
+		if (!port.setIndicatorPaneVisible(paneId, visible)) return false;
+		const panes = structuredClone(scene.panes);
+		panes[paneIndex]!.indicators[0]!.visible = visible;
+		this.#scene = parseChartScene({ ...structuredClone(scene), panes });
+		return true;
+	}
+
 	public getDisplayTimezone(): string {
 		this.#assertUsable();
 		return this.#displayTimezone;
@@ -740,6 +760,9 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 			options.preserveMainIndicators !== false
 		) {
 			candidate = preserveMainIndicators(this.#scene as ChartScene, candidate);
+		}
+		if (this.#sceneKind() === 'chart' && 'panes' in candidate) {
+			candidate = preserveIndicatorPaneVisibility(this.#scene as ChartScene, candidate);
 		}
 		const engine = this.#engine as unknown as {
 			replaceScene(value: ChartScene | TimeSeriesScene): ChartScene | TimeSeriesScene;
@@ -1000,6 +1023,21 @@ function preserveMainIndicators(
 		paneId: targetPane.id,
 		yAxisId: targetAxis.id,
 	}));
+	return parseChartScene({ ...structuredClone(candidate), panes });
+}
+
+function preserveIndicatorPaneVisibility(current: ChartScene, candidate: ChartScene): ChartScene {
+	const visibility = new Map(current.panes
+		.filter((pane) => pane.kind === 'indicator')
+		.flatMap((pane) => pane.indicators.map((indicator) => [indicator.id, indicator.visible] as const)));
+	const panes = structuredClone(candidate.panes);
+	for (const pane of panes) {
+		if (pane.kind !== 'indicator') continue;
+		for (const indicator of pane.indicators) {
+			const visible = visibility.get(indicator.id);
+			if (visible !== undefined) indicator.visible = visible;
+		}
+	}
 	return parseChartScene({ ...structuredClone(candidate), panes });
 }
 

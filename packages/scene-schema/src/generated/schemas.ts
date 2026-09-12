@@ -561,6 +561,7 @@ export const IndicatorSchema = {
         "SMA",
         "BBI",
         "VOL",
+        "TURNOVER",
         "MACD",
         "BOLL",
         "KDJ",
