@@ -657,6 +657,105 @@ for (const kind of ['chart', 'time-series'] as const) {
 	});
 }
 
+test('@browser in-progress horizontal segment clamps a price-axis endpoint to the chart edge', async ({ page }) => {
+	await installWorkspace(page, 'chart');
+	await page.locator('#chart').scrollIntoViewIfNeeded();
+	const setup = await page.evaluate(() => {
+		const adapter = (window as unknown as {
+			__adapter: {
+				restoreDrawings(drawings: unknown[]): void;
+				startDrawing(request: unknown): string;
+				subscribeDrawingEvents(
+					listener: (event: { readonly type: string; readonly id: string }) => void,
+				): () => void;
+			};
+			__baronRequest(type: string, index: number, paneRole: string): unknown;
+		}).__adapter;
+		adapter.restoreDrawings([]);
+		const events: string[] = [];
+		adapter.subscribeDrawingEvents((event) => events.push(`${event.type}:${event.id}`));
+		(window as unknown as { __drawingEvents: string[] }).__drawingEvents = events;
+		adapter.startDrawing(
+			(window as unknown as {
+				__baronRequest(type: string, index: number, paneRole: string): unknown;
+			}).__baronRequest('horizontalSegment', 0, 'candle'),
+		);
+
+		const container = document.querySelector<HTMLElement>('#chart')!;
+		const canvases = [...container.querySelectorAll('canvas')]
+			.map((canvas) => canvas.getBoundingClientRect());
+		const main = canvases.toSorted(
+			(left, right) => right.width * right.height - left.width * left.height,
+		)[0]!;
+		const yAxis = canvases.find((rect) =>
+			rect.width < main.width &&
+			Math.abs(rect.height - main.height) < 1 &&
+			(rect.left >= main.right - 0.5 || rect.right <= main.left + 0.5));
+		if (yAxis === undefined) {
+			throw new Error('Y-axis canvas was not found.');
+		}
+		const rightSide = yAxis.left >= main.right - 0.5;
+		return {
+			start: { x: main.left + main.width * 0.45, y: main.top + main.height * 0.5 },
+			end: {
+				x: rightSide ? yAxis.left + 6 : yAxis.right - 6,
+				y: main.top + main.height * 0.5,
+			},
+			mainEdgeX: rightSide ? main.right : main.left,
+			insideYAxis: rightSide
+				? yAxis.left + 6 < yAxis.right
+				: yAxis.right - 6 >= yAxis.left,
+		};
+	});
+
+	expect(setup.insideYAxis).toBe(true);
+	await page.mouse.click(setup.start.x, setup.start.y);
+	await settle(page);
+	await page.mouse.move(setup.end.x, setup.end.y);
+	await page.mouse.click(setup.end.x, setup.end.y);
+	await settle(page);
+
+	const result = await page.evaluate(() => {
+		const adapter = (window as unknown as {
+			__adapter: {
+				getDrawing(id: string): {
+					readonly geometry: {
+						readonly startTime: number;
+						readonly endTime: number;
+					};
+				} | undefined;
+				projectToPixel(
+					anchor: { readonly timestamp: number; readonly value: number },
+					paneRole: string,
+				): { readonly x: number; readonly y: number };
+			};
+			__drawingEvents: string[];
+		}).__adapter;
+		const drawing = adapter.getDrawing('port-horizontalSegment-0');
+		if (drawing === undefined) {
+			return { drawing: null, events: (window as unknown as { __drawingEvents: string[] }).__drawingEvents };
+		}
+		const endpoint = adapter.projectToPixel(
+			{ timestamp: drawing.geometry.endTime, value: 12.55 },
+			'candle',
+		);
+		return {
+			drawing,
+			endpoint,
+			events: (window as unknown as { __drawingEvents: string[] }).__drawingEvents,
+		};
+	});
+
+	expect(result.events).toContain('created:port-horizontalSegment-0');
+	expect(result.drawing).not.toBeNull();
+	expect(result.drawing!.geometry.endTime).toBeGreaterThan(
+		result.drawing!.geometry.startTime,
+	);
+	// Step drawings snap to the nearest candle center, so the committed endpoint may
+	// sit a few pixels inside the visual edge while still remaining on its right side.
+	expect(Math.abs(result.endpoint!.x - setup.mainEdgeX)).toBeLessThan(8);
+});
+
 test('@browser logarithmic sub-unit prices stay positive through projection and segment Drawing', async ({ page }) => {
 	await installWorkspace(page, 'chart', { subUnitLogarithmic: true });
 	const setup = await page.evaluate(() => {

@@ -376,6 +376,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	#interactivePriceMeasurement: InteractivePriceMeasurement | undefined;
 	/** 当前引擎进行中的绘制 Overlay ID；非 null 时 pointerdown 只路由给新绘制，不做命中测试。 */
 	#drawingInProgressId: string | null = null;
+	/** 当前绘制所属 Pane；用于把坐标轴区域的预览与落点钳制回主绘图区边界。 */
+	#drawingInProgressPaneId: string | null = null;
 	/** 宿主显式开启的 Drawing 输入策略；未配置时保持引擎原生行为。 */
 	readonly #drawingInteraction: DrawingInteractionOptions;
 	/** 独占交互下由 Baron 持续维护的选中 Drawing 锚点层。 */
@@ -1257,6 +1259,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				}
 				if (drawing && this.#drawingInProgressId === source.id) {
 					this.#drawingInProgressId = null;
+					this.#drawingInProgressPaneId = null;
 				}
 				this.#safelyCommitEngineOverlay(overlay, source, drawing ? 'created' : 'updated');
 			},
@@ -1310,6 +1313,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				}
 				if (this.#drawingInProgressId === overlay.id) {
 					this.#drawingInProgressId = null;
+					this.#drawingInProgressPaneId = null;
 				}
 				if (this.#activeOverlays().some((candidate) => candidate.id === overlay.id)) {
 					this.#setActiveOverlays(
@@ -1396,6 +1400,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#chart.removeOverlay({ id });
 		if (this.#drawingInProgressId === id) {
 			this.#drawingInProgressId = null;
+			this.#drawingInProgressPaneId = null;
 		}
 		if (this.#workspaceMode) {
 			const removed = this.#workspaceSources.delete(id);
@@ -1489,6 +1494,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 
 	#installInteractionListeners(): void {
 		this.#container.addEventListener('mousedown', this.#handleRightMouseDown, true);
+		this.#container.addEventListener('mousemove', this.#handleDrawingMouseMove, true);
 		this.#container.addEventListener('click', this.#handleCompatibilityClick, true);
 		this.#container.addEventListener('contextmenu', this.#handleContextMenu, true);
 		this.#container.addEventListener('pointerdown', this.#handlePointerDown, true);
@@ -1519,6 +1525,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 
 	#removeInteractionListeners(): void {
 		this.#container.removeEventListener('mousedown', this.#handleRightMouseDown, true);
+		this.#container.removeEventListener('mousemove', this.#handleDrawingMouseMove, true);
 		this.#container.removeEventListener('click', this.#handleCompatibilityClick, true);
 		this.#container.removeEventListener('contextmenu', this.#handleContextMenu, true);
 		this.#container.removeEventListener('pointerdown', this.#handlePointerDown, true);
@@ -1585,6 +1592,106 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		const rect = this.#container.getBoundingClientRect();
 		return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 	}
+
+	#mouseCoordinate(event: MouseEvent): PixelCoordinate {
+		const rect = this.#container.getBoundingClientRect();
+		return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+	}
+
+	#paneMainBounds(paneId: string): {
+		readonly left: number;
+		readonly top: number;
+		readonly right: number;
+		readonly bottom: number;
+	} | null {
+		const enginePaneId = this.#idMap.paneToEngine.get(paneId);
+		if (enginePaneId === undefined) {
+			return null;
+		}
+		const main = this.#chart.getDom(enginePaneId, 'main');
+		if (!(main instanceof HTMLElement)) {
+			return null;
+		}
+		const containerRect = this.#container.getBoundingClientRect();
+		const mainRect = main.getBoundingClientRect();
+		return {
+			left: mainRect.left - containerRect.left,
+			top: mainRect.top - containerRect.top,
+			right: mainRect.right - containerRect.left,
+			bottom: mainRect.bottom - containerRect.top,
+		};
+	}
+
+	#isInsideSpecificPaneMain(point: PixelCoordinate, paneId: string): boolean {
+		const bounds = this.#paneMainBounds(paneId);
+		return bounds !== null &&
+			point.x >= bounds.left && point.x < bounds.right &&
+			point.y >= bounds.top && point.y < bounds.bottom;
+	}
+
+	#clampToPaneMain(point: PixelCoordinate, paneId: string): PixelCoordinate | null {
+		const bounds = this.#paneMainBounds(paneId);
+		if (bounds === null) {
+			return null;
+		}
+		const epsilon = 0.5;
+		return {
+			x: Math.max(bounds.left, Math.min(point.x, bounds.right - epsilon)),
+			y: Math.max(bounds.top, Math.min(point.y, bounds.bottom - epsilon)),
+		};
+	}
+
+	#dispatchDrawingMouseMove(point: PixelCoordinate): void {
+		const rect = this.#container.getBoundingClientRect();
+		this.#dispatchEngineMouseMove({
+			x: point.x,
+			y: point.y,
+			pageX: rect.left + point.x + window.scrollX,
+			pageY: rect.top + point.y + window.scrollY,
+		});
+	}
+
+	#dispatchDrawingMouseClick(point: PixelCoordinate): void {
+		const rect = this.#container.getBoundingClientRect();
+		this.#resetClickArbitration();
+		this.#dispatchEngineMouseClick({
+			x: point.x,
+			y: point.y,
+			pageX: rect.left + point.x + window.scrollX,
+			pageY: rect.top + point.y + window.scrollY,
+		});
+	}
+
+	#routeOutsideInProgressDrawing(point: PixelCoordinate, click: boolean): boolean {
+		const paneId = this.#drawingInProgressPaneId;
+		if (
+			this.#drawingInProgressId === null ||
+			paneId === null ||
+			this.#isInsideSpecificPaneMain(point, paneId)
+		) {
+			return false;
+		}
+		const clamped = this.#clampToPaneMain(point, paneId);
+		if (clamped === null) {
+			return false;
+		}
+		if (click) {
+			this.#dispatchDrawingMouseClick(clamped);
+		} else {
+			this.#dispatchDrawingMouseMove(clamped);
+		}
+		return true;
+	}
+
+	readonly #handleDrawingMouseMove = (event: MouseEvent): void => {
+		if (this.#disposed || !this.#mutationsEnabled) {
+			return;
+		}
+		if (this.#routeOutsideInProgressDrawing(this.#mouseCoordinate(event), false)) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+		}
+	};
 
 	#isInsidePaneMain(point: PixelCoordinate): boolean {
 		const containerRect = this.#container.getBoundingClientRect();
@@ -1734,6 +1841,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		const overlay = candidate.overlays[index]!;
 		this.#interactivePriceMeasurement = undefined;
 		this.#drawingInProgressId = null;
+		this.#drawingInProgressPaneId = null;
 		if (!this.#chart.removeOverlay({ id: overlay.id })) {
 			throw new SceneError(
 				'RUNTIME_INIT_FAILED',
@@ -2010,6 +2118,14 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			return;
 		}
 		const coordinate = this.#pointerCoordinate(event);
+		if (
+			event.pointerType !== 'touch' &&
+			this.#routeOutsideInProgressDrawing(coordinate, true)
+		) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			return;
+		}
 		if (!this.#isInsidePaneMain(coordinate)) {
 			this.#beginOutsideMainInteraction(event.pointerId);
 			return;
@@ -2725,6 +2841,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			);
 		}
 		this.#drawingInProgressId = request.id;
+		this.#drawingInProgressPaneId = overlay.paneId;
 		if (request.type === 'segment') {
 			this.#prepareTouchPrecisionDrawing(request.id, overlay.paneId);
 		}
@@ -3269,6 +3386,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			);
 		}
 		this.#drawingInProgressId = request.id;
+		this.#drawingInProgressPaneId = request.paneId;
 		this.#scene = candidate;
 		if (request.type === 'priceMeasurement') {
 			this.#interactivePriceMeasurement = {
@@ -3428,6 +3546,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#selectionAnchors = undefined;
 		this.#interactivePriceMeasurement = undefined;
 		this.#drawingInProgressId = null;
+		this.#drawingInProgressPaneId = null;
 		this.#outsideMainPointerIds.clear();
 		this.#temporarilyLockedOverlayIds.clear();
 		this.#disposed = true;
