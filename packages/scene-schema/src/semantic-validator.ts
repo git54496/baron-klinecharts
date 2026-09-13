@@ -194,7 +194,7 @@ function validateIndicator(
 		);
 	}
 	const expectedCount = INDICATOR_PARAM_COUNTS[indicator.name];
-	if (indicator.name === 'MA') {
+	if (indicator.name === 'MA' || indicator.name === 'EMA') {
 		if (
 			indicator.calcParams.length < 1 ||
 			indicator.calcParams.length > 8
@@ -203,7 +203,7 @@ function validateIndicator(
 				issue(
 					'SCENE_SCHEMA_INVALID',
 					`${path}/calcParams`,
-					'MA requires 1 to 8 calculation parameters.',
+						`${indicator.name} requires 1 to 8 calculation parameters.`,
 				),
 			);
 		}

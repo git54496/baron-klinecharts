@@ -97,6 +97,7 @@ export interface DrawingStyles {
 		color: string;
 		size: number;
 		style: 'solid' | 'dashed' | 'dotted';
+		visible?: boolean;
 	};
 	fill: {
 		color: string;

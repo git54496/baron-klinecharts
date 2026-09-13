@@ -728,7 +728,11 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		return true;
 	}
 
-	public updateIndicatorParams(id: string, calcParams: readonly number[]): SceneIndicator {
+	public updateIndicatorParams(
+		id: string,
+		calcParams: readonly number[],
+		styles?: SceneIndicator['styles'],
+	): SceneIndicator {
 		this.#assertUsable();
 		if (this.#sceneKind() !== 'chart') {
 			throw new Error('INDICATOR_UNSUPPORTED: time-series Workspaces do not support Indicators.');
@@ -739,12 +743,17 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		if (current === undefined || current.calcParams.length === 0) {
 			throw new Error('INDICATOR_NOT_CONFIGURABLE: Indicator has no editable parameters.');
 		}
-		if (calcParams.length !== current.calcParams.length ||
+		if (((current.name === 'MA' || current.name === 'EMA')
+			? calcParams.length < 1 || calcParams.length > 8
+			: calcParams.length !== current.calcParams.length) ||
 			calcParams.some((value) => !Number.isFinite(value) || value <= 0 || value > 100000)) {
 			throw new Error('INDICATOR_INVALID_PARAMS: Parameters must be positive finite numbers.');
 		}
 		const panes = structuredClone(scene.panes);
 		panes[paneIndex]!.indicators.find((item) => item.id === id)!.calcParams = [...calcParams];
+		if (styles !== undefined) {
+			panes[paneIndex]!.indicators.find((item) => item.id === id)!.styles = structuredClone(styles);
+		}
 		const candidate = parseChartScene({ ...structuredClone(scene), panes });
 		const updated = candidate.panes[paneIndex]!.indicators.find((item) => item.id === id)!;
 		const port = this.#requireIndicatorPort();

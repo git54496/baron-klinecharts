@@ -77,6 +77,9 @@
             "dashed",
             "dotted"
           ]
+        },
+        "visible": {
+          "type": "boolean"
         }
       }
     },

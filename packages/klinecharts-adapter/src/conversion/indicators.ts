@@ -45,7 +45,7 @@ const INDICATOR_SETTINGS_FEATURE: TooltipFeatureStyle = {
 
 function lineStyle(style: SceneIndicator['styles']['lines'][number]) {
 	return {
-		color: style.color,
+		color: style.visible === false ? 'rgba(0, 0, 0, 0)' : style.color,
 		size: style.size,
 		style: style.style === 'solid' ? 'solid' as const : 'dashed' as const,
 		dashedValue: style.style === 'dotted' ? [1, 2] : [4, 4],
@@ -104,9 +104,25 @@ export function toIndicatorCreate(
 		styles: toKLineChartsIndicatorStyles(indicator.styles),
 		// KLineCharts keeps its default title and value legends when the callback only
 		// supplies features. The middle position follows each indicator title.
-		createTooltipDataSource: ({ indicator: current }) => ({
-			features: current.calcParams.length > 0 ? [INDICATOR_SETTINGS_FEATURE] : [],
-		}) as IndicatorTooltipData,
+		createTooltipDataSource: ({ indicator: current, crosshair }) => {
+			const data: IndicatorTooltipData = {
+				features: current.calcParams.length > 0 ? [INDICATOR_SETTINGS_FEATURE] : [],
+			} as IndicatorTooltipData;
+			if (indicator.name === 'MA' || indicator.name === 'EMA') {
+				const values = current.result[crosshair.dataIndex ?? -1] as Record<string, number> | undefined;
+				data.legends = indicator.calcParams.flatMap((period, index) => {
+					const style = indicator.styles.lines[index];
+					if (style?.visible === false) return [];
+					const value = values?.[`${indicator.name.toLowerCase()}${index + 1}`];
+					return [{
+						title: { text: `${indicator.name}${period}: `, color: style?.color ?? '#000000' },
+						value: { text: Number.isFinite(value) ? value!.toFixed(indicator.precision) : '--',
+							color: style?.color ?? '#000000' },
+					}];
+				});
+			}
+			return data;
+		},
 	};
 }
 

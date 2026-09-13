@@ -95,7 +95,7 @@ export interface MainIndicatorRuntimeCapability {
 	listConfigurableIndicators(): readonly SceneIndicator[];
 	addMainIndicator(options: AddIndicatorOptions): SceneIndicator;
 	removeMainIndicator(id: string): boolean;
-	updateIndicatorParams(id: string, calcParams: readonly number[]): SceneIndicator;
+	updateIndicatorParams(id: string, calcParams: readonly number[], styles?: SceneIndicator['styles']): SceneIndicator;
 }
 
 /** 每个指标副图独立显示，显示顺序由 Scene Pane order 决定。 */

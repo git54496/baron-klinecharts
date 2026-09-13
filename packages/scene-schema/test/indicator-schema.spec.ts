@@ -47,6 +47,19 @@ describe('built-in indicator schema', () => {
 		);
 	});
 
+	it('accepts one to eight EMA periods and a hidden line style', () => {
+		const scene = makeScene();
+		const indicator = makeIndicator('EMA');
+		indicator.calcParams = [7];
+		indicator.styles.lines[0]!.visible = false;
+		addIndicatorPane(scene, indicator);
+		expect(parseChartScene(scene).panes[1]?.indicators[0]?.styles.lines[0]?.visible).toBe(false);
+		indicator.calcParams = [1, 2, 3, 4, 5, 6, 7, 8];
+		expect(parseChartScene(scene).panes[1]?.indicators[0]?.calcParams).toHaveLength(8);
+		indicator.calcParams = [];
+		expect(() => parseChartScene(scene)).toThrowError();
+	});
+
 	it('rejects a Y-axis reference outside the containing Pane', () => {
 		const scene = makeScene();
 		const indicator = makeIndicator('MACD');

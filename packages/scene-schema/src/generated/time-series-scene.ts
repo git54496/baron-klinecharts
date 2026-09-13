@@ -40,6 +40,7 @@ export interface TimeSeriesDefinition {
 		color: string;
 		size: number;
 		style: 'solid' | 'dashed' | 'dotted';
+		visible?: boolean;
 	};
 }
 export interface TimeSeriesPoint {

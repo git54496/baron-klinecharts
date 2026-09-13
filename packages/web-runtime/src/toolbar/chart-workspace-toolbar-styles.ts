@@ -280,6 +280,29 @@ export const CHART_WORKSPACE_TOOLBAR_STYLES = String.raw`
 .baron-indicator-settings__actions button { min-height: 36px; padding: 0 12px; border: 1px solid #eaebed; border-radius: 12px; color: #000; background: #fff; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
 .baron-indicator-settings__actions button[type=submit] { border-color: #0b6df2; color: #fff; background: #0b6df2; }
 .baron-indicator-settings button:focus-visible, .baron-indicator-settings input:focus-visible, .baron-chart-workspace-popover__settings-list button:focus-visible { outline: 2px solid #0b6df2; outline-offset: 2px; }
+.baron-indicator-settings--lines { width: min(460px, calc(100vw - 24px)); max-height: min(760px, calc(100dvh - 24px)); }
+.baron-indicator-settings--lines .baron-indicator-settings__fields { gap: 0; margin-top: 16px; }
+.baron-indicator-settings__line { padding: 12px 0; border-top: 1px solid #f1f1f1; transition: opacity .18s ease; }
+.baron-indicator-settings__line.is-hidden .baron-indicator-settings__line-values { opacity: .48; }
+.baron-indicator-settings__line-header, .baron-indicator-settings__line-controls { display: flex; align-items: center; justify-content: space-between; }
+.baron-indicator-settings__line-header strong { font-size: 12px; line-height: 16px; font-weight: 800; }
+.baron-indicator-settings__line-controls { gap: 2px; }
+.baron-indicator-settings__icon { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; color: #68707a; background: transparent; border: 0; border-radius: 10px; cursor: pointer; transition: color .18s ease, background .18s ease; }
+.baron-indicator-settings__icon:hover { color: #000; background: #f1f5fb; }
+.baron-indicator-settings__icon[aria-pressed=false] { color: #a7a7a7; }
+.baron-indicator-settings__icon:disabled { opacity: .35; cursor: default; }
+.baron-indicator-settings__icon svg { width: 18px; height: 18px; }
+.baron-indicator-settings__line-values { display: grid; grid-template-columns: minmax(0, 1fr) 84px 100px; gap: 10px; margin-top: 6px; transition: opacity .18s ease; }
+.baron-indicator-settings__line-values label { min-width: 0; }
+.baron-indicator-settings__line-values input[type=color] { padding: 5px; cursor: pointer; }
+.baron-indicator-settings__line-values select { box-sizing: border-box; width: 100%; height: 36px; padding: 0 8px; color: #000; background: #fafafa; border: 1px solid #eaebed; border-radius: 10px; font: inherit; font-size: 12px; }
+.baron-indicator-settings__add { display: block; width: 100%; min-height: 36px; margin-top: 2px; color: #0b6df2; background: #fff; border: 1px dashed #d2dcf2; border-radius: 10px; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+.baron-indicator-settings__add:hover { background: #f1f5fb; }
+.baron-indicator-settings__add:disabled { color: #a7a7a7; border-color: #eaebed; cursor: default; }
+.baron-indicator-settings__add[hidden] { display: none; }
+.baron-indicator-settings select:focus-visible { outline: 2px solid #0b6df2; outline-offset: 2px; }
+@media (max-width: 390px) { .baron-indicator-settings--lines { padding: 18px; } .baron-indicator-settings__line-values { grid-template-columns: minmax(0, 1fr) 64px 88px; gap: 7px; } }
+@media (prefers-reduced-motion: reduce) { .baron-indicator-settings__line, .baron-indicator-settings__line-values, .baron-indicator-settings__icon { transition: none; } }
 .baron-chart-workspace-popover__group + .baron-chart-workspace-popover__group { padding-top: 10px; margin-top: 10px; border-top: 1px solid rgba(233, 235, 239, 1); }
 .baron-chart-workspace-popover__text-form { display: flex; gap: 6px; }
 .baron-chart-workspace-popover__text-form input {

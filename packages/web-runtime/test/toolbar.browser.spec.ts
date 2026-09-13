@@ -851,8 +851,8 @@ test('@browser indicator settings update EMA parameters and survive a scene repl
 		const settings = popover.querySelector<HTMLButtonElement>('[data-indicator-settings-id]')!;
 		settings.click();
 		const dialog = document.querySelector<HTMLDialogElement>('.baron-indicator-settings')!;
-		const initial = [...dialog.querySelectorAll<HTMLInputElement>('input')].map((input) => input.value);
-		const inputs = [...dialog.querySelectorAll<HTMLInputElement>('input')];
+		const initial = [...dialog.querySelectorAll<HTMLInputElement>('input[type=number]')].map((input) => input.value);
+		const inputs = [...dialog.querySelectorAll<HTMLInputElement>('input[type=number]')];
 		inputs[0]!.value = '0';
 		dialog.querySelector<HTMLFormElement>('form')!.requestSubmit();
 		const invalidError = dialog.querySelector<HTMLElement>('.baron-indicator-settings__error')!.textContent;
@@ -881,6 +881,100 @@ test('@browser indicator settings update EMA parameters and survive a scene repl
 		restoredFocus: true,
 		error: '',
 	});
+});
+
+test('@browser MA line editor adds, removes, styles and hides individual periods', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const result = await page.evaluate(async (workspace) => {
+		const { createChartWorkspaceToolbar, createDrawableWorkspaceRuntime } = await import('/src/index.ts');
+		const runtime = await createDrawableWorkspaceRuntime(
+			document.querySelector<HTMLElement>('#chart')!, workspace, { commitMode: 'immediate' },
+		);
+		const left = document.createElement('div');
+		document.body.append(left);
+		const toolbar = createChartWorkspaceToolbar({
+			top: document.querySelector<HTMLElement>('#toolbar')!, left,
+		}, runtime);
+		toolbar.topElement.querySelector<HTMLButtonElement>('[data-action="main-indicators"]')!.click();
+		const popover = document.querySelector<HTMLElement>('[id^="baron-workspace-indicators-"]')!;
+		popover.querySelector<HTMLButtonElement>('[data-indicator-name="MA"]')!.click();
+		popover.querySelector<HTMLButtonElement>('[data-indicator-settings-id]')!.click();
+		const dialog = document.querySelector<HTMLDialogElement>('.baron-indicator-settings')!;
+		dialog.querySelector<HTMLButtonElement>('.baron-indicator-settings__add')!.click();
+		let rows = dialog.querySelectorAll<HTMLElement>('.baron-indicator-settings__line');
+		rows[0]!.querySelector<HTMLButtonElement>('[aria-label^="隐藏周期"]')!.click();
+		const color = rows[0]!.querySelector<HTMLInputElement>('input[type=color]')!;
+		color.value = '#123456'; color.dispatchEvent(new Event('input', { bubbles: true }));
+		const size = rows[0]!.querySelector<HTMLSelectElement>('select')!;
+		size.value = '2.5'; size.dispatchEvent(new Event('change', { bubbles: true }));
+		rows[1]!.querySelector<HTMLButtonElement>('[aria-label^="删除周期"]')!.click();
+		rows = dialog.querySelectorAll<HTMLElement>('.baron-indicator-settings__line');
+		const added = rows[rows.length - 1]!.querySelector<HTMLInputElement>('input[type=number]')!;
+		added.value = '120'; added.dispatchEvent(new Event('input', { bubbles: true }));
+		const closed = new Promise<void>((resolve) => dialog.addEventListener('close', () => resolve(), { once: true }));
+		dialog.querySelector<HTMLFormElement>('form')!.requestSubmit();
+		await closed;
+		const indicator = runtime.listMainIndicators().find((item) => item.name === 'MA')!;
+		runtime.replaceScene(workspace.scene.document);
+		const restored = runtime.listMainIndicators().find((item) => item.name === 'MA')!;
+		const output = {
+			periods: indicator.calcParams,
+			firstStyle: indicator.styles.lines[0],
+			restoredStyle: restored.styles.lines[0],
+			lineCount: indicator.styles.lines.length,
+		};
+		toolbar.destroy(); runtime.destroy();
+		return output;
+	}, chartWorkspaceFixture);
+	expect(result.periods).toEqual([5, 30, 60, 120]);
+	expect(result.firstStyle).toEqual({ color: 'rgba(18, 52, 86, 1)', size: 2.5, style: 'solid', visible: false });
+	expect(result.restoredStyle).toEqual(result.firstStyle);
+	expect(result.lineCount).toBe(4);
+});
+
+test('@browser MA line editor fits desktop and narrow viewports with keyboard controls', async ({ page }) => {
+	const errors: string[] = [];
+	page.on('pageerror', (error) => errors.push(error.message));
+	await page.goto('/test/fixture.html');
+	await page.evaluate(async (workspace) => {
+		const { createChartWorkspaceToolbar, createDrawableWorkspaceRuntime } = await import('/src/index.ts');
+		const runtime = await createDrawableWorkspaceRuntime(
+			document.querySelector<HTMLElement>('#chart')!, workspace, { commitMode: 'immediate' },
+		);
+		const left = document.createElement('div');
+		document.body.append(left);
+		const toolbar = createChartWorkspaceToolbar({
+			top: document.querySelector<HTMLElement>('#toolbar')!, left,
+		}, runtime);
+		toolbar.topElement.querySelector<HTMLButtonElement>('[data-action="main-indicators"]')!.click();
+		const popover = document.querySelector<HTMLElement>('[id^="baron-workspace-indicators-"]')!;
+		popover.querySelector<HTMLButtonElement>('[data-indicator-name="MA"]')!.click();
+		popover.querySelector<HTMLButtonElement>('[data-indicator-settings-id]')!.click();
+	}, chartWorkspaceFixture);
+	for (const viewport of [{ width: 1280, height: 900 }, { width: 795, height: 862 }, { width: 390, height: 844 }]) {
+		await page.setViewportSize(viewport);
+		const layout = await page.evaluate(() => {
+			const dialog = document.querySelector<HTMLDialogElement>('.baron-indicator-settings')!;
+			const box = dialog.getBoundingClientRect();
+			return { left: box.left, right: box.right, top: box.top, bottom: box.bottom,
+				viewportWidth: innerWidth, viewportHeight: innerHeight,
+				scrollWidth: dialog.scrollWidth, clientWidth: dialog.clientWidth };
+		});
+		expect(layout.left).toBeGreaterThanOrEqual(0);
+		expect(layout.right).toBeLessThanOrEqual(layout.viewportWidth);
+		expect(layout.top).toBeGreaterThanOrEqual(0);
+		expect(layout.bottom).toBeLessThanOrEqual(layout.viewportHeight);
+		expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+	}
+	await page.locator('.baron-indicator-settings__add').focus();
+	expect(await page.locator('.baron-indicator-settings__add').evaluate((element) =>
+		getComputedStyle(element).outlineStyle)).toBe('solid');
+	for (let index = 0; index < 4; index++) await page.locator('.baron-indicator-settings__add').click();
+	await expect(page.locator('.baron-indicator-settings__add')).toBeDisabled();
+	await page.emulateMedia({ reducedMotion: 'reduce' });
+	expect(await page.locator('.baron-indicator-settings__line').first().evaluate((element) =>
+		getComputedStyle(element).transitionDuration)).toBe('0s');
+	expect(errors).toEqual([]);
 });
 
 test('@browser canvas gear opens EMA settings', async ({ page }) => {

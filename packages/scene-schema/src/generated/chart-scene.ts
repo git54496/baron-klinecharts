@@ -207,6 +207,7 @@ export interface Line {
 	color: string;
 	size: number;
 	style: 'solid' | 'dashed' | 'dotted';
+	visible?: boolean;
 }
 export interface SceneOverlay {
 	id: string;

@@ -25,4 +25,11 @@ describe('indicator style conversion', () => {
 			],
 		});
 	});
+
+	it('renders a hidden indicator line transparently while preserving its configured color', () => {
+		const style = { color: 'rgba(41, 98, 255, 1)', size: 2, style: 'solid' as const, visible: false };
+		const converted = toKLineChartsIndicatorStyles({ lines: [style], bars: [], circles: [] });
+		expect(converted.lines?.[0]?.color).toBe('rgba(0, 0, 0, 0)');
+		expect(style.color).toBe('rgba(41, 98, 255, 1)');
+	});
 });

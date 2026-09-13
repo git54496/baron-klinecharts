@@ -79,6 +79,9 @@ export const CommonSchema = {
             "dashed",
             "dotted"
           ]
+        },
+        "visible": {
+          "type": "boolean"
         }
       }
     },
