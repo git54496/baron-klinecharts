@@ -1,4 +1,5 @@
 import { SUPPORTED_OVERLAYS } from '@baron1996/klinecharts-adapter';
+import type { SceneIndicator } from '@baron1996/kline-scene-schema';
 
 import type {
 	DisplayTimezoneRuntimeCapability,
@@ -13,6 +14,7 @@ import { MAIN_PANE_INDICATOR_PRESETS } from '../indicator-presentation.js';
 import { registerRuntimeTeardown } from '../lifecycle.js';
 import type { PriceScale, SupportedOverlayType } from '../types.js';
 import { CHART_WORKSPACE_TOOLBAR_STYLES } from './chart-workspace-toolbar-styles.js';
+import { createIndicatorSettingsDialog } from './indicator-settings-dialog.js';
 import { createToolbarIcon, type ToolbarIconName } from './toolbar-icons.js';
 import {
 	OVERLAY_TOOL_PRESENTATIONS,
@@ -49,6 +51,8 @@ export interface ChartWorkspaceToolbarOptions {
 	/** “指标”菜单中的独立副图开关，由宿主决定显示哪些窗格。 */
 	readonly indicatorPaneActions?: readonly WorkspaceToolbarIndicatorPaneAction[];
 	readonly onIndicatorPaneVisibilityChange?: (paneId: string, visible: boolean) => void;
+	/** 主图指标或参数变化后，交由宿主保存用户配置。 */
+	readonly onIndicatorConfigurationChange?: (indicators: readonly SceneIndicator[]) => void;
 	/** 顶部直接展示的周期动作；点击后仍通过 host-action-requested 交给宿主取数。 */
 	readonly periodActions?: readonly HostActionDescriptor[];
 	/** 顶部直接展示的宿主动作用于前复权等业务配置。 */
@@ -596,6 +600,15 @@ export function createChartWorkspaceToolbar(
 	indicatorTitle.textContent = '主图指标 · 浏览器实时计算';
 	const indicatorGrid = document.createElement('div');
 	indicatorGrid.className = 'baron-chart-workspace-popover__grid';
+	const settingsTitle = document.createElement('div');
+	settingsTitle.className = 'baron-chart-workspace-popover__title baron-chart-workspace-popover__title--secondary';
+	settingsTitle.textContent = '已启用指标参数';
+	const settingsList = document.createElement('div');
+	settingsList.className = 'baron-chart-workspace-popover__settings-list';
+	const settingsDialog = createIndicatorSettingsDialog(runtime, () => {
+		options.onIndicatorConfigurationChange?.(runtime.listConfigurableIndicators());
+		refreshIndicators();
+	});
 	const indicatorButtons = new Map<string, HTMLButtonElement>();
 	const refreshIndicators = (): void => {
 		const activeNames = new Set(
@@ -606,6 +619,17 @@ export function createChartWorkspaceToolbar(
 				.get(preset.name)
 				?.setAttribute('aria-pressed', String(activeNames.has(preset.name)));
 		}
+		settingsList.replaceChildren();
+		for (const indicator of runtime.listConfigurableIndicators().filter((item) => item.visible)) {
+			const button = createButton({
+				label: `设置 ${indicator.name} 参数`,
+				text: `${indicator.name} (${indicator.calcParams.join(', ')})`,
+			});
+			button.dataset.indicatorSettingsId = indicator.id;
+			button.addEventListener('click', () => settingsDialog.open(indicator.id, button));
+			settingsList.append(button);
+		}
+		settingsTitle.hidden = settingsList.childElementCount === 0;
 	};
 	for (const preset of MAIN_PANE_INDICATOR_PRESETS) {
 		const button = createButton({
@@ -628,6 +652,7 @@ export function createChartWorkspaceToolbar(
 					calcParams: preset.calcParams,
 				});
 			}
+			options.onIndicatorConfigurationChange?.(runtime.listConfigurableIndicators());
 			refreshIndicators();
 		};
 		button.addEventListener('click', toggle);
@@ -658,6 +683,7 @@ export function createChartWorkspaceToolbar(
 				if (runtime.setIndicatorPaneVisible?.(action.paneId, visible)) {
 					button.setAttribute('aria-pressed', String(visible));
 					options.onIndicatorPaneVisibilityChange?.(action.paneId, visible);
+					refreshIndicators();
 				}
 			};
 			button.addEventListener('click', toggle);
@@ -668,6 +694,7 @@ export function createChartWorkspaceToolbar(
 		}
 		indicatorPopover.element.append(paneTitle, paneGrid);
 	}
+	indicatorPopover.element.append(settingsTitle, settingsList);
 
 	const timezoneChoices =
 		options.displayTimezoneChoices ?? defaultTimezoneChoices(runtime);
@@ -1012,6 +1039,12 @@ export function createChartWorkspaceToolbar(
 	const eventCapability = workspaceEventCapability(runtime);
 	if (eventCapability !== undefined) {
 		cleanupCallbacks.push(eventCapability.subscribe((event) => {
+			if (event.type === 'indicator-settings-requested') {
+				settingsDialog.open(event.id);
+			}
+			if (event.type === 'indicator-params-updated') {
+				refreshIndicators();
+			}
 			if (
 				(event.type === 'drawing-candidate' && event.operation === 'create') ||
 				event.type === 'drawing-committed' ||
@@ -1149,6 +1182,7 @@ export function createChartWorkspaceToolbar(
 			for (const popover of openPopovers) {
 				popover.destroy();
 			}
+			settingsDialog.destroy();
 			tooltip.destroy();
 			top.remove();
 			left.remove();

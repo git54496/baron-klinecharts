@@ -832,6 +832,83 @@ test('@browser composite chart toolbar keeps controls in one horizontally scroll
 	expect(result.topScrollWidth).toBeGreaterThan(result.topClientWidth);
 });
 
+test('@browser indicator settings update EMA parameters and survive a scene replacement', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const result = await page.evaluate(async (workspace) => {
+		const { createChartWorkspaceToolbar, createDrawableWorkspaceRuntime } = await import('/src/index.ts');
+		const runtime = await createDrawableWorkspaceRuntime(
+			document.querySelector<HTMLElement>('#chart')!, workspace,
+			{ commitMode: 'immediate' },
+		);
+		const left = document.createElement('div');
+		document.body.append(left);
+		const toolbar = createChartWorkspaceToolbar({
+			top: document.querySelector<HTMLElement>('#toolbar')!, left,
+		}, runtime);
+		toolbar.topElement.querySelector<HTMLButtonElement>('[data-action="main-indicators"]')!.click();
+		const popover = document.querySelector<HTMLElement>('[id^="baron-workspace-indicators-"]')!;
+		popover.querySelector<HTMLButtonElement>('[data-indicator-name="EMA"]')!.click();
+		const settings = popover.querySelector<HTMLButtonElement>('[data-indicator-settings-id]')!;
+		settings.click();
+		const dialog = document.querySelector<HTMLDialogElement>('.baron-indicator-settings')!;
+		const initial = [...dialog.querySelectorAll<HTMLInputElement>('input')].map((input) => input.value);
+		const inputs = [...dialog.querySelectorAll<HTMLInputElement>('input')];
+		inputs[0]!.value = '0';
+		dialog.querySelector<HTMLFormElement>('form')!.requestSubmit();
+		const invalidError = dialog.querySelector<HTMLElement>('.baron-indicator-settings__error')!.textContent;
+		inputs[0]!.value = '7';
+		inputs[1]!.value = '14';
+		inputs[2]!.value = '21';
+		const closed = new Promise<void>((resolve) => dialog.addEventListener('close', () => resolve(), { once: true }));
+		dialog.querySelector<HTMLFormElement>('form')!.requestSubmit();
+		await closed;
+		const afterSave = runtime.listMainIndicators().find((indicator) => indicator.name === 'EMA')!.calcParams;
+		const restoredFocus = (document.activeElement as HTMLElement | null)?.dataset.indicatorSettingsId === settings.dataset.indicatorSettingsId;
+		runtime.replaceScene(workspace.scene.document);
+		const afterReplace = runtime.listMainIndicators().find((indicator) => indicator.name === 'EMA')!.calcParams;
+		const result = { initial, invalidError, afterSave, afterReplace, dialogClosed: !dialog.open, restoredFocus,
+			error: dialog.querySelector<HTMLElement>('.baron-indicator-settings__error')?.textContent };
+		toolbar.destroy();
+		runtime.destroy();
+		return result;
+	}, chartWorkspaceFixture);
+	expect(result).toEqual({
+		initial: ['6', '12', '20'],
+		invalidError: '请输入有效的正数；周期必须为整数。',
+		afterSave: [7, 14, 21],
+		afterReplace: [7, 14, 21],
+		dialogClosed: true,
+		restoredFocus: true,
+		error: '',
+	});
+});
+
+test('@browser canvas gear opens EMA settings', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	await page.evaluate(async (workspace) => {
+		const { createChartWorkspaceToolbar, createDrawableWorkspaceRuntime } = await import('/src/index.ts');
+		const runtime = await createDrawableWorkspaceRuntime(document.querySelector<HTMLElement>('#chart')!, workspace,
+			{ commitMode: 'immediate' });
+		const left = document.createElement('div'); document.body.append(left);
+		const toolbar = createChartWorkspaceToolbar({ top: document.querySelector<HTMLElement>('#toolbar')!, left }, runtime);
+		toolbar.topElement.querySelector<HTMLButtonElement>('[data-action="main-indicators"]')!.click();
+		document.querySelector<HTMLButtonElement>('[data-indicator-name="EMA"]')!.click();
+		toolbar.topElement.querySelector<HTMLButtonElement>('[data-action="main-indicators"]')!.click();
+	}, chartWorkspaceFixture);
+	await page.mouse.click(105, 103);
+	await expect(page.locator('.baron-indicator-settings')).toBeVisible();
+	await expect(page.locator('.baron-indicator-settings h2')).toHaveText('EMA 参数');
+	for (const width of [795, 390]) {
+		await page.setViewportSize({ width, height: 862 });
+		const rect = await page.locator('.baron-indicator-settings').boundingBox();
+		expect(rect).not.toBeNull();
+		expect(rect!.x).toBeGreaterThanOrEqual(0);
+		expect(rect!.x + rect!.width).toBeLessThanOrEqual(width);
+	}
+	await page.keyboard.press('Escape');
+	await expect(page.locator('.baron-indicator-settings')).not.toBeVisible();
+});
+
 test('@browser indicator menu independently toggles volume and turnover panes', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	const result = await page.evaluate(async (workspace) => {
@@ -880,16 +957,19 @@ test('@browser indicator menu independently toggles volume and turnover panes', 
 		volume.click();
 		const afterBoth = (runtime.exportWorkspace().scene.document as typeof scene).panes
 			.slice(1).map((pane: { indicators: Array<{ visible: boolean }> }) => pane.indicators[0]!.visible);
+		runtime.updateIndicatorParams('indicator-volume', [7, 14, 21]);
+		runtime.replaceScene(scene);
+		const volumeParams = runtime.listConfigurableIndicators().find((indicator) => indicator.name === 'VOL')!.calcParams;
 		turnover.click();
 		const afterRestore = (runtime.exportWorkspace().scene.document as typeof scene).panes
 			.slice(1).map((pane: { indicators: Array<{ visible: boolean }> }) => pane.indicators[0]!.visible);
 		const pressed = [volume.getAttribute('aria-pressed'), turnover.getAttribute('aria-pressed')];
 		toolbar.destroy(); runtime.destroy(); left.remove();
-		return { afterTurnover, afterBoth, afterRestore, pressed };
+		return { afterTurnover, afterBoth, afterRestore, pressed, volumeParams };
 	}, chartWorkspaceFixture);
 	expect(result).toEqual({
 		afterTurnover: [true, false], afterBoth: [false, false],
-		afterRestore: [false, true], pressed: ['false', 'true'],
+		afterRestore: [false, true], pressed: ['false', 'true'], volumeParams: [7, 14, 21],
 	});
 });
 

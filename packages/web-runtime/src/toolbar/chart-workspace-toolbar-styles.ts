@@ -265,6 +265,21 @@ export const CHART_WORKSPACE_TOOLBAR_STYLES = String.raw`
 .baron-chart-workspace-popover__grid { display: grid; grid-template-columns: repeat(3, minmax(58px, 1fr)); gap: 5px; }
 .baron-chart-workspace-popover__grid--secondary { grid-template-columns: repeat(2, minmax(82px, 1fr)); }
 .baron-chart-workspace-popover__grid .baron-chart-workspace-toolbar__button { width: 100%; border: 1px solid rgba(231, 233, 238, 1); }
+.baron-chart-workspace-popover__settings-list { display: flex; flex-wrap: wrap; gap: 5px; }
+.baron-chart-workspace-popover__settings-list:empty { display: none; }
+.baron-chart-workspace-popover__settings-list .baron-chart-workspace-toolbar__button { border: 1px solid rgba(231, 233, 238, 1); font-size: 11px; }
+.baron-indicator-settings { box-sizing: border-box; width: min(360px, calc(100vw - 24px)); max-height: min(640px, calc(100vh - 24px)); padding: 22px; overflow: auto; color: #000; background: #fff; border: 1px solid #eaebed; border-radius: 20px; box-shadow: 0 18px 54px rgba(20, 23, 31, .16); font: inherit; }
+.baron-indicator-settings::backdrop { background: rgba(20, 23, 31, .32); }
+.baron-indicator-settings h2 { margin: 0; font-size: 18px; line-height: 25px; font-weight: 800; }
+.baron-indicator-settings p { margin: 5px 0 0; color: #888; font-size: 12px; line-height: 16px; }
+.baron-indicator-settings__fields { display: grid; gap: 12px; margin-top: 20px; }
+.baron-indicator-settings__fields label { display: grid; gap: 6px; color: #000; font-size: 12px; line-height: 16px; font-weight: 700; }
+.baron-indicator-settings__fields input { box-sizing: border-box; width: 100%; height: 36px; padding: 0 10px; color: #000; background: #fafafa; border: 1px solid #eaebed; border-radius: 10px; font: inherit; font-size: 14px; font-variant-numeric: tabular-nums; }
+.baron-indicator-settings__error { min-height: 16px; color: #e40014 !important; }
+.baron-indicator-settings__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.baron-indicator-settings__actions button { min-height: 36px; padding: 0 12px; border: 1px solid #eaebed; border-radius: 12px; color: #000; background: #fff; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+.baron-indicator-settings__actions button[type=submit] { border-color: #0b6df2; color: #fff; background: #0b6df2; }
+.baron-indicator-settings button:focus-visible, .baron-indicator-settings input:focus-visible, .baron-chart-workspace-popover__settings-list button:focus-visible { outline: 2px solid #0b6df2; outline-offset: 2px; }
 .baron-chart-workspace-popover__group + .baron-chart-workspace-popover__group { padding-top: 10px; margin-top: 10px; border-top: 1px solid rgba(233, 235, 239, 1); }
 .baron-chart-workspace-popover__text-form { display: flex; gap: 6px; }
 .baron-chart-workspace-popover__text-form input {

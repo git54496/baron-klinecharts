@@ -133,6 +133,8 @@ export interface IndicatorEnginePort {
 	listIndicators(): readonly SceneIndicator[];
 	addIndicator(indicator: SceneIndicator): SceneIndicator;
 	removeIndicator(id: string): boolean;
+	updateIndicator?(indicator: SceneIndicator): SceneIndicator;
+	subscribeIndicatorSettingsRequests?(listener: (id: string) => void): () => void;
 	setIndicatorPaneVisible?(paneId: string, visible: boolean): boolean;
 }
 
