@@ -3,7 +3,7 @@ import type { SceneIndicator } from '@baron1996/kline-scene-schema';
 import type { AddIndicatorOptions } from './types.js';
 
 export const MAIN_PANE_INDICATOR_PRESETS = [
-	{ name: 'MA', label: 'MA', calcParams: [5, 10, 30, 60] },
+	{ name: 'MA', label: 'MA', calcParams: [5, 20, 50, 200] },
 	{ name: 'EMA', label: 'EMA', calcParams: [6, 12, 20] },
 	{ name: 'SMA', label: 'SMA', calcParams: [12, 2] },
 	{ name: 'BOLL', label: 'BOLL', calcParams: [20, 2] },
@@ -23,16 +23,24 @@ const DEFAULT_INDICATOR_LINE_COLORS = [
 	'rgba(139, 92, 246, 1)',
 ] as const;
 
+const MA_LINE_COLORS = [
+	'rgba(160, 170, 198, 1)',
+	'rgba(220, 173, 92, 1)',
+	'rgba(16, 185, 130, 1)',
+	'rgba(239, 68, 68, 1)',
+] as const;
+
+const MA_LINE_WIDTHS = [1, 1, 1.5, 2] as const;
+
 export function defaultIndicatorStyles(
 	name: SceneIndicator['name'],
 	calcParams: readonly number[],
 ): SceneIndicator['styles'] {
 	const lines = calcParams.map((_param, index) => ({
-		color:
-			DEFAULT_INDICATOR_LINE_COLORS[
-				index % DEFAULT_INDICATOR_LINE_COLORS.length
-			]!,
-		size: 1,
+		color: name === 'MA' && index < MA_LINE_COLORS.length
+			? MA_LINE_COLORS[index]!
+			: DEFAULT_INDICATOR_LINE_COLORS[index % DEFAULT_INDICATOR_LINE_COLORS.length]!,
+		size: name === 'MA' && index < MA_LINE_WIDTHS.length ? MA_LINE_WIDTHS[index]! : 1,
 		style: 'solid' as const,
 	}));
 	if (name === 'VOL') {
