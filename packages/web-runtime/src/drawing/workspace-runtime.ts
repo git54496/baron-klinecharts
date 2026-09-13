@@ -152,6 +152,7 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 	/** 释放历史行情请求订阅，避免 Runtime 销毁后宿主收到旧请求。 */
 	readonly #unsubscribeHistoricalData: (() => void) | undefined;
 	readonly #unsubscribeCrosshair: (() => void) | undefined;
+	readonly #unsubscribeIndicatorSettings: (() => void) | undefined;
 	#sequence = 0;
 	/** 主图指标稳定 ID 的递增序号。 */
 	#indicatorSequence = 0;
@@ -237,6 +238,10 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 					this.#emit({ type: 'crosshair-changed', ...snapshot });
 				})
 			: undefined;
+		this.#unsubscribeIndicatorSettings = (engine as DrawingEnginePort & IndicatorEnginePort)
+			.subscribeIndicatorSettingsRequests?.((id) => {
+				this.#emit({ type: 'indicator-settings-requested', id });
+			});
 		this.#unsubscribeHistoricalData = options.historicalDataLoading === undefined
 			? undefined
 			: historicalDataPort?.subscribeHistoricalDataRequests((request) => {
@@ -657,6 +662,15 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		);
 	}
 
+	public listConfigurableIndicators(): readonly SceneIndicator[] {
+		this.#assertUsable();
+		return this.#sceneKind() === 'chart'
+			? structuredClone((this.#scene as ChartScene).panes.flatMap((pane) =>
+				pane.indicators.filter((indicator) => indicator.calcParams.length > 0),
+			))
+			: [];
+	}
+
 	public addMainIndicator(options: AddIndicatorOptions): SceneIndicator {
 		this.#assertUsable();
 		if (this.#sceneKind() !== 'chart') {
@@ -711,6 +725,35 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		this.#scene = parseChartScene({ ...structuredClone(scene), panes });
 		this.#emit({ type: 'main-indicator-removed', id });
 		return true;
+	}
+
+	public updateIndicatorParams(id: string, calcParams: readonly number[]): SceneIndicator {
+		this.#assertUsable();
+		if (this.#sceneKind() !== 'chart') {
+			throw new Error('INDICATOR_UNSUPPORTED: time-series Workspaces do not support Indicators.');
+		}
+		const scene = this.#scene as ChartScene;
+		const paneIndex = scene.panes.findIndex((pane) => pane.indicators.some((item) => item.id === id));
+		const current = scene.panes[paneIndex]?.indicators.find((item) => item.id === id);
+		if (current === undefined || current.calcParams.length === 0) {
+			throw new Error('INDICATOR_NOT_CONFIGURABLE: Indicator has no editable parameters.');
+		}
+		if (calcParams.length !== current.calcParams.length ||
+			calcParams.some((value) => !Number.isFinite(value) || value <= 0 || value > 100000)) {
+			throw new Error('INDICATOR_INVALID_PARAMS: Parameters must be positive finite numbers.');
+		}
+		const panes = structuredClone(scene.panes);
+		panes[paneIndex]!.indicators.find((item) => item.id === id)!.calcParams = [...calcParams];
+		const candidate = parseChartScene({ ...structuredClone(scene), panes });
+		const updated = candidate.panes[paneIndex]!.indicators.find((item) => item.id === id)!;
+		const port = this.#requireIndicatorPort();
+		if (typeof port.updateIndicator !== 'function') {
+			throw new Error('INDICATOR_UNSUPPORTED: current Scene Adapter cannot update indicators.');
+		}
+		const committed = port.updateIndicator(updated);
+		this.#scene = candidate;
+		this.#emit({ type: 'indicator-params-updated', indicator: committed });
+		return structuredClone(committed);
 	}
 
 	public setIndicatorPaneVisible(paneId: string, visible: boolean): boolean {
@@ -772,7 +815,7 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 			candidate = preserveMainIndicators(this.#scene as ChartScene, candidate);
 		}
 		if (this.#sceneKind() === 'chart' && 'panes' in candidate) {
-			candidate = preserveIndicatorPaneVisibility(this.#scene as ChartScene, candidate);
+			candidate = preserveIndicatorPaneSettings(this.#scene as ChartScene, candidate);
 		}
 		const engine = this.#engine as unknown as {
 			replaceScene(value: ChartScene | TimeSeriesScene): ChartScene | TimeSeriesScene;
@@ -883,6 +926,7 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		}
 		this.#unsubscribeHistoricalData?.();
 		this.#unsubscribeCrosshair?.();
+		this.#unsubscribeIndicatorSettings?.();
 		this.#session.destroy();
 		this.#engine.dispose();
 		this.#listeners.clear();
@@ -1037,16 +1081,22 @@ function preserveMainIndicators(
 	return parseChartScene({ ...structuredClone(candidate), panes });
 }
 
-function preserveIndicatorPaneVisibility(current: ChartScene, candidate: ChartScene): ChartScene {
-	const visibility = new Map(current.panes
+function preserveIndicatorPaneSettings(current: ChartScene, candidate: ChartScene): ChartScene {
+	const settings = new Map(current.panes
 		.filter((pane) => pane.kind === 'indicator')
-		.flatMap((pane) => pane.indicators.map((indicator) => [indicator.id, indicator.visible] as const)));
+		.flatMap((pane) => pane.indicators.map((indicator) => [indicator.id, {
+			visible: indicator.visible,
+			calcParams: indicator.calcParams,
+		}] as const)));
 	const panes = structuredClone(candidate.panes);
 	for (const pane of panes) {
 		if (pane.kind !== 'indicator') continue;
 		for (const indicator of pane.indicators) {
-			const visible = visibility.get(indicator.id);
-			if (visible !== undefined) indicator.visible = visible;
+			const saved = settings.get(indicator.id);
+			if (saved !== undefined) {
+				indicator.visible = saved.visible;
+				indicator.calcParams = [...saved.calcParams];
+			}
 		}
 	}
 	return parseChartScene({ ...structuredClone(candidate), panes });

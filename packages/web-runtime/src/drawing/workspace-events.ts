@@ -77,6 +77,8 @@ export type WorkspaceRuntimeEvent =
 	| { readonly type: 'main-series-presentation-changed'; readonly activeType: ActiveMainSeriesType }
 	| { readonly type: 'main-indicator-created'; readonly indicator: SceneIndicator }
 	| { readonly type: 'main-indicator-removed'; readonly id: string }
+	| { readonly type: 'indicator-settings-requested'; readonly id: string }
+	| { readonly type: 'indicator-params-updated'; readonly indicator: SceneIndicator }
 	| { readonly type: 'display-timezone-changed'; readonly timezone: string }
 	| {
 			readonly type: 'host-action-requested';

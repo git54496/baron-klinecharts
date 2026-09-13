@@ -397,12 +397,20 @@ export class ProgressiveDrawableWorkspaceRuntime
 		return this.#inner?.listMainIndicators() ?? [];
 	}
 
+	public listConfigurableIndicators(): readonly SceneIndicator[] {
+		return this.#inner?.listConfigurableIndicators() ?? [];
+	}
+
 	public addMainIndicator(options: AddIndicatorOptions): SceneIndicator {
 		return this.#requireReady().addMainIndicator(options);
 	}
 
 	public removeMainIndicator(id: string): boolean {
 		return this.#requireReady().removeMainIndicator(id);
+	}
+
+	public updateIndicatorParams(id: string, calcParams: readonly number[]): SceneIndicator {
+		return this.#requireReady().updateIndicatorParams(id, calcParams);
 	}
 
 	public setIndicatorPaneVisible(paneId: string, visible: boolean): boolean {

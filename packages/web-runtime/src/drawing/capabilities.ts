@@ -92,8 +92,10 @@ export interface LiveBarRuntimeCapability {
 /** 主图指标配置能力；指标值由浏览器内图表引擎基于 OHLC 数据计算。 */
 export interface MainIndicatorRuntimeCapability {
 	listMainIndicators(): readonly SceneIndicator[];
+	listConfigurableIndicators(): readonly SceneIndicator[];
 	addMainIndicator(options: AddIndicatorOptions): SceneIndicator;
 	removeMainIndicator(id: string): boolean;
+	updateIndicatorParams(id: string, calcParams: readonly number[]): SceneIndicator;
 }
 
 /** 每个指标副图独立显示，显示顺序由 Scene Pane order 决定。 */

@@ -16,7 +16,7 @@ import type { DataLoader, KLineData } from 'klinecharts';
 
 import { createEngine, type EngineHandle } from './engine.js';
 import { toKLineChartsOptions } from './conversion/chart-options.js';
-import { toIndicatorCreate } from './conversion/indicators.js';
+import { INDICATOR_SETTINGS_FEATURE_ID, toIndicatorCreate } from './conversion/indicators.js';
 import { registerProjectIndicators, registerProjectOverlays } from './extensions/register.js';
 import {
 	createEngineIdMap,
@@ -281,6 +281,18 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	readonly #dispatchEngineMouseClick: EngineHandle['dispatchMouseClick'];
 	/** 引擎十字线动作监听器集合。 */
 	readonly #crosshairListeners = new Set<AdapterCrosshairListener>();
+	readonly #indicatorSettingsListeners = new Set<(id: string) => void>();
+	#unsubscribeIndicatorSettings: (() => void) | null = null;
+	readonly #handleIndicatorSettingsClick = (payload: unknown): void => {
+		const event = (typeof payload === 'object' && payload !== null ? payload : {}) as {
+			readonly feature?: { readonly id?: string };
+			readonly indicator?: { readonly id?: string };
+		};
+		const id = event.indicator?.id;
+		if (event.feature?.id !== INDICATOR_SETTINGS_FEATURE_ID || !id) return;
+		if (!this.#scene.panes.some((pane) => pane.indicators.some((item) => item.id === id))) return;
+		for (const listener of this.#indicatorSettingsListeners) listener(id);
+	};
 	/** 引擎十字线动作退订函数。 */
 	#unsubscribeCrosshair: (() => void) | null = null;
 	/** 引擎十字线动作的绑定处理函数。 */
@@ -466,6 +478,10 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#hitTolerance('touch');
 		this.#installInteractionListeners();
 		this.#chart.subscribeAction('onCrosshairChange', this.#handleCrosshairChange);
+		this.#chart.subscribeAction('onIndicatorTooltipFeatureClick', this.#handleIndicatorSettingsClick);
+		this.#unsubscribeIndicatorSettings = () => {
+			this.#chart.unsubscribeAction('onIndicatorTooltipFeatureClick', this.#handleIndicatorSettingsClick);
+		};
 		this.#unsubscribeCrosshair = () => {
 			this.#chart.unsubscribeAction('onCrosshairChange', this.#handleCrosshairChange);
 		};
@@ -3525,6 +3541,39 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		return true;
 	}
 
+	public updateIndicator(indicator: SceneIndicator): SceneIndicator {
+		this.#assertActive();
+		const paneIndex = this.#scene.panes.findIndex((pane) =>
+			pane.indicators.some((item) => item.id === indicator.id),
+		);
+		if (paneIndex < 0) {
+			throw new SceneError('INVALID_REFERENCE', '/panes', `Indicator ${indicator.id} does not exist.`);
+		}
+		const panes = structuredClone(this.#scene.panes);
+		const index = panes[paneIndex]!.indicators.findIndex((item) => item.id === indicator.id);
+		panes[paneIndex]!.indicators[index] = structuredClone(indicator);
+		const candidate = parseChartScene({ ...structuredClone(this.#scene), panes });
+		if (indicator.visible) {
+			this.#chart.overrideIndicator(
+				toIndicatorCreate(indicator, this.#idMap, `/panes/${paneIndex}/indicators/${index}`),
+			);
+			const applied = this.#chart.getIndicators({ id: indicator.id })[0];
+			if (applied === undefined ||
+				applied.calcParams.length !== indicator.calcParams.length ||
+				applied.calcParams.some((value, paramIndex) => value !== indicator.calcParams[paramIndex])) {
+				throw new SceneError('RUNTIME_INIT_FAILED', `/panes/${paneIndex}/indicators/${index}`, 'Unable to update Indicator.');
+			}
+		}
+		this.#scene = candidate;
+		return structuredClone(candidate.panes[paneIndex]!.indicators[index]!);
+	}
+
+	public subscribeIndicatorSettingsRequests(listener: (id: string) => void): () => void {
+		this.#assertActive();
+		this.#indicatorSettingsListeners.add(listener);
+		return () => this.#indicatorSettingsListeners.delete(listener);
+	}
+
 	public subscribeCrosshair(
 		listener: AdapterCrosshairListener,
 	): () => void {
@@ -3590,6 +3639,9 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#disposed = true;
 		this.#removeInteractionListeners();
 		this.#unsubscribeCrosshair?.();
+		this.#unsubscribeIndicatorSettings?.();
+		this.#unsubscribeIndicatorSettings = null;
+		this.#indicatorSettingsListeners.clear();
 		this.#unsubscribeCrosshair = null;
 		this.#crosshairListeners.clear();
 		this.#listeners.clear();
