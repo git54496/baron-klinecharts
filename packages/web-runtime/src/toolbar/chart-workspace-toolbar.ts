@@ -1014,12 +1014,12 @@ export function createChartWorkspaceToolbar(
 		}
 	};
 	const drawingActions = createSection('标注操作');
-	const clearButton = createButton({ label: '清空全部标注', icon: 'clearAll' });
+	const clearButton = createButton({ label: '清空可编辑标注', icon: 'clearAll' });
 	clearButton.dataset.action = 'clear-all';
 	const clearDrawings = (): void => {
 		runtime.removeDrawings(
 			runtime.listDrawings()
-				.filter((drawing) => !drawing.locked)
+				.filter((drawing) => !drawing.locked && !runtime.isDrawingReadOnly(drawing.id))
 				.map((drawing) => drawing.id),
 		);
 		runtime.selectDrawing(null);
@@ -1028,7 +1028,7 @@ export function createChartWorkspaceToolbar(
 	cleanupCallbacks.push(() =>
 		clearButton.removeEventListener('click', clearDrawings),
 	);
-	tooltip.bind(clearButton, '清空全部标注');
+	tooltip.bind(clearButton, '清空可编辑标注');
 	drawingControls.push(clearButton);
 	dataControls.push(clearButton);
 	drawingActions.append(clearButton);

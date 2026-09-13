@@ -149,6 +149,7 @@ export function toEngineOverlay(
 	idMap: EngineIdMap,
 	path: string,
 	callbacks: EngineOverlayCallbacks = {},
+	projectedPoints?: readonly Partial<Point>[],
 ): OverlayCreate {
 	if (!isSupportedOverlay(overlay.type)) {
 		throw new SceneError('UNKNOWN_OVERLAY', `${path}/type`, `Unsupported Overlay: ${overlay.type}`);
@@ -161,7 +162,7 @@ export function toEngineOverlay(
 		visible: overlay.visible,
 		zLevel: overlay.zLevel,
 		mode: overlay.mode,
-		points: toPoints(overlay),
+		points: projectedPoints === undefined ? toPoints(overlay) : projectedPoints.map((point) => ({ ...point })),
 		styles: toOverlayStyles(overlay.styles),
 		...callbacks,
 	};

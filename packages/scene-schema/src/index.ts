@@ -28,3 +28,4 @@ export * from './time-series-semantic-validator.js';
 export * from './time-series-validator.js';
 export * from './validator.js';
 export * from './version.js';
+export * from './weekly-progressive-projection.js';

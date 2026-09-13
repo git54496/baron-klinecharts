@@ -1,6 +1,9 @@
 import type { DrawingDocument, ValueAxis } from '@baron1996/kline-scene-schema';
 import {
 	hashCanonicalDrawingDocument,
+	captureWeeklyProjection,
+	readWeeklyProjection,
+	WEEKLY_PROJECTION_KEY,
 } from '@baron1996/kline-scene-schema';
 import type {
 	DrawingEnginePort,
@@ -30,6 +33,7 @@ export type DrawingSessionErrorCode =
 	| 'DRAWING_CHANGE_IN_PROGRESS'
 	| 'DRAWING_CHANGE_HASH_MISMATCH'
 	| 'DRAWING_CHANGE_REJECTED'
+	| 'DRAWING_READ_ONLY_PERIOD'
 	| 'DRAWING_PROJECTION_INVALID'
 	| 'DRAWABLE_WORKSPACE_RUNTIME_DESTROYED';
 
@@ -193,22 +197,47 @@ export class DrawingSessionController {
 		styles: EngineDrawingSnapshot['styles'],
 	): EngineDrawingSnapshot {
 		this.#assertReady();
+		this.#assertDrawingEditable(id);
 		return this.#options.engine.updateDrawingStyles(id, styles);
 	}
 
 	public updateDrawingText(id: string, text: string): EngineDrawingSnapshot {
 		this.#assertReady();
+		this.#assertDrawingEditable(id);
 		return this.#options.engine.updateDrawingText(id, text);
 	}
 
 	public updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot {
 		this.#assertReady();
+		this.#assertDrawingEditable(id);
 		return this.#options.engine.updateDrawingLocked(id, locked);
 	}
 
 	public removeDrawing(id: string): boolean {
 		this.#assertReady();
+		this.#assertDrawingEditable(id);
 		return this.#options.engine.removeDrawing(id);
+	}
+
+	public isDrawingReadOnly(id: string): boolean {
+		this.#assertUsable();
+		const drawing = this.#confirmed.find((item) => item.id === id);
+		return drawing !== undefined && this.#weeklyOriginIsReadOnly(drawing);
+	}
+
+	#weeklyOriginIsReadOnly(drawing: EngineDrawingSnapshot): boolean {
+		if (readWeeklyProjection(drawing as unknown as DrawingDocument['drawings'][number]) === null) {
+			return false;
+		}
+		return this.#scene.kind !== 'chart' || this.#scene.document.period.type !== 'week' ||
+			this.#scene.document.period.span !== 1;
+	}
+
+	#assertDrawingEditable(id: string): void {
+		if (this.isDrawingReadOnly(id)) {
+			throw new DrawingSessionError('DRAWING_READ_ONLY_PERIOD', `/drawings/${id}`,
+				'这条线创建于周 K，请切换到周 K 编辑。');
+		}
 	}
 
 	/**
@@ -229,6 +258,9 @@ export class DrawingSessionController {
 		);
 		if (removedDrawings.length === 0) {
 			return false;
+		}
+		for (const drawing of removedDrawings) {
+			this.#assertDrawingEditable(drawing.id);
 		}
 		const confirmedAfter = rollbackDrawings.filter((drawing) =>
 			!requestedIds.has(drawing.id),
@@ -255,7 +287,23 @@ export class DrawingSessionController {
 	/** 只有已成功确认且当前没有进行中变更时，才允许撤回最后一次 Drawing 修改。 */
 	public canUndoDrawingChange(): boolean {
 		this.#assertUsable();
-		return this.#state === 'ready' && this.#undoHistory.length > 0;
+		const entry = this.#undoHistory.at(-1);
+		return this.#state === 'ready' && entry !== undefined && !this.#undoChangesReadOnlyDrawing(entry);
+	}
+
+	#undoChangesReadOnlyDrawing(entry: DrawingUndoEntry): boolean {
+		const before = new Map(entry.before.map((drawing) => [drawing.id, drawing]));
+		const after = new Map(entry.after.map((drawing) => [drawing.id, drawing]));
+		for (const id of new Set([...before.keys(), ...after.keys()])) {
+			const first = before.get(id);
+			const second = after.get(id);
+			if (JSON.stringify(first) !== JSON.stringify(second) &&
+				((first !== undefined && this.#weeklyOriginIsReadOnly(first)) ||
+					(second !== undefined && this.#weeklyOriginIsReadOnly(second)))) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -267,6 +315,10 @@ export class DrawingSessionController {
 		const entry = this.#undoHistory.at(-1);
 		if (entry === undefined) {
 			return false;
+		}
+		if (this.#undoChangesReadOnlyDrawing(entry)) {
+			throw new DrawingSessionError('DRAWING_READ_ONLY_PERIOD', '/drawings',
+				'周 K 原作的撤销操作请切换到周 K 执行。');
 		}
 		const transition = describeDrawingTransition(entry.after, entry.before);
 		if (transition === undefined) {
@@ -569,10 +621,38 @@ export class DrawingSessionController {
 			return;
 		}
 		const rollbackDrawings = cloneDrawingSet(this.#confirmed);
+		if (input.before !== undefined && this.#weeklyOriginIsReadOnly(input.before)) {
+			this.#restoreDrawingSet(rollbackDrawings);
+			throw new DrawingSessionError('DRAWING_READ_ONLY_PERIOD', `/drawings/${input.before.id}`,
+				'这条线创建于周 K，请切换到周 K 编辑。');
+		}
+		let after = input.after;
+		const geometryChanged = input.before !== undefined &&
+			JSON.stringify(input.before.geometry) !== JSON.stringify(input.after.geometry);
+		const weeklyOriginal = input.before !== undefined &&
+			readWeeklyProjection(input.before as unknown as DrawingDocument['drawings'][number]) !== null;
+		if (this.#scene.kind === 'chart' && this.#scene.document.period.type === 'week' &&
+			(input.operation === 'create' || (input.operation === 'update' && geometryChanged && weeklyOriginal))) {
+			const unmarked = structuredClone(after);
+			if (geometryChanged && weeklyOriginal) {
+				const metadata = { ...unmarked.metadata };
+				delete metadata[WEEKLY_PROJECTION_KEY];
+				after = { ...unmarked, metadata };
+			}
+			const recaptured = captureWeeklyProjection(
+				after as unknown as DrawingDocument['drawings'][number], this.#scene.document,
+			);
+			if (weeklyOriginal && geometryChanged && readWeeklyProjection(recaptured) === null) {
+				this.#restoreDrawingSet(rollbackDrawings);
+				throw new DrawingSessionError('DRAWING_PROJECTION_INVALID', '/drawings',
+					'Load both weekly anchors before editing this weekly-origin line.');
+			}
+			after = recaptured as unknown as EngineDrawingSnapshot;
+		}
 		const confirmedAfter = this.#confirmedWith(
 			input.operation,
 			input.before,
-			input.after,
+			after,
 		);
 		this.#state = 'interacting';
 		try {
@@ -581,14 +661,14 @@ export class DrawingSessionController {
 				scene: this.#scene,
 				drawings: candidateDocument,
 			});
-			if (input.after !== undefined && input.operation !== 'delete') {
+			if (input.operation !== 'delete') {
 				const projectedDrawing = projected.drawings.find(
-					(drawing) => drawing.drawing.id === input.after.id,
+					(drawing) => drawing.drawing.id === after.id,
 				);
 				if (projectedDrawing === undefined) {
 					throw new DrawingSessionError(
 						'DRAWING_PROJECTION_INVALID',
-						`/drawings/${input.after.id}`,
+						`/drawings/${after.id}`,
 						'Candidate Drawing cannot be projected on the current Scene.',
 					);
 				}
@@ -598,7 +678,7 @@ export class DrawingSessionController {
 				requestId: `change-${++this.#requestSequence}`,
 				operation: input.operation,
 				...(input.before === undefined ? {} : { before: structuredClone(input.before) }),
-				after: structuredClone(input.after),
+				after: structuredClone(after),
 				document: structuredClone(candidateDocument),
 				canonicalHash,
 				confirmedAfter: cloneDrawingSet(confirmedAfter),
@@ -710,6 +790,15 @@ export class DrawingSessionController {
 	}
 
 	#commitCandidate(candidate: SessionCandidate): void {
+		if (candidate.operation !== 'delete' &&
+			JSON.stringify(this.#options.engine.getDrawing(candidate.after.id)?.metadata) !== JSON.stringify(candidate.after.metadata)) {
+			this.#suppressEngineEvents = true;
+			try {
+				this.#options.engine.restoreDrawing(candidate.after);
+			} finally {
+				this.#suppressEngineEvents = false;
+			}
+		}
 		this.#confirmed = cloneDrawingSet(candidate.confirmedAfter);
 		if (candidate.historyAction === 'record') {
 			if (!sameDrawingSet(candidate.rollbackDrawings, candidate.confirmedAfter)) {

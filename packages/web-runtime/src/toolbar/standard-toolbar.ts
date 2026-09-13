@@ -427,10 +427,10 @@ export function createStandardToolbar(
 			for (const presentation of TOOLBAR_ACTIONS) {
 				const action = presentation.action === 'clear-all'
 						? (): void => {
-								// 清空全部 Drawing；锁定的 Drawing 保持既有“不接受 mutation”契约。
+								// 清空当前可编辑 Drawing；锁定或跨周期只读的标注保持不变。
 								runtime.removeDrawings(
 									runtime.listDrawings()
-										.filter((drawing) => !drawing.locked)
+										.filter((drawing) => !drawing.locked && !runtime.isDrawingReadOnly(drawing.id))
 										.map((drawing) => drawing.id),
 								);
 								runtime.selectDrawing(null);

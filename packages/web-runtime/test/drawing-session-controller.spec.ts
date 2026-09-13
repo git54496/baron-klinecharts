@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import chartWorkspaceFixture from '../../../tests/fixtures/workspaces/chart-minimal.json';
+import { captureWeeklyProjection, readWeeklyProjection } from '@baron1996/kline-scene-schema';
 import type { Drawing } from '@baron1996/kline-scene-schema';
 import type {
 	DrawingEnginePort,
@@ -568,6 +569,119 @@ describe('DrawingSessionController', () => {
 			type: 'week',
 			span: 1,
 		});
+	});
+
+	it('does not mark a day-original line when its geometry is edited on the weekly view', async () => {
+		const { engine, controller, events } = buildController('immediate');
+		const original = segmentSnapshot('day-original', {
+			timestamp: 1_784_736_000_000, value: 12.34,
+		});
+		controller.restoreConfirmed([original]);
+		const weekly = structuredClone(scene);
+		weekly.document.period = { type: 'week', span: 1 };
+		controller.replaceProjectionScene(weekly, () => undefined);
+		engine.emitUpdated(segmentSnapshot('day-original', {
+			timestamp: 1_784_822_400_000, value: 12.45,
+		}));
+		await flush(events);
+		expect(readWeeklyProjection(controller.confirmedDrawings[0] as Drawing)).toBeNull();
+	});
+
+	it('does not silently drop a weekly marker when editing with its source anchor unloaded', async () => {
+		const { engine, controller, events } = buildController('immediate');
+		const weekly = structuredClone(scene);
+		weekly.document.period = { type: 'week', span: 1 };
+		controller.replaceProjectionScene(weekly, () => undefined);
+		const original = captureWeeklyProjection(segmentSnapshot('weekly-origin', {
+			timestamp: weekly.document.data[0]!.timestamp, value: 12.34,
+		}) as Drawing, weekly.document);
+		expect(readWeeklyProjection(original)).not.toBeNull();
+		controller.restoreConfirmed([original as EngineDrawingSnapshot]);
+		const partial = structuredClone(weekly);
+		partial.document.data = partial.document.data.slice(1) as typeof partial.document.data;
+		controller.replaceProjectionScene(partial, () => undefined);
+		const edited = structuredClone(original) as EngineDrawingSnapshot;
+		(edited.geometry as { points: Array<{ value: number }> }).points[0]!.value += 1;
+		engine.emitUpdated(edited);
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+		expect(controller.confirmedDrawings[0]?.geometry).toEqual(original.geometry);
+		expect(readWeeklyProjection(controller.confirmedDrawings[0] as Drawing)).not.toBeNull();
+		expect(events.some((event) => event.type === 'workspace-error' &&
+			event.code === 'DRAWING_PROJECTION_INVALID')).toBe(true);
+	});
+
+	it('keeps a weekly-original line read-only on day K without blocking Scene reprojection', async () => {
+		const { engine, controller, events } = buildController('immediate');
+		const weekly = structuredClone(scene);
+		weekly.document.period = { type: 'week', span: 1 };
+		controller.replaceProjectionScene(weekly, () => undefined);
+		const original = captureWeeklyProjection(segmentSnapshot('weekly-origin', {
+			timestamp: weekly.document.data[0]!.timestamp, value: 12.34,
+		}) as Drawing, weekly.document) as EngineDrawingSnapshot;
+		controller.restoreConfirmed([original]);
+		expect(controller.isDrawingReadOnly(original.id)).toBe(false);
+
+		controller.replaceProjectionScene(scene, () => undefined);
+		expect(controller.isDrawingReadOnly(original.id)).toBe(true);
+		const before = JSON.stringify(controller.confirmedDrawings);
+		const expectReadOnly = (operation: () => unknown): void => {
+			expect(operation).toThrowError(expect.objectContaining({
+				code: 'DRAWING_READ_ONLY_PERIOD',
+			}));
+		};
+		expectReadOnly(() => controller.updateDrawingStyles(original.id, STYLES));
+		expectReadOnly(() => controller.updateDrawingText(original.id, 'changed'));
+		expectReadOnly(() => controller.updateDrawingLocked(original.id, true));
+		expectReadOnly(() => controller.removeDrawing(original.id));
+		expectReadOnly(() => controller.removeDrawings([original.id]));
+
+		const styled = structuredClone(original);
+		styled.styles.line.color = 'rgba(255, 0, 0, 1)';
+		engine.emitUpdated(styled);
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+		expect(JSON.stringify(controller.confirmedDrawings)).toBe(before);
+		expect(engine.drawings.get(original.id)).toEqual(original);
+		engine.emitRemoved(original.id);
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+		expect(engine.drawings.get(original.id)).toEqual(original);
+		expect(events.filter((event) => event.type === 'drawing-candidate')).toHaveLength(0);
+		expect(events.filter((event) => event.type === 'workspace-error' &&
+			event.code === 'DRAWING_READ_ONLY_PERIOD')).toHaveLength(2);
+
+		const newerScene = structuredClone(scene);
+		newerScene.document.data = [...scene.document.data] as typeof newerScene.document.data;
+		expect(() => controller.replaceProjectionScene(newerScene, () => 'reprojected'))
+			.not.toThrow();
+		expect(controller.isDrawingReadOnly(original.id)).toBe(true);
+		expect(JSON.stringify(controller.confirmedDrawings)).toBe(before);
+	});
+
+	it('permits undoing a weekly edit only while viewing week K', async () => {
+		const { engine, controller, events } = buildController('host-confirmed');
+		const weekly = structuredClone(scene);
+		weekly.document.period = { type: 'week', span: 1 };
+		controller.replaceProjectionScene(weekly, () => undefined);
+		const original = captureWeeklyProjection(segmentSnapshot('weekly-undo', {
+			timestamp: weekly.document.data[0]!.timestamp, value: 12.34,
+		}) as Drawing, weekly.document) as EngineDrawingSnapshot;
+		controller.restoreConfirmed([original]);
+		const styled = structuredClone(original);
+		styled.styles.line.color = 'rgba(255, 0, 0, 1)';
+		engine.emitUpdated(styled);
+		await flushCandidateCount(events, 1);
+		const candidate = events.find((event) => event.type === 'drawing-candidate');
+		if (candidate?.type !== 'drawing-candidate') {
+			throw new Error('Missing weekly style candidate');
+		}
+		controller.commitDrawingChange(candidate.requestId, candidate.canonicalHash);
+		expect(controller.canUndoDrawingChange()).toBe(true);
+		controller.replaceProjectionScene(scene, () => undefined);
+		expect(controller.canUndoDrawingChange()).toBe(false);
+		expect(() => controller.undoDrawingChange()).toThrowError(expect.objectContaining({
+			code: 'DRAWING_READ_ONLY_PERIOD',
+		}));
+		controller.replaceProjectionScene(weekly, () => undefined);
+		expect(controller.canUndoDrawingChange()).toBe(true);
 	});
 
 	it('restores the old projection Scene when engine replacement fails', () => {

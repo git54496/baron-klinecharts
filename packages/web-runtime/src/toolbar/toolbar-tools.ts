@@ -160,7 +160,7 @@ export const OVERLAY_TOOL_PRESENTATIONS: Readonly<
 export const TOOLBAR_ACTIONS = [
 	{
 		action: 'clear-all',
-		label: '清空全部标注',
+		label: '清空可编辑标注',
 		group: 'action',
 		icon: 'clearAll',
 	},

@@ -279,6 +279,10 @@ export function createDrawingFloatingToolbar(
 		if (drawing === undefined || runtime.getDrawingMutationState() !== 'ready') {
 			return;
 		}
+		if (runtime.isDrawingReadOnly(drawing.id)) {
+			setStatus('周 K 原作仅可在周 K 编辑。');
+			return;
+		}
 		try {
 			setStatus('');
 			action(drawing);
@@ -302,7 +306,10 @@ export function createDrawingFloatingToolbar(
 		root.hidden = false;
 		root.dataset.drawingId = drawing.id;
 		root.dataset.drawingType = drawing.type;
-		if (currentId !== drawing.id) {
+		const readOnly = runtime.isDrawingReadOnly(drawing.id);
+		const readOnlyChanged = root.dataset.readOnly !== String(readOnly);
+		root.dataset.readOnly = String(readOnly);
+		if (currentId !== drawing.id || readOnlyChanged) {
 			currentId = drawing.id;
 			setStatus('');
 		}
@@ -333,13 +340,14 @@ export function createDrawingFloatingToolbar(
 		lock.title = drawing.locked ? '解锁' : '锁定';
 		lock.setAttribute('aria-pressed', String(drawing.locked));
 		const busy = runtime.getDrawingMutationState() !== 'ready';
-		colorInput.disabled = busy || drawing.locked;
-		lineStyle.select.disabled = busy || drawing.locked;
-		lineWidth.select.disabled = busy || drawing.locked;
-		textInput.disabled = busy || drawing.locked;
-		lock.disabled = busy;
-		remove.disabled = busy || drawing.locked;
+		colorInput.disabled = busy || drawing.locked || readOnly;
+		lineStyle.select.disabled = busy || drawing.locked || readOnly;
+		lineWidth.select.disabled = busy || drawing.locked || readOnly;
+		textInput.disabled = busy || drawing.locked || readOnly;
+		lock.disabled = busy || readOnly;
+		remove.disabled = busy || drawing.locked || readOnly;
 		root.setAttribute('aria-busy', String(busy));
+		if (readOnly) setStatus('周 K 原作仅可在周 K 编辑。');
 
 		if (wasHidden || !userPositioned) {
 			positionAtDefault();

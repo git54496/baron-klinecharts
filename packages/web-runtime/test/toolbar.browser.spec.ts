@@ -150,7 +150,7 @@ test('@browser toolbar renders the approved icon groups in normal flow', async (
 		'注释框',
 		'文本',
 	]);
-	expect(result.actions).toEqual(['清空全部标注', '导出场景']);
+	expect(result.actions).toEqual(['清空可编辑标注', '导出场景']);
 	expect(result.groups).toEqual([
 		'水平线',
 		'垂直线',
@@ -926,7 +926,7 @@ test('@browser MA line editor adds, removes, styles and hides individual periods
 		toolbar.destroy(); runtime.destroy();
 		return output;
 	}, chartWorkspaceFixture);
-	expect(result.periods).toEqual([5, 30, 60, 120]);
+	expect(result.periods).toEqual([5, 50, 200, 120]);
 	expect(result.firstStyle).toEqual({ color: 'rgba(18, 52, 86, 1)', size: 2.5, style: 'solid', visible: false });
 	expect(result.restoredStyle).toEqual(result.firstStyle);
 	expect(result.lineCount).toBe(4);

@@ -2,6 +2,7 @@ import type {
 	ChartScene,
 	Drawing,
 	MarketData,
+	HistoryCoverageUpdate,
 	SceneIndicator,
 } from '@baron1996/kline-scene-schema';
 import type {
@@ -32,6 +33,8 @@ export interface DrawingRuntimeCapability {
 	): string;
 	listDrawings(): readonly EngineDrawingSnapshot[];
 	getDrawing(id: string): EngineDrawingSnapshot | undefined;
+	/** View-only policy; does not persist or toggle the Drawing's locked field. */
+	isDrawingReadOnly(id: string): boolean;
 	updateDrawingStyles(
 		id: string,
 		styles: Drawing['styles'],
@@ -79,6 +82,7 @@ export interface HistoricalDataRuntimeCapability {
 		requestId: string,
 		data: readonly MarketData[],
 		hasMore: boolean,
+		coverage?: HistoryCoverageUpdate,
 	): EngineHistoricalDataCommitResult;
 	rejectHistoricalData(requestId: string, message: string): boolean;
 }

@@ -361,6 +361,11 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 			: overlayToDrawingSnapshot(overlay, this.getScene().period);
 	}
 
+	public isDrawingReadOnly(_id: string): boolean {
+		// Legacy Scene overlays have no versioned weekly-origin projection marker.
+		return false;
+	}
+
 	public updateDrawingStyles(
 		id: string,
 		styles: SceneOverlay['styles'],

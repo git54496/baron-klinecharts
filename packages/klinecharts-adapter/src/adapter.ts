@@ -3,13 +3,17 @@ import type {
 	DrawableWorkspaceDocument,
 	Drawing,
 	MarketData,
+	HistoryCoverageUpdate,
 	SceneIndicator,
 	SceneOverlay,
 	ValueAxis,
 } from '@baron1996/kline-scene-schema';
 import {
+	applyHistoryCoverageUpdate,
 	parseDrawableWorkspaceDocument,
 	parseChartScene,
+	projectWeeklyDrawing,
+	readWeeklyProjection,
 	SceneError,
 } from '@baron1996/kline-scene-schema';
 import type { Chart, Coordinate, Overlay, Point } from 'klinecharts';
@@ -419,6 +423,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	#workspaceOverlays: SceneOverlay[] = [];
 	/** Workspace 模式权威业务 Drawing（含 granularity/target/text）。 */
 	#workspaceSources = new Map<string, Drawing>();
+	/** Derived visual geometry; never copied into canonical Drawing or SceneOverlay. */
+	#weeklyDisplayOverlays = new Map<string, SceneOverlay>();
 	/** 各绘图 Pane 的价格坐标精度，独立于行情轴标签精度。 */
 	#drawingValuePrecisionByPane = new Map<string, number>();
 	/** 公共 Drawing 端口监听器。 */
@@ -767,6 +773,14 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		return this.#workspaceMode ? this.#workspaceOverlays : this.#scene.overlays;
 	}
 
+	#isWeeklyOriginReadOnly(id: string): boolean {
+		if (!this.#workspaceMode || (this.#scene.period.type === 'week' && this.#scene.period.span === 1)) {
+			return false;
+		}
+		const drawing = this.#workspaceSources.get(id);
+		return drawing !== undefined && readWeeklyProjection(drawing) !== null;
+	}
+
 	public configureDrawingValueAxes(valueAxes: readonly ValueAxis[]): void {
 		this.#assertActive();
 		if (!this.#workspaceMode) {
@@ -1066,6 +1080,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		}
 		this.#workspaceOverlays = [];
 		this.#workspaceSources = new Map();
+		this.#weeklyDisplayOverlays.clear();
 		for (const snapshot of drawings) {
 			const drawing = drawingFromSnapshot(snapshot);
 			this.#workspaceSources.set(drawing.id, drawing);
@@ -1073,14 +1088,9 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				drawing,
 				this.#paneIdFor(drawing.target.paneRole),
 			);
-			const result = this.#chart.createOverlay(
-				toEngineOverlay(
-					overlay,
-					this.#idMap,
-					`/drawings/${this.#workspaceOverlays.length}`,
-					this.#overlayCallbacks(overlay),
-				),
-			);
+			const result = this.#chart.createOverlay(this.#engineOverlayForDrawing(
+				drawing, overlay, `/drawings/${this.#workspaceOverlays.length}`,
+			));
 			if (result !== overlay.id) {
 				throw new SceneError(
 					'RUNTIME_INIT_FAILED',
@@ -1098,6 +1108,51 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		} else {
 			this.#renderSelectionAnchors();
 		}
+	}
+
+	#engineOverlayForDrawing(drawing: Drawing, overlay: SceneOverlay, path: string): import('klinecharts').OverlayCreate {
+		const projection = projectWeeklyDrawing(drawing, this.#scene);
+		const isWeeklyProjection = readWeeklyProjection(drawing) !== null;
+		if (projection !== null && 'points' in overlay) {
+			this.#weeklyDisplayOverlays.set(overlay.id, {
+				...structuredClone(overlay), points: structuredClone(projection.loadedPoints),
+			} as SceneOverlay);
+		} else if (isWeeklyProjection) {
+			this.#weeklyDisplayOverlays.set(overlay.id, {
+				...structuredClone(overlay), visible: false,
+			} as SceneOverlay);
+		} else {
+			this.#weeklyDisplayOverlays.delete(overlay.id);
+		}
+		const result = toEngineOverlay(overlay, this.#idMap, path,
+			this.#overlayCallbacks(overlay), projection?.points);
+		if (isWeeklyProjection && projection === null) {
+			result.visible = false;
+		}
+		return result;
+	}
+
+	#refreshWeeklyDrawingProjections(): void {
+		if (!this.#workspaceMode) return;
+		for (const overlay of this.#workspaceOverlays) {
+			const drawing = this.#workspaceSources.get(overlay.id);
+			if (drawing === undefined || readWeeklyProjection(drawing) === null) continue;
+			if (!this.#chart.overrideOverlay(this.#engineOverlayForDrawing(drawing, overlay, `/drawings/${overlay.id}`))) {
+				throw new SceneError('RUNTIME_INIT_FAILED', `/drawings/${overlay.id}`,
+					`KLineCharts failed to refresh weekly Drawing ${overlay.id}.`);
+			}
+		}
+		this.#renderSelectionAnchors();
+	}
+
+	#restoreReadOnlyWeeklyDrawing(id: string): boolean {
+		if (!this.#isWeeklyOriginReadOnly(id)) return false;
+		const drawing = this.#workspaceSources.get(id);
+		const overlay = this.#workspaceOverlays.find((item) => item.id === id);
+		if (drawing !== undefined && overlay !== undefined) {
+			this.#chart.overrideOverlay(this.#engineOverlayForDrawing(drawing, overlay, `/drawings/${id}`));
+		}
+		return true;
 	}
 
 	#fromPixelToData(
@@ -1310,6 +1365,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 					this.#drawingInProgressId = null;
 					this.#drawingInProgressPaneId = null;
 				}
+				if (!drawing && this.#restoreReadOnlyWeeklyDrawing(overlay.id)) return;
 				this.#safelyCommitEngineOverlay(overlay, source, drawing ? 'created' : 'updated');
 			},
 			onPressedMoveStart: ({ overlay }) => {
@@ -1322,6 +1378,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				if (this.#outsideMainPointerIds.size > 0) {
 					return;
 				}
+				if (this.#restoreReadOnlyWeeklyDrawing(overlay.id)) return;
 				if (!isControlledInteractionOverlay(source as SceneOverlay)) {
 					this.#safelyCommitEngineOverlay(overlay, source, 'updated');
 				}
@@ -1924,7 +1981,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		const canvas = this.#container.ownerDocument.createElement('canvas');
 		const textContext = canvas.getContext('2d');
 		for (let sceneIndex = 0; sceneIndex < active.length; sceneIndex++) {
-			const overlay = active[sceneIndex];
+			const source = active[sceneIndex];
+			const overlay = source === undefined ? undefined : this.#weeklyDisplayOverlays.get(source.id) ?? source;
 			if (overlay === undefined || !overlay.visible) {
 				continue;
 			}
@@ -1981,7 +2039,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			selected.id,
 			geometry.anchors,
 			selected.styles.line.color,
-			selected.locked,
+			selected.locked || this.#isWeeklyOriginReadOnly(selected.id),
 		);
 	}
 
@@ -2247,6 +2305,11 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			return;
 		}
 		this.#selectOverlay(before.id);
+		if (this.#isWeeklyOriginReadOnly(before.id)) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			return;
+		}
 		if (
 			!isControlledInteractionOverlay(before) &&
 			this.#drawingInteraction.exclusiveSelection !== true
@@ -2693,6 +2756,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			this.#scene = candidate;
 			this.#container.style.backgroundColor =
 				candidate.chart.layout.backgroundColor;
+			this.#refreshWeeklyDrawingProjections();
 			this.#renderSelectionAnchors();
 			return structuredClone(candidate);
 		} catch (error) {
@@ -2766,6 +2830,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		requestId: string,
 		data: readonly MarketData[],
 		hasMore: boolean,
+		coverage?: HistoryCoverageUpdate,
 	): EngineHistoricalDataCommitResult {
 		this.#assertActive();
 		const pending = this.#pendingHistoricalData;
@@ -2799,10 +2864,10 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				);
 			}
 		}
-		const candidate = parseChartScene({
+		const candidate = applyHistoryCoverageUpdate(parseChartScene({
 			...structuredClone(this.#scene),
 			data: [...page, ...structuredClone(this.#scene.data)],
-		});
+		}), coverage);
 		this.#pendingHistoricalData = undefined;
 		this.#historicalDataLoading = { hasMore };
 		this.#scene = candidate;
@@ -2811,6 +2876,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				forward: hasMore,
 				backward: false,
 			});
+			this.#refreshWeeklyDrawingProjections();
 		} finally {
 			this.#restoreHistoricalScrollIfIdle();
 		}
@@ -3037,7 +3103,9 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	public removeDrawing(id: string): boolean {
 		this.#assertActive();
 		this.#assertNotTerminated();
-		return this.#chart.removeOverlay({ id });
+		const removed = this.#chart.removeOverlay({ id });
+		if (removed) this.#weeklyDisplayOverlays.delete(id);
+		return removed;
 	}
 
 	public restoreDrawing(snapshot: EngineDrawingSnapshot): void {
@@ -3053,12 +3121,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		);
 		if (existing !== undefined) {
 			if (!this.#chart.overrideOverlay(
-				toEngineOverlay(
-					overlay,
-					this.#idMap,
-					`/drawings/${drawing.id}`,
-					this.#overlayCallbacks(overlay),
-				),
+				this.#engineOverlayForDrawing(drawing, overlay, `/drawings/${drawing.id}`),
 			)) {
 				throw new SceneError(
 					'RUNTIME_INIT_FAILED',
@@ -3066,15 +3129,14 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 					`KLineCharts failed to restore Drawing ${drawing.id}.`,
 				);
 			}
+			this.#workspaceSources.set(drawing.id, drawing);
+			this.#workspaceOverlays = this.#workspaceOverlays.map((candidate) =>
+				candidate.id === drawing.id ? structuredClone(overlay) : candidate);
+			this.#renderSelectionAnchors();
 			return;
 		}
 		const result = this.#chart.createOverlay(
-			toEngineOverlay(
-				overlay,
-				this.#idMap,
-				`/drawings/${drawing.id}`,
-				this.#overlayCallbacks(overlay),
-			),
+			this.#engineOverlayForDrawing(drawing, overlay, `/drawings/${drawing.id}`),
 		);
 		if (result !== drawing.id) {
 			throw new SceneError(
@@ -3083,6 +3145,9 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				`KLineCharts failed to restore Drawing ${drawing.id}.`,
 			);
 		}
+		this.#workspaceSources.set(drawing.id, drawing);
+		this.#workspaceOverlays.push(structuredClone(overlay));
+		this.#renderSelectionAnchors();
 	}
 
 	public selectDrawing(id: string | null): void {
@@ -3670,6 +3735,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#settlePendingHistoricalData(false);
 		this.#workspaceSources.clear();
 		this.#workspaceOverlays = [];
+		this.#weeklyDisplayOverlays.clear();
 		this.#engine.dispose(this.#container);
 		this.#container.replaceChildren();
 		this.#container.style.backgroundColor = this.#originalBackground;

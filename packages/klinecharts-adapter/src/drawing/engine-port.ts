@@ -2,6 +2,7 @@ import type {
 	ChartScene,
 	Drawing,
 	MarketData,
+	HistoryCoverageUpdate,
 	SceneIndicator,
 	ValueAxis,
 } from '@baron1996/kline-scene-schema';
@@ -124,6 +125,7 @@ export interface HistoricalDataEnginePort {
 		requestId: string,
 		data: readonly MarketData[],
 		hasMore: boolean,
+		coverage?: HistoryCoverageUpdate,
 	): EngineHistoricalDataCommitResult;
 	rejectHistoricalData(requestId: string): boolean;
 }

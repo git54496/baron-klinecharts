@@ -4,10 +4,12 @@ import type {
 	Drawing,
 	DrawingDocument,
 	MarketData,
+	HistoryCoverageUpdate,
 	SceneIndicator,
 	TimeSeriesScene,
 } from '@baron1996/kline-scene-schema';
 import {
+	applyHistoryCoverageUpdate,
 	parseChartScene,
 	parseDrawableWorkspaceDocument,
 	parseDrawingDocument,
@@ -337,6 +339,10 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 
 	public getDrawing(id: string): EngineDrawingSnapshot | undefined {
 		return this.#session.confirmedDrawings.find((drawing) => drawing.id === id);
+	}
+
+	public isDrawingReadOnly(id: string): boolean {
+		return this.#session.isDrawingReadOnly(id);
 	}
 
 	public updateDrawingStyles(
@@ -867,17 +873,18 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		requestId: string,
 		data: readonly MarketData[],
 		hasMore: boolean,
+		coverage?: HistoryCoverageUpdate,
 	): EngineHistoricalDataCommitResult {
 		this.#assertUsable();
 		const port = this.#requireHistoricalDataPort();
 		const current = parseChartScene(this.#scene);
-		const candidate = parseChartScene({
+		const candidate = applyHistoryCoverageUpdate(parseChartScene({
 			...structuredClone(current),
 			data: [...structuredClone(data), ...structuredClone(current.data)],
-		});
+		}), coverage);
 		const result = this.#session.replaceProjectionScene(
 			{ kind: 'chart', document: candidate },
-			() => port.commitHistoricalData(requestId, data, hasMore),
+			() => port.commitHistoricalData(requestId, data, hasMore, coverage),
 		);
 		this.#scene = result.scene;
 		this.#emit({

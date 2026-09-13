@@ -4,6 +4,7 @@ import type {
 	DrawingDocument,
 	DrawableWorkspaceDocument,
 	MarketData,
+	HistoryCoverageUpdate,
 	SceneIndicator,
 } from '@baron1996/kline-scene-schema';
 import type {
@@ -280,6 +281,10 @@ export class ProgressiveDrawableWorkspaceRuntime
 		return this.#inner?.getDrawing(id);
 	}
 
+	public isDrawingReadOnly(id: string): boolean {
+		return this.#inner?.isDrawingReadOnly(id) ?? false;
+	}
+
 	public updateDrawingStyles(id: string, styles: Drawing['styles']): EngineDrawingSnapshot {
 		return this.#requireReady().updateDrawingStyles(id, styles);
 	}
@@ -460,8 +465,9 @@ export class ProgressiveDrawableWorkspaceRuntime
 		requestId: string,
 		data: readonly MarketData[],
 		hasMore: boolean,
+		coverage?: HistoryCoverageUpdate,
 	): EngineHistoricalDataCommitResult {
-		return this.#requireReady().commitHistoricalData(requestId, data, hasMore);
+		return this.#requireReady().commitHistoricalData(requestId, data, hasMore, coverage);
 	}
 
 	public rejectHistoricalData(requestId: string, message: string): boolean {
