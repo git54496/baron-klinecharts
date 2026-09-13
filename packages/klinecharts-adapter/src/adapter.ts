@@ -5,6 +5,7 @@ import type {
 	MarketData,
 	SceneIndicator,
 	SceneOverlay,
+	ValueAxis,
 } from '@baron1996/kline-scene-schema';
 import {
 	parseDrawableWorkspaceDocument,
@@ -406,6 +407,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	#workspaceOverlays: SceneOverlay[] = [];
 	/** Workspace 模式权威业务 Drawing（含 granularity/target/text）。 */
 	#workspaceSources = new Map<string, Drawing>();
+	/** 各绘图 Pane 的价格坐标精度，独立于行情轴标签精度。 */
+	#drawingValuePrecisionByPane = new Map<string, number>();
 	/** 公共 Drawing 端口监听器。 */
 	readonly #portListeners = new Set<(event: EngineDrawingEvent) => void>();
 	/** 更早行情请求监听器；仅传递纯数据请求。 */
@@ -705,6 +708,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			applyViewport(handle.chart, scene.viewport);
 			container.style.backgroundColor = scene.chart.layout.backgroundColor;
 			adapter.#workspaceMode = true;
+			adapter.configureDrawingValueAxes(workspace.drawings.coordinateSystem.valueAxes);
 			if (options?.historicalDataLoading !== undefined) {
 				adapter.configureHistoricalDataLoading(
 					options.historicalDataLoading.hasMore,
@@ -745,6 +749,22 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	/** 当前模式下的 Overlay 列表：Legacy 用 #scene.overlays，Workspace 用独立状态。 */
 	#activeOverlays(): SceneOverlay[] {
 		return this.#workspaceMode ? this.#workspaceOverlays : this.#scene.overlays;
+	}
+
+	public configureDrawingValueAxes(valueAxes: readonly ValueAxis[]): void {
+		this.#assertActive();
+		if (!this.#workspaceMode) {
+			throw new SceneError('INVALID_REFERENCE', '/drawings', 'Drawing axes require a Workspace.');
+		}
+		this.#drawingValuePrecisionByPane = new Map(valueAxes
+			.filter((axis) => axis.yAxisRole === 'primary')
+			.map((axis) => [this.#paneIdFor(axis.paneRole), axis.valuePrecision]));
+	}
+
+	#drawingValuePrecision(paneId: string): number {
+		return this.#workspaceMode
+			? this.#drawingValuePrecisionByPane.get(paneId) ?? this.#scene.symbol.pricePrecision
+			: this.#scene.symbol.pricePrecision;
 	}
 
 	/** 提交 Overlay 列表变更；Workspace 模式不触碰 #scene.overlays。 */
@@ -1223,7 +1243,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			currentSource,
 			this.#idMap,
 			path,
-			this.#scene.symbol.pricePrecision,
+			this.#drawingValuePrecision(currentSource.paneId),
 		);
 		const overlays = structuredClone(active);
 		if (existingIndex < 0) {
@@ -2278,7 +2298,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				interaction.originData,
 				this.#fromPixel(coordinate, interaction.before.paneId),
 				this.#scene.data.map((bar) => bar.timestamp),
-				this.#scene.symbol.pricePrecision,
+				this.#drawingValuePrecision(interaction.before.paneId),
 				this.#scene.period,
 			);
 			const active = this.#activeOverlays();
@@ -3304,7 +3324,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			overlay,
 			this.#idMap,
 			`/overlays/${index}`,
-			this.#scene.symbol.pricePrecision,
+			this.#drawingValuePrecision(overlay.paneId),
 		);
 		if (!this.#chart.overrideOverlay(toEngineOverlay(
 			normalized,

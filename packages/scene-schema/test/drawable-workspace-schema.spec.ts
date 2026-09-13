@@ -62,12 +62,18 @@ describe('DrawableWorkspaceDocument schema and semantics', () => {
 		);
 	});
 
-	it('rejects a candle target precision that differs from the symbol precision', () => {
+	it('accepts finer candle Drawing coordinates than the quote display precision', () => {
 		const workspace = structuredClone(chartMinimal);
 		workspace.drawings.coordinateSystem.valueAxes = [
 			{ paneRole: 'candle', yAxisRole: 'primary', valuePrecision: 6 },
 		];
 		workspace.binding.valueAxes = workspace.drawings.coordinateSystem.valueAxes;
+		expect(parseDrawableWorkspaceDocument(workspace).drawings.coordinateSystem.valueAxes[0]?.valuePrecision).toBe(6);
+	});
+
+	it('rejects candle Drawing coordinates coarser than the quote display precision', () => {
+		const workspace = structuredClone(chartMinimal);
+		workspace.scene.document.symbol.pricePrecision = 3;
 		expectIssue(
 			workspace,
 			'DRAWING_TARGET_INVALID',

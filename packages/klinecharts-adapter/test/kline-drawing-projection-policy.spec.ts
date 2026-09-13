@@ -113,6 +113,16 @@ describe('KLineDrawingProjectionPolicy', () => {
 		});
 	});
 
+	it('resolves a finer Drawing precision without changing the quote precision', () => {
+		const binding = new KLineDrawingProjectionPolicy().resolveAxisBinding(
+			chartInput(chartWorkspaceFixture.scene.document, candleDrawing(), [
+				{ paneRole: 'candle', yAxisRole: 'primary', valuePrecision: 6 },
+			]),
+		);
+		expect(binding.valuePrecision).toBe(6);
+		expect(chartWorkspaceFixture.scene.document.symbol.pricePrecision).toBe(2);
+	});
+
 	it('returns the same binding for candle, OHLC and area presentations', () => {
 		const policy = new KLineDrawingProjectionPolicy();
 		const candle = policy.resolveAxisBinding(
@@ -224,7 +234,7 @@ describe('KLineDrawingProjectionPolicy', () => {
 				{
 					paneRole: 'candle',
 					yAxisRole: 'primary',
-					valuePrecision: 6,
+					valuePrecision: 1,
 				},
 			],
 		);

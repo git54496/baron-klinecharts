@@ -279,6 +279,39 @@ test('@browser empty Workspace Runtime keeps chart and toolbar nodes while insta
 	expect(reprojected).toEqual({ drawings: 2, sameChartRoot: true });
 });
 
+test('@browser empty Workspace Runtime keeps Drawing precision separate from candle labels', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const precisions = await page.evaluate(async (workspace) => {
+		const { createEmptyDrawableWorkspaceRuntime } = await import('/src/index.ts');
+		const scene = structuredClone(workspace.scene.document);
+		const viewport = structuredClone(scene.viewport) as Record<string, unknown>;
+		delete viewport.anchorTimestamp;
+		const runtime = await createEmptyDrawableWorkspaceRuntime(
+			document.querySelector<HTMLElement>('#chart')!,
+			{
+				scopeKey: workspace.drawings.scopeKey,
+				symbol: structuredClone(scene.symbol),
+				period: structuredClone(scene.period),
+				chart: structuredClone(scene.chart),
+				panes: structuredClone(scene.panes),
+				viewport: viewport as never,
+				render: structuredClone(scene.render),
+				drawingValuePrecision: 6,
+			},
+			{ commitMode: 'immediate' },
+		);
+		runtime.installInitialScene(scene);
+		const exported = runtime.exportWorkspace();
+		const result = {
+			price: exported.scene.document.symbol.pricePrecision,
+			drawing: exported.drawings.coordinateSystem.valueAxes[0]?.valuePrecision,
+		};
+		runtime.destroy();
+		return result;
+	}, chartWorkspace);
+	expect(precisions).toEqual({ price: 2, drawing: 6 });
+});
+
 test('@browser Workspace period replacement updates the crosshair time label format', async ({ page }) => {
 	await page.addInitScript(() => {
 		const drawnTexts: string[] = [];

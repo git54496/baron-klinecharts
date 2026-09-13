@@ -44,6 +44,8 @@ export interface EmptyDrawableWorkspaceBootstrap extends EmptyChartRuntimeBootst
 	/** Drawing 的业务身份；只用于首份 Scene 就绪后创建空文档，不进入空 Scene。 */
 	readonly scopeKey: string;
 	readonly drawingMetadata?: DrawingDocument['metadata'];
+	/** 主图 Drawing 价格坐标精度；默认沿用行情价格精度。 */
+	readonly drawingValuePrecision?: number;
 }
 
 export interface EmptyDrawableWorkspaceRuntimeOptions
@@ -206,7 +208,7 @@ export class ProgressiveDrawableWorkspaceRuntime
 				valueAxes: [{
 					paneRole: 'candle',
 					yAxisRole: 'primary',
-					valuePrecision: scene.symbol.pricePrecision,
+					valuePrecision: this.#bootstrap.drawingValuePrecision ?? scene.symbol.pricePrecision,
 					scale: primaryAxis.scale ?? 'linear',
 				}],
 			},

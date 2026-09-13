@@ -58,13 +58,13 @@ export class KLineDrawingProjectionPolicy implements DrawingProjectionPolicy {
 			);
 			if (
 				axis === undefined ||
-				axis.valuePrecision !== scene.document.symbol.pricePrecision ||
+				axis.valuePrecision < scene.document.symbol.pricePrecision ||
 				(axis.scale !== undefined && axis.scale !== sceneScale)
 			) {
 				throw new DrawingProjectionError(
 					'DRAWING_TARGET_INVALID',
 					`${path}/target`,
-					'Candle target precision and scale must match the Scene primary axis.',
+					'Candle target precision must be at least the Scene symbol precision and scale must match the Scene primary axis.',
 				);
 			}
 			return {

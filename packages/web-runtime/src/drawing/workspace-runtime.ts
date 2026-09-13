@@ -208,6 +208,7 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		this.#drawingDocumentInstalled = drawingDocumentInstalled;
 		this.#drawingMetadataIdentity = structuredClone(workspace.drawings.metadata);
 		this.#registration = getSceneRuntime(workspace.scene.kind);
+		engine.configureDrawingValueAxes?.(workspace.drawings.coordinateSystem.valueAxes);
 		this.#session = new DrawingSessionController({
 			runtimeId: this.#runtimeId,
 			commitMode: options.commitMode,

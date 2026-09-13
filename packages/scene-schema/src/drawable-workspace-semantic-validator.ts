@@ -124,12 +124,12 @@ function validateChartBinding(
 					candidate.paneRole === 'candle' &&
 					candidate.yAxisRole === 'primary',
 			);
-			if (axis === undefined || axis.valuePrecision !== expectedPrecision) {
+			if (axis === undefined || axis.valuePrecision < expectedPrecision) {
 				issues.push(
 					issue(
 						'DRAWING_TARGET_INVALID',
 						path,
-						'Candle target precision must match the Scene symbol precision.',
+						'Candle target precision must be at least the Scene symbol precision.',
 					),
 				);
 			}

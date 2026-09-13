@@ -3,6 +3,7 @@ import type {
 	Drawing,
 	MarketData,
 	SceneIndicator,
+	ValueAxis,
 } from '@baron1996/kline-scene-schema';
 
 export interface EngineDrawingTarget {
@@ -161,6 +162,8 @@ export interface ChartCrosshairEnginePort {
  */
 export interface DrawingEnginePort {
 	readonly sceneKind: 'chart' | 'time-series';
+	/** Workspace Drawing 坐标精度，允许与行情标签显示精度分离。 */
+	configureDrawingValueAxes?(valueAxes: readonly ValueAxis[]): void;
 	restoreDrawings(drawings: readonly EngineDrawingSnapshot[]): void;
 	startDrawing(request: EngineDrawingStartRequest): string;
 	listDrawings(): readonly EngineDrawingSnapshot[];

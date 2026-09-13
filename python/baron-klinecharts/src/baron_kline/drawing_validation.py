@@ -602,12 +602,12 @@ def _chart_target_issues(
                 ),
                 None,
             )
-            if axis is None or axis["valuePrecision"] != expected:
+            if axis is None or axis["valuePrecision"] < expected:
                 issues.append(
                     DrawableWorkspaceIssue(
                         "DRAWING_TARGET_INVALID",
                         path,
-                        "Candle target precision must match the Scene symbol precision.",
+                        "Candle target precision must be at least the Scene symbol precision.",
                     )
                 )
             continue

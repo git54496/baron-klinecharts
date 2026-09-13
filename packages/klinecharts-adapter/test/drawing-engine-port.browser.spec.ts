@@ -143,6 +143,7 @@ async function installWorkspace(
 		readonly precisionTouch?: boolean;
 		readonly exclusiveSelection?: boolean;
 		readonly subUnitLogarithmic?: boolean;
+		readonly fineDrawingPrecision?: boolean;
 	} = {},
 ): Promise<void> {
 	await page.addInitScript(SNAPSHOT_BUILDER);
@@ -155,6 +156,7 @@ async function installWorkspace(
 			precisionTouch,
 			exclusiveSelection,
 			subUnitLogarithmic,
+			fineDrawingPrecision,
 		}) => {
 			const { KLineChartsSceneAdapter, TimeSeriesChartsAdapter } =
 				await import('/src/index.ts');
@@ -162,6 +164,11 @@ async function installWorkspace(
 				kind === 'chart' ? '#chart' : '#chart-time-series',
 			)!;
 			const selectedChartWorkspace = structuredClone(chartWorkspace);
+			if (fineDrawingPrecision && kind === 'chart') {
+				selectedChartWorkspace.drawings.coordinateSystem.valueAxes[0].valuePrecision = 6;
+				selectedChartWorkspace.drawings.drawings = [];
+				selectedChartWorkspace.binding.valueAxes[0].valuePrecision = 6;
+			}
 			if (subUnitLogarithmic && kind === 'chart') {
 				const scene = selectedChartWorkspace.scene.document;
 				const prices = [
@@ -206,9 +213,61 @@ async function installWorkspace(
 			precisionTouch: options.precisionTouch,
 			exclusiveSelection: options.exclusiveSelection,
 			subUnitLogarithmic: options.subUnitLogarithmic,
+			fineDrawingPrecision: options.fineDrawingPrecision,
 		},
 	);
 }
+
+test('@browser Drawing saves sub-cent vertical coordinates while candle labels retain two decimals', async ({ page }) => {
+	await installWorkspace(page, 'chart', { fineDrawingPrecision: true });
+	const label = await page.evaluate(async () => {
+		const { formatDefaultPriceAxisValue } = await import('/src/conversion/panes.ts');
+		return formatDefaultPriceAxisValue(123.456789);
+	});
+	expect(label).toBe('123.46');
+	const first = await page.evaluate(() => {
+		const adapter = (window as unknown as {
+			__adapter: { unprojectFromPixel(point: { x: number; y: number }, paneRole: string): { value?: number } };
+		}).__adapter;
+		for (let y = 250; y < 290; y++) {
+			const value = adapter.unprojectFromPixel({ x: 260, y }, 'candle').value;
+			if (value !== undefined && Math.abs(value - Math.round(value * 100) / 100) > 0.001) {
+				return { y, value };
+			}
+		}
+		throw new Error('No sub-cent test coordinate found.');
+	});
+	await page.evaluate(() => {
+		const adapter = (window as unknown as { __adapter: {
+			startDrawing(request: unknown): string;
+			subscribeDrawingEvents(listener: (event: { type: string; id: string }) => void): () => void;
+		} }).__adapter;
+		adapter.subscribeDrawingEvents((event) => {
+			if (event.type === 'created' && event.id === 'port-segment-0') {
+				(window as unknown as { __fineDrawingCreated: boolean }).__fineDrawingCreated = true;
+			}
+		});
+		adapter.startDrawing((window as unknown as {
+			__baronRequest(type: string, index: number, paneRole: string): unknown;
+		}).__baronRequest('segment', 0, 'candle'));
+	});
+	for (const [x, y] of [[260, first.y], [620, first.y + 40], [720, first.y + 60]] as const) {
+		await page.mouse.click(x, y);
+		await settle(page);
+		if (await page.evaluate(() => (window as unknown as { __fineDrawingCreated?: boolean }).__fineDrawingCreated === true)) {
+			break;
+		}
+	}
+	expect(await page.evaluate(() => (window as unknown as { __fineDrawingCreated?: boolean }).__fineDrawingCreated)).toBe(true);
+	const saved = await page.evaluate(() => {
+		const adapter = (window as unknown as {
+			__adapter: { getDrawing(id: string): { geometry: { points: Array<{ value: number }> } } | undefined };
+		}).__adapter;
+		return adapter.getDrawing('port-segment-0')?.geometry.points[0]?.value;
+	});
+	expect(saved).toBeCloseTo(first.value, 5);
+	expect(saved).not.toBe(Math.round(first.value * 100) / 100);
+});
 
 async function dispatchTouchPointer(
 	page: Page,
@@ -1055,7 +1114,7 @@ test.describe('DrawingEnginePort exclusive Drawing selection', () => {
 	});
 
 	test('@browser future segment endpoint remains draggable in the blank timeline', async ({ page }) => {
-		await installWorkspace(page, 'chart', { exclusiveSelection: true });
+		await installWorkspace(page, 'chart', { exclusiveSelection: true, fineDrawingPrecision: true });
 		const setup = await page.evaluate(() => {
 			const adapter = (window as unknown as {
 				__adapter: {
@@ -1105,9 +1164,11 @@ test.describe('DrawingEnginePort exclusive Drawing selection', () => {
 		}));
 		expect(result.events).toContain('updated:port-segment-0');
 		expect(result.drawing?.geometry).not.toEqual(setup.before?.geometry);
-		expect((result.drawing?.geometry as {
-			points: Array<{ timestamp: number }>;
-		}).points[1]!.timestamp).toBe(setup.futureTimestamp);
+		const endpoint = (result.drawing?.geometry as {
+			points: Array<{ timestamp: number; value: number }>;
+		}).points[1]!;
+		expect(endpoint.timestamp).toBe(setup.futureTimestamp);
+		expect(endpoint.value).not.toBe(Math.round(endpoint.value * 100) / 100);
 	});
 
 	test('@browser touch hit band selects and drags a segment without moving the chart', async ({ browser }) => {

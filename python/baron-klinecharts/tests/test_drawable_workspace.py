@@ -107,6 +107,15 @@ class DrawableWorkspaceContractTest(unittest.TestCase):
             "DRAWABLE_WORKSPACE_SCHEMA_INVALID",
         )
 
+    def test_candle_drawing_precision_can_exceed_quote_precision(self) -> None:
+        workspace = load_drawable_workspace(WORKSPACES / "chart-minimal.json")
+        value = workspace.to_dict()
+        value["drawings"]["coordinateSystem"]["valueAxes"][0]["valuePrecision"] = 6
+        value["binding"]["valueAxes"][0]["valuePrecision"] = 6
+        parsed = DrawableWorkspaceDocument.from_dict(value)
+        self.assertEqual(parsed.drawings.coordinateSystem["valueAxes"][0]["valuePrecision"], 6)
+        self.assertEqual(parsed.scene["document"]["symbol"]["pricePrecision"], 2)
+
     def test_rejects_empty_version_two_document_with_mismatched_scale(self) -> None:
         workspace = load_drawable_workspace(WORKSPACES / "chart-minimal.json")
         value = workspace.to_dict()
