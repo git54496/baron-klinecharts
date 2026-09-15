@@ -36,6 +36,8 @@ export interface OverlayPixelGeometry {
 	readonly zLevel: number;
 	readonly locked: boolean;
 	readonly anchors: readonly PixelCoordinate[];
+	/** Canonical control indexes for projected anchors; defaults to array order. */
+	readonly anchorIndices?: readonly number[];
 	readonly bodySegments: readonly (readonly [PixelCoordinate, PixelCoordinate])[];
 	readonly bodyRectangles?: readonly PixelRectangle[];
 }
@@ -127,7 +129,7 @@ export function hitTestOverlayGeometries(
 				anchorHits.push({
 					overlayId: geometry.overlayId,
 					target: 'anchor',
-					anchorIndex,
+					anchorIndex: geometry.anchorIndices?.[anchorIndex] ?? anchorIndex,
 					locked: geometry.locked,
 					distance,
 					sceneIndex: geometry.sceneIndex,

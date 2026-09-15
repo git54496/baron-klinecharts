@@ -64,6 +64,17 @@ describe('weekly progressive projection', () => {
 		expect(snapshot?.reference.value).toBeLessThan(40);
 	});
 
+	it('exposes only canonical A/F controls while R remains a derived loaded boundary', () => {
+		const captured = captureWeeklyProjection(line('2026-09-04'), scene({ type: 'week', span: 1 }, days));
+		const projection = projectWeeklyDrawing(captured, scene({ type: 'week', span: 1 }, days));
+		expect(projection?.controlPoints).toEqual([
+			{ dataIndex: 0, value: 20 },
+			{ dataIndex: 9, value: 40 },
+		]);
+		expect(projection?.loadedPoints[1]?.timestamp).toBe(timestamp(days[5]!));
+		expect(projection?.loadedPoints[1]?.value).toBeLessThan(40);
+	});
+
 	it('projects a weekly source when returning to a partially loaded weekly chart', () => {
 		const captured = captureWeeklyProjection(line(days[5]!), scene({ type: 'week', span: 1 }, days));
 		const recent = projectWeeklyDrawing(captured, scene({ type: 'week', span: 1 }, days.slice(3)));

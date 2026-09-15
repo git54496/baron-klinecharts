@@ -1,4 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
+import {
+	captureWeeklyProjection,
+	type ChartScene,
+	type Drawing,
+} from '@baron1996/kline-scene-schema';
 
 import { loadScene } from './load-scene.js';
 
@@ -1169,6 +1174,106 @@ test.describe('DrawingEnginePort exclusive Drawing selection', () => {
 		}).points[1]!;
 		expect(endpoint.timestamp).toBe(setup.futureTimestamp);
 		expect(endpoint.value).not.toBe(Math.round(endpoint.value * 100) / 100);
+	});
+
+	test('@browser weekly future segment exposes only A/F controls and keeps F fixed while dragging A', async ({ page }) => {
+		await installWorkspace(page, 'chart', { exclusiveSelection: true, fineDrawingPrecision: true });
+		const weekly = structuredClone(chartWorkspace.scene.document) as ChartScene;
+		weekly.period = { type: 'week', span: 1 };
+		const week = 7 * 24 * 60 * 60 * 1000;
+		const firstTimestamp = weekly.data[0]!.timestamp;
+		weekly.data = weekly.data.map((bar, index) => ({
+			...bar,
+			timestamp: firstTimestamp + index * week,
+		})) as ChartScene['data'];
+		weekly.viewport.anchorTimestamp = weekly.data.at(-1)!.timestamp;
+		const drawing = structuredClone((allDrawings.drawings as Drawing[]).find(
+			(candidate) => candidate.type === 'segment',
+		)!) as Drawing;
+		drawing.id = 'port-segment-0';
+		const futureTimestamp = firstTimestamp + 3 * week;
+		if (drawing.type !== 'segment') throw new Error('Missing segment fixture.');
+		drawing.geometry.points = [
+			{ timestamp: firstTimestamp, granularity: { type: 'week', span: 1 }, value: 12.34 },
+			{ timestamp: futureTimestamp, granularity: { type: 'week', span: 1 }, value: 12.74 },
+		];
+		const captured = captureWeeklyProjection(drawing, weekly);
+		const setup = await page.evaluate(({ weekly, captured, firstTimestamp, futureTimestamp, week }) => {
+			const adapter = (window as unknown as {
+				__adapter: {
+					replaceScene(scene: unknown): void;
+					restoreDrawings(drawings: readonly unknown[]): void;
+					projectToPixel(
+						anchor: { readonly timestamp: number; readonly value: number }, paneRole: string,
+					): { readonly x: number; readonly y: number };
+				};
+			}).__adapter;
+			adapter.replaceScene(weekly);
+			adapter.restoreDrawings([captured]);
+			const start = adapter.projectToPixel({ timestamp: firstTimestamp, value: 12.34 }, 'candle');
+			const reference = adapter.projectToPixel({
+				timestamp: firstTimestamp + 2 * week,
+				value: 12.34 + 0.8 / 3,
+			}, 'candle');
+			return {
+				hit: { x: (start.x + reference.x) / 2, y: (start.y + reference.y) / 2 },
+				reference,
+				firstTimestamp,
+				futureTimestamp,
+			};
+		}, { weekly, captured, firstTimestamp, futureTimestamp, week });
+
+		await page.mouse.click(setup.hit.x, setup.hit.y);
+		const anchors = page.locator('[data-drawing-selection-anchors]');
+		const controls = anchors.locator('circle');
+		await expect(controls).toHaveCount(2);
+		const initial = await controls.evaluateAll((circles) => circles.map((circle) => ({
+			index: circle.getAttribute('data-anchor-index'),
+			x: Number(circle.getAttribute('cx')),
+			y: Number(circle.getAttribute('cy')),
+		})));
+		expect(initial.map((point) => point.index)).toEqual(['0', '1']);
+		expect(initial[1]!.x).toBeGreaterThan(setup.reference.x + 5);
+
+		await page.mouse.move(initial[0]!.x, initial[0]!.y);
+		await page.mouse.down();
+		await page.mouse.move(initial[0]!.x + 10, initial[0]!.y + 20, { steps: 3 });
+		const during = await controls.evaluateAll((circles) => circles.map((circle) => ({
+			x: Number(circle.getAttribute('cx')),
+			y: Number(circle.getAttribute('cy')),
+		})));
+		expect(during[1]!.x).toBeCloseTo(initial[1]!.x, 5);
+		expect(during[1]!.y).toBeCloseTo(initial[1]!.y, 5);
+		await page.mouse.up();
+		await settle(page);
+
+		const geometry = await page.evaluate(() => (window as unknown as {
+			__adapter: { getDrawing(id: string): { geometry: unknown } | undefined };
+		}).__adapter.getDrawing('port-segment-0')?.geometry) as {
+			points: Array<{ timestamp: number; value: number }>;
+		};
+		expect(geometry.points[0]!.timestamp).not.toBe(setup.firstTimestamp);
+		expect(geometry.points[1]).toMatchObject({ timestamp: setup.futureTimestamp, value: 12.74 });
+
+		const afterStartDrag = await controls.evaluateAll((circles) => circles.map((circle) => ({
+			x: Number(circle.getAttribute('cx')),
+			y: Number(circle.getAttribute('cy')),
+		})));
+		const futureHit = await page.evaluate((point) => (window as unknown as {
+			__adapter: { hitTestOverlay(point: { x: number; y: number }): unknown };
+		}).__adapter.hitTestOverlay(point), afterStartDrag[1]!);
+		expect(futureHit).toMatchObject({ target: 'anchor', anchorIndex: 1 });
+		await page.mouse.move(afterStartDrag[1]!.x, afterStartDrag[1]!.y);
+		await page.mouse.down();
+		await page.mouse.move(afterStartDrag[1]!.x, afterStartDrag[1]!.y - 20, { steps: 3 });
+		await page.mouse.up();
+		await settle(page);
+		const afterFutureDrag = await page.evaluate(() => (window as unknown as {
+			__adapter: { getDrawing(id: string): { geometry: unknown } | undefined };
+		}).__adapter.getDrawing('port-segment-0')?.geometry) as typeof geometry;
+		expect(afterFutureDrag.points[0]).toEqual(geometry.points[0]);
+		expect(afterFutureDrag.points[1]!.timestamp).toBe(setup.futureTimestamp);
+		expect(afterFutureDrag.points[1]!.value).not.toBe(12.74);
 	});
 
 	test('@browser touch hit band selects and drags a segment without moving the chart', async ({ browser }) => {

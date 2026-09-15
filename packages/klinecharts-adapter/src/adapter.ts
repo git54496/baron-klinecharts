@@ -7,14 +7,17 @@ import type {
 	SceneIndicator,
 	SceneOverlay,
 	ValueAxis,
+	WeeklyRenderProjection,
 } from '@baron1996/kline-scene-schema';
 import {
 	applyHistoryCoverageUpdate,
+	captureWeeklyProjection,
 	parseDrawableWorkspaceDocument,
 	parseChartScene,
 	projectWeeklyDrawing,
 	readWeeklyProjection,
 	SceneError,
+	WEEKLY_PROJECTION_KEY,
 } from '@baron1996/kline-scene-schema';
 import type { Chart, Coordinate, Overlay, Point } from 'klinecharts';
 import type { DataLoader, KLineData } from 'klinecharts';
@@ -423,8 +426,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	#workspaceOverlays: SceneOverlay[] = [];
 	/** Workspace 模式权威业务 Drawing（含 granularity/target/text）。 */
 	#workspaceSources = new Map<string, Drawing>();
-	/** Derived visual geometry; never copied into canonical Drawing or SceneOverlay. */
-	#weeklyDisplayOverlays = new Map<string, SceneOverlay>();
+	/** Derived rendering/control projection; never copied into canonical Drawing or SceneOverlay. */
+	#weeklyDisplayProjections = new Map<string, WeeklyRenderProjection | null>();
 	/** 各绘图 Pane 的价格坐标精度，独立于行情轴标签精度。 */
 	#drawingValuePrecisionByPane = new Map<string, number>();
 	/** 公共 Drawing 端口监听器。 */
@@ -1080,7 +1083,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		}
 		this.#workspaceOverlays = [];
 		this.#workspaceSources = new Map();
-		this.#weeklyDisplayOverlays.clear();
+		this.#weeklyDisplayProjections.clear();
 		for (const snapshot of drawings) {
 			const drawing = drawingFromSnapshot(snapshot);
 			this.#workspaceSources.set(drawing.id, drawing);
@@ -1113,16 +1116,10 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	#engineOverlayForDrawing(drawing: Drawing, overlay: SceneOverlay, path: string): import('klinecharts').OverlayCreate {
 		const projection = projectWeeklyDrawing(drawing, this.#scene);
 		const isWeeklyProjection = readWeeklyProjection(drawing) !== null;
-		if (projection !== null && 'points' in overlay) {
-			this.#weeklyDisplayOverlays.set(overlay.id, {
-				...structuredClone(overlay), points: structuredClone(projection.loadedPoints),
-			} as SceneOverlay);
-		} else if (isWeeklyProjection) {
-			this.#weeklyDisplayOverlays.set(overlay.id, {
-				...structuredClone(overlay), visible: false,
-			} as SceneOverlay);
+		if (isWeeklyProjection) {
+			this.#weeklyDisplayProjections.set(overlay.id, projection);
 		} else {
-			this.#weeklyDisplayOverlays.delete(overlay.id);
+			this.#weeklyDisplayProjections.delete(overlay.id);
 		}
 		const result = toEngineOverlay(overlay, this.#idMap, path,
 			this.#overlayCallbacks(overlay), projection?.points);
@@ -1130,6 +1127,30 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			result.visible = false;
 		}
 		return result;
+	}
+
+	#engineOverlayForInteractiveDrawing(overlay: SceneOverlay, path: string): import('klinecharts').OverlayCreate {
+		const source = this.#workspaceSources.get(overlay.id);
+		if (source === undefined) {
+			return toEngineOverlay(overlay, this.#idMap, path, this.#overlayCallbacks(overlay));
+		}
+		let drawing = sceneOverlayToDrawing(overlay, source);
+		if (
+			readWeeklyProjection(source) !== null &&
+			this.#scene.period.type === 'week' && this.#scene.period.span === 1
+		) {
+			const metadata = { ...drawing.metadata };
+			delete metadata[WEEKLY_PROJECTION_KEY];
+			drawing = captureWeeklyProjection({ ...drawing, metadata } as Drawing, this.#scene);
+			if (readWeeklyProjection(drawing) === null) {
+				throw new SceneError(
+					'INVALID_REFERENCE',
+					`/drawings/${overlay.id}/geometry`,
+					'Weekly A/F controls must remain projectable on the weekly timeline.',
+				);
+			}
+		}
+		return this.#engineOverlayForDrawing(drawing, overlay, path);
 	}
 
 	#refreshWeeklyDrawingProjections(): void {
@@ -1982,10 +2003,12 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		const textContext = canvas.getContext('2d');
 		for (let sceneIndex = 0; sceneIndex < active.length; sceneIndex++) {
 			const source = active[sceneIndex];
-			const overlay = source === undefined ? undefined : this.#weeklyDisplayOverlays.get(source.id) ?? source;
-			if (overlay === undefined || !overlay.visible) {
+			if (source === undefined || !source.visible) {
 				continue;
 			}
+			const weeklyProjection = this.#weeklyDisplayProjections.get(source.id);
+			if (weeklyProjection === null) continue;
+			const overlay = source;
 			const paneFilter = this.#primaryAxisFilter(overlay.paneId);
 			const paneMain = this.#chart.getDom(paneFilter.paneId, 'main');
 			const mainRect = paneMain?.getBoundingClientRect() ?? containerRect;
@@ -1999,6 +2022,12 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				referenceTimestamp: this.#scene.data[0]!.timestamp,
 				referenceValue: this.#scene.data[0]!.close,
 				project: (point) => this.#toPixel(point, overlay.paneId),
+				...(weeklyProjection === undefined ? {} : {
+					projectedPoints: weeklyProjection.points.map((point) =>
+						this.#toPixel(point, overlay.paneId)),
+					projectedControls: weeklyProjection.controlPoints.flatMap((point, index) =>
+						point === null ? [] : [{ index, point: this.#toPixel(point, overlay.paneId) }]),
+				}),
 				measureText: (text, source) => {
 					const textStyle = source.styles.text;
 					if (textContext !== null) {
@@ -2040,6 +2069,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			geometry.anchors,
 			selected.styles.line.color,
 			selected.locked || this.#isWeeklyOriginReadOnly(selected.id),
+			geometry.anchorIndices,
 		);
 	}
 
@@ -2074,12 +2104,13 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		if (
 			index < 0 ||
 			!this.#chart.overrideOverlay(
-				toEngineOverlay(
+				this.#workspaceMode ? this.#engineOverlayForInteractiveDrawing(
 					interaction.before,
-					this.#idMap,
 					`/overlays/${index}`,
+				) : toEngineOverlay(
+					interaction.before, this.#idMap, `/overlays/${index}`,
 					this.#overlayCallbacks(interaction.before),
-				),
+				)
 			)
 		) {
 			throw new SceneError(
@@ -2387,12 +2418,12 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			const normalized = this.#workspaceMode
 				? candidate
 				: parseChartScene({ ...structuredClone(this.#scene), overlays }).overlays[index]!;
-			if (!this.#chart.overrideOverlay(toEngineOverlay(
-				normalized,
-				this.#idMap,
-				`/overlays/${index}`,
-				this.#overlayCallbacks(normalized),
-			))) {
+			const preview = this.#workspaceMode
+				? this.#engineOverlayForInteractiveDrawing(normalized, `/overlays/${index}`)
+				: toEngineOverlay(
+					normalized, this.#idMap, `/overlays/${index}`, this.#overlayCallbacks(normalized),
+				);
+			if (!this.#chart.overrideOverlay(preview)) {
 				throw new SceneError(
 					'RUNTIME_INIT_FAILED',
 					`/overlays/${index}`,
@@ -3104,7 +3135,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#assertActive();
 		this.#assertNotTerminated();
 		const removed = this.#chart.removeOverlay({ id });
-		if (removed) this.#weeklyDisplayOverlays.delete(id);
+		if (removed) this.#weeklyDisplayProjections.delete(id);
 		return removed;
 	}
 
@@ -3735,7 +3766,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#settlePendingHistoricalData(false);
 		this.#workspaceSources.clear();
 		this.#workspaceOverlays = [];
-		this.#weeklyDisplayOverlays.clear();
+		this.#weeklyDisplayProjections.clear();
 		this.#engine.dispose(this.#container);
 		this.#container.replaceChildren();
 		this.#container.style.backgroundColor = this.#originalBackground;

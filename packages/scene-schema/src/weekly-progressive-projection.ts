@@ -94,7 +94,15 @@ export interface WeeklyProjectionSnapshot {
 
 export interface WeeklyRenderProjection {
 	readonly points: readonly { readonly dataIndex: number; readonly value: number }[];
-	/** Actual bars used for hit testing in the loaded part of the timeline. */
+	/**
+	 * User-facing A/F controls in canonical point order. A missing target-period
+	 * bar is represented by null; callers must never substitute the derived R
+	 * intersection as an interactive control.
+	 */
+	readonly controlPoints: readonly (
+		{ readonly dataIndex: number; readonly value: number } | null
+	)[];
+	/** Loaded rendering boundary retained for non-interactive compatibility. */
 	readonly loadedPoints: readonly WeeklyProjectionPoint[];
 	readonly status: 'temporary' | 'exact';
 }
@@ -257,8 +265,19 @@ export function projectWeeklyDrawing(drawing: Drawing, scene: ChartScene): Weekl
 	const points = drawing.type === 'straightLine'
 		? [left.index, rightIndex]
 		: [firstIndex, Math.max(firstIndex + 1, endIndex)];
+	const controlPoints = (linePoints(drawing) ?? []).map((point) => {
+		const loadedIndex = weekToBar.get(weekKey(point.timestamp, scene.chart.timezone));
+		if (loadedIndex !== undefined) {
+			return { dataIndex: loadedIndex, value: atIndex(loadedIndex) };
+		}
+		if (snapshot.future?.timestamp === point.timestamp) {
+			return { dataIndex: endIndex, value: atIndex(endIndex) };
+		}
+		return null;
+	});
 	return {
 		points: points.map((index) => ({ dataIndex: index, value: atIndex(index) })),
+		controlPoints,
 		loadedPoints: [
 			{ timestamp: scene.data[firstIndex]!.timestamp, value: atIndex(firstIndex) },
 			{ timestamp: scene.data[Math.min(endIndex, lastIndex)]!.timestamp, value: atIndex(Math.min(endIndex, lastIndex)) },

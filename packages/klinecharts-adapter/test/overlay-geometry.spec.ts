@@ -80,4 +80,30 @@ describe('Drawing interaction geometry projection', () => {
 			target: 'body',
 		});
 	});
+
+	it('keeps canonical control indexes when projected boundary points are not controls', () => {
+		const geometry = projectOverlayGeometry(
+			overlay({
+				points: [
+					{ timestamp: 100, value: 100 },
+					{ timestamp: 300, value: 200 },
+				],
+			}),
+			0,
+			{
+				...projection,
+				projectedPoints: [{ x: 0, y: 50 }, { x: 400, y: 150 }],
+				projectedControls: [{ index: 1, point: { x: 360, y: 140 } }],
+			},
+		);
+		expect(geometry?.anchors).toEqual([{ x: 360, y: 140 }]);
+		expect(hitTestOverlayGeometries({ x: 360, y: 140 }, [geometry!])).toMatchObject({
+			target: 'anchor',
+			anchorIndex: 1,
+		});
+		expect(hitTestOverlayGeometries({ x: 200, y: 100 }, [geometry!])).toMatchObject({
+			target: 'body',
+			anchorIndex: null,
+		});
+	});
 });

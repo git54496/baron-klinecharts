@@ -11,6 +11,13 @@ export interface OverlayGeometryProjectionContext {
 	readonly referenceTimestamp: number;
 	readonly referenceValue: number;
 	readonly project: (point: TimeValueAnchor) => PixelCoordinate;
+	/** Optional engine-projected body points, such as a weekly A-F projection. */
+	readonly projectedPoints?: readonly PixelCoordinate[];
+	/** Optional canonical controls; derived projection points such as R are omitted. */
+	readonly projectedControls?: readonly {
+		readonly index: number;
+		readonly point: PixelCoordinate;
+	}[];
 	readonly measureText: (text: string, overlay: SceneOverlay) => {
 		readonly width: number;
 		readonly height: number;
@@ -107,7 +114,21 @@ function projectPoints(
 	overlay: SceneOverlay,
 	context: OverlayGeometryProjectionContext,
 ): PixelCoordinate[] {
+	if (context.projectedPoints !== undefined) {
+		return [...context.projectedPoints];
+	}
 	return (overlay.points ?? []).map((point) => context.project(point));
+}
+
+function pointControls(
+	points: readonly PixelCoordinate[],
+	context: OverlayGeometryProjectionContext,
+): { readonly anchors: readonly PixelCoordinate[]; readonly indices?: readonly number[] } {
+	if (context.projectedControls === undefined) return { anchors: points };
+	return {
+		anchors: context.projectedControls.map((control) => control.point),
+		indices: context.projectedControls.map((control) => control.index),
+	};
 }
 
 function sequentialSegments(points: readonly PixelCoordinate[]): Segment[] {
@@ -155,6 +176,7 @@ function geometry(
 	anchors: readonly PixelCoordinate[],
 	bodySegments: readonly Segment[],
 	bodyRectangles: readonly PixelRectangle[] = [],
+	anchorIndices?: readonly number[],
 ): OverlayPixelGeometry {
 	return {
 		overlayId: overlay.id,
@@ -162,6 +184,7 @@ function geometry(
 		zLevel: overlay.zLevel,
 		locked: overlay.locked,
 		anchors,
+		...(anchorIndices === undefined ? {} : { anchorIndices }),
 		bodySegments,
 		bodyRectangles,
 	};
@@ -213,7 +236,10 @@ export function projectOverlayGeometry(
 		}
 		case 'segment': {
 			const points = projectPoints(overlay, context);
-			return points.length < 2 ? null : geometry(overlay, sceneIndex, points, sequentialSegments(points));
+			const controls = pointControls(points, context);
+			return points.length < 2 ? null : geometry(
+				overlay, sceneIndex, controls.anchors, sequentialSegments(points), [], controls.indices,
+			);
 		}
 		case 'brush': {
 			const points = projectPoints(overlay, context);
@@ -223,10 +249,13 @@ export function projectOverlayGeometry(
 		case 'straightLine': {
 			const points = projectPoints(overlay, context);
 			if (points.length < 2) return null;
+			const controls = pointControls(points, context);
 			const body = overlay.type === 'rayLine'
 				? ray(points[0]!, points[1]!, bounds)
 				: infiniteLine(points[0]!, points[1]!, bounds);
-			return geometry(overlay, sceneIndex, points, body === null ? [] : [body]);
+			return geometry(
+				overlay, sceneIndex, controls.anchors, body === null ? [] : [body], [], controls.indices,
+			);
 		}
 		case 'fibonacciLine': {
 			const points = projectPoints(overlay, context);

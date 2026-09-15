@@ -52,6 +52,7 @@ export class SelectionAnchorLayer {
 		anchors: readonly PixelCoordinate[],
 		color: string,
 		locked: boolean,
+		anchorIndices?: readonly number[],
 	): void {
 		this.#root.replaceChildren();
 		if (drawingId === null || anchors.length === 0) {
@@ -66,7 +67,7 @@ export class SelectionAnchorLayer {
 		for (let index = 0; index < anchors.length; index++) {
 			const anchor = anchors[index]!;
 			const circle = this.#container.ownerDocument.createElementNS(SVG_NAMESPACE, 'circle');
-			circle.dataset.anchorIndex = String(index);
+			circle.dataset.anchorIndex = String(anchorIndices?.[index] ?? index);
 			circle.setAttribute('cx', String(anchor.x));
 			circle.setAttribute('cy', String(anchor.y));
 			circle.setAttribute('r', String(ANCHOR_RADIUS));
