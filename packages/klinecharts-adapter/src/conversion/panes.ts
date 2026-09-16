@@ -5,7 +5,11 @@ import type { AxisCreateTicksParams, Chart, YAxis } from 'klinecharts';
 import type { EngineIdMap } from './id-map.js';
 import { requireMappedId } from './id-map.js';
 import { createPaneIndicators } from './indicators.js';
-import { createLogPriceTicks } from './log-price-ticks.js';
+import {
+	createLogPriceTicks,
+	signedLogPrice,
+	signedLogValue,
+} from './log-price-ticks.js';
 
 interface IdentifiedYAxis extends YAxis {
 	readonly id: string;
@@ -18,25 +22,21 @@ export function formatDefaultPriceAxisValue(value: number): string {
 	return (Object.is(rounded, -0) ? 0 : rounded).toFixed(2);
 }
 
-/**
- * KLineCharts 10 的 logarithm 轴使用带符号的对数逆变换，因而会把
- * 0 < price < 1 对应的负对数坐标还原成负价格。蜡烛主价格轴只接受正值，
- * 可以在这里使用标准的正数域对数变换，保证像素投影与反投影互为逆运算。
- */
-const positiveLogPriceAxisConversions = {
-	valueToRealValue: (value: number): number => Math.log10(value),
-	realValueToValue: (value: number): number => 10 ** value,
-	realValueToDisplayValue: (value: number): number => 10 ** value,
-	displayValueToRealValue: (value: number): number => Math.log10(value),
-};
-
 function axisOverride(
 	chart: Chart,
 	axis: SceneYAxis,
 	enginePaneId: string,
 	engineAxisId: string,
 	formatAsPrice: boolean,
+	pricePrecision: number,
 ) {
+	const linearThreshold = 10 ** -pricePrecision;
+	const signedLogPriceAxisConversions = {
+		valueToRealValue: (value: number): number => signedLogValue(value, linearThreshold),
+		realValueToValue: (value: number): number => signedLogPrice(value, linearThreshold),
+		realValueToDisplayValue: (value: number): number => signedLogPrice(value, linearThreshold),
+		displayValueToRealValue: (value: number): number => signedLogValue(value, linearThreshold),
+	};
 	return {
 		id: engineAxisId,
 		paneId: enginePaneId,
@@ -46,6 +46,7 @@ function axisOverride(
 			? createLogPriceTicks(params, axis.reverse, {
 				textHeight: chart.getStyles().yAxis.tickText.size,
 				formatText: (text) => chart.getDecimalFold().format(chart.getThousandsSeparator().format(text)),
+				linearThreshold,
 			})
 			: params.defaultTicks,
 		reverse: axis.reverse,
@@ -59,7 +60,7 @@ function axisOverride(
 		...(formatAsPrice
 			? {
 					displayValueToText: (value: number) => formatDefaultPriceAxisValue(value),
-					...(axis.scale === 'logarithmic' ? positiveLogPriceAxisConversions : {}),
+					...(axis.scale === 'logarithmic' ? signedLogPriceAxisConversions : {}),
 				}
 			: {}),
 		needWidget: true,
@@ -74,10 +75,11 @@ export function overrideSceneYAxis(
 	paneId: string,
 	path: string,
 	formatAsPrice = false,
+	pricePrecision = 2,
 ): void {
 	const enginePaneId = requireMappedId(idMap.paneToEngine, paneId, `${path}/paneId`, 'Pane');
 	const engineAxisId = requireMappedId(idMap.yAxisToEngine, axis.id, `${path}/id`, 'Y-axis');
-	chart.overrideYAxis(axisOverride(chart, axis, enginePaneId, engineAxisId, formatAsPrice));
+	chart.overrideYAxis(axisOverride(chart, axis, enginePaneId, engineAxisId, formatAsPrice, pricePrecision));
 }
 
 /** 按 Scene 顺序创建 Pane、Y 轴和指标，并核对每个映射。 */
@@ -130,6 +132,7 @@ export function applyPane(scene: ChartScene, chart: Chart, idMap: EngineIdMap, p
 			enginePaneId,
 			engineAxisId,
 			pane.kind === 'candle' && axis.role === 'primary',
+			scene.symbol.pricePrecision,
 		);
 		const axes = chart.getYAxes({ paneId: enginePaneId }) as IdentifiedYAxis[];
 		if (axes.some((candidate) => candidate.id === engineAxisId)) {

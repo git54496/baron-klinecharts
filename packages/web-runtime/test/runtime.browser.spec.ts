@@ -1383,30 +1383,34 @@ test('@browser M2 switches linear/logarithmic scale without changing fixed price
 	expect(Math.abs(result.linearY - result.logarithmicY)).toBeGreaterThan(0.01);
 });
 
-test('@browser M2 rejects logarithmic scale atomically when market data contains a non-positive price', async ({ page }) => {
+test('@browser M2 logarithmic scale renders market data crossing zero', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	const result = await page.evaluate(async (scene) => {
 		const { createKLineSceneRuntime } = await import('/src/index.ts');
 		const candidate = structuredClone(scene);
-		candidate.data[0]!.low = 0;
+		Object.assign(candidate.data[0]!, {
+			open: -0.56,
+			high: 1.34,
+			low: -0.56,
+			close: 1.34,
+		});
 		const runtime = await createKLineSceneRuntime(
 			document.querySelector<HTMLElement>('#chart')!,
 			candidate,
 		);
-		const before = JSON.stringify(runtime.exportScene());
-		let errorCode = '';
-		try {
-			await runtime.setPriceScale('logarithmic');
-		} catch (error) {
-			errorCode = (error as { code?: string }).code ?? '';
-		}
-		const after = JSON.stringify(runtime.exportScene());
+		const switched = await runtime.setPriceScale('logarithmic');
+		const point = (value: number) => runtime.projectPoint({
+			timestamp: candidate.data[0]!.timestamp, value,
+		}).y;
+		const projected = [-0.56, 0, 1.34].map(point);
 		runtime.destroy();
-		return { after, before, errorCode };
+		return { scale: switched.panes[0]!.yAxes[0]!.scale, projected };
 	}, m2LinearScene);
 
-	expect(result.errorCode).toBe('INVALID_MARKET_DATA');
-	expect(result.after).toBe(result.before);
+	expect(result.scale).toBe('logarithmic');
+	expect(result.projected.every(Number.isFinite)).toBe(true);
+	expect(result.projected[0]!).toBeGreaterThan(result.projected[1]!);
+	expect(result.projected[1]!).toBeGreaterThan(result.projected[2]!);
 });
 
 test('@browser M2 measurement anchor drag changes only the chosen endpoint', async ({ page }) => {

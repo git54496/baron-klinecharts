@@ -73,10 +73,6 @@ function assertUnique(
 }
 
 function validateMarketData(scene: ChartScene, issues: SceneIssue[]): void {
-	const candlePane = scene.panes.find((pane) => pane.kind === 'candle');
-	const logarithmic = candlePane?.yAxes.some(
-		(axis) => axis.role === 'primary' && axis.scale === 'logarithmic',
-	) ?? false;
 	let previousTimestamp = -Infinity;
 	for (let index = 0; index < scene.data.length; index++) {
 		const bar = scene.data[index];
@@ -107,18 +103,6 @@ function validateMarketData(scene: ChartScene, issues: SceneIssue[]): void {
 					'INVALID_MARKET_DATA',
 					path,
 					'OHLC values must satisfy low <= close <= high.',
-				),
-			);
-		}
-		if (
-			logarithmic &&
-			(bar.open <= 0 || bar.high <= 0 || bar.low <= 0 || bar.close <= 0)
-		) {
-			issues.push(
-				issue(
-					'INVALID_MARKET_DATA',
-					path,
-					'Logarithmic candle OHLC values must all be greater than zero.',
 				),
 			);
 		}
@@ -476,11 +460,6 @@ function validateOverlays(scene: ChartScene, issues: SceneIssue[]): void {
 		issues,
 	);
 	const paneIds = new Set(scene.panes.map((pane) => pane.id));
-	const candlePane = scene.panes.find((pane) => pane.kind === 'candle');
-	const candlePaneId = candlePane?.id;
-	const logarithmic = candlePane?.yAxes.some(
-		(axis) => axis.role === 'primary' && axis.scale === 'logarithmic',
-	) ?? false;
 	const timestamps = new Set(scene.data.map((bar) => bar.timestamp));
 	for (let index = 0; index < scene.overlays.length; index++) {
 		const overlay = scene.overlays[index];
@@ -503,23 +482,6 @@ function validateOverlays(scene: ChartScene, issues: SceneIssue[]): void {
 				),
 			);
 		}
-		for (const coordinate of overlayPriceCoordinates(overlay, path)) {
-			if (
-				(overlay.type === 'priceMeasurement' ||
-					(logarithmic && overlay.paneId === candlePaneId)) &&
-				coordinate.value <= 0
-			) {
-				issues.push(
-					issue(
-						'SCENE_SCHEMA_INVALID',
-						coordinate.path,
-						overlay.type === 'priceMeasurement'
-							? 'priceMeasurement values must be greater than zero.'
-							: 'Logarithmic Overlay price coordinates must be greater than zero.',
-					),
-				);
-			}
-		}
 		if (overlay.type === 'priceMeasurement') {
 			for (const key of ['start', 'end'] as const) {
 				const point = overlay[key];
@@ -535,67 +497,6 @@ function validateOverlays(scene: ChartScene, issues: SceneIssue[]): void {
 			}
 		}
 	}
-}
-
-interface OverlayPriceCoordinate {
-	readonly path: string;
-	readonly value: number;
-}
-
-function overlayPriceCoordinates(
-	overlay: SceneOverlay,
-	path: string,
-): readonly OverlayPriceCoordinate[] {
-	const result: OverlayPriceCoordinate[] = [];
-	const add = (value: number | undefined, valuePath: string): void => {
-		if (value !== undefined) {
-			result.push({ path: valuePath, value });
-		}
-	};
-	switch (overlay.type) {
-		case 'horizontalStraightLine':
-		case 'priceLine':
-		case 'simpleTag': {
-			const anchor = overlay.anchor;
-			add(anchor !== undefined && 'value' in anchor ? anchor.value : undefined, `${path}/anchor/value`);
-			break;
-		}
-		case 'horizontalRayLine':
-		case 'horizontalSegment':
-			add(overlay.value, `${path}/value`);
-			break;
-		case 'verticalRayLine':
-		case 'verticalSegment':
-			add(overlay.startValue, `${path}/startValue`);
-			add(overlay.endValue, `${path}/endValue`);
-			break;
-		case 'rayLine':
-		case 'segment':
-		case 'straightLine':
-		case 'fibonacciLine':
-		case 'priceChannelLine':
-		case 'parallelStraightLine':
-		case 'brush':
-			for (let index = 0; index < (overlay.points?.length ?? 0); index++) {
-				add(overlay.points?.[index]?.value, `${path}/points/${index}/value`);
-			}
-			break;
-		case 'simpleAnnotation':
-		case 'crossLine':
-		case 'callout':
-		case 'text':
-			add(overlay.point?.value, `${path}/point/value`);
-			break;
-		case 'rectangle':
-		case 'arrow':
-		case 'priceMeasurement':
-			add(overlay.start?.value, `${path}/start/value`);
-			add(overlay.end?.value, `${path}/end/value`);
-			break;
-		case 'verticalStraightLine':
-			break;
-	}
-	return result;
 }
 
 export function collectSemanticIssues(scene: ChartScene): readonly SceneIssue[] {

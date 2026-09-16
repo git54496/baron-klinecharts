@@ -231,16 +231,6 @@ export class DrawingProjectionService {
 			valueAxes: input.valueAxes,
 			path: input.path,
 		});
-		if (
-			binding.scale === 'logarithmic' &&
-			geometryValues(input.drawing).some((value) => value <= 0)
-		) {
-			throw new DrawingProjectionError(
-				'VALUE_AXIS_SCALE_UNSUPPORTED',
-				input.path,
-				'Logarithmic value axes reject non-positive Drawing values.',
-			);
-		}
 		const data =
 			input.scene.kind === 'chart'
 				? input.scene.document.data
@@ -757,46 +747,4 @@ function mapValueAnchors(
 		case 'verticalStraightLine':
 			break;
 	}
-}
-
-function geometryValues(drawing: Drawing): readonly number[] {
-	const values: number[] = [];
-	switch (drawing.type) {
-		case 'horizontalStraightLine':
-		case 'priceLine':
-		case 'simpleTag':
-		case 'horizontalRayLine':
-		case 'horizontalSegment':
-			values.push(drawing.geometry.value);
-			break;
-		case 'verticalRayLine':
-		case 'verticalSegment':
-			values.push(drawing.geometry.startValue, drawing.geometry.endValue);
-			break;
-		case 'rayLine':
-		case 'segment':
-		case 'straightLine':
-		case 'fibonacciLine':
-		case 'priceChannelLine':
-		case 'parallelStraightLine':
-		case 'brush':
-			for (const point of drawing.geometry.points) {
-				values.push(point.value);
-			}
-			break;
-		case 'simpleAnnotation':
-		case 'callout':
-		case 'text':
-		case 'crossLine':
-			values.push(drawing.geometry.point.value);
-			break;
-		case 'rectangle':
-		case 'arrow':
-		case 'priceMeasurement':
-			values.push(drawing.geometry.start.value, drawing.geometry.end.value);
-			break;
-		case 'verticalStraightLine':
-			break;
-	}
-	return values;
 }

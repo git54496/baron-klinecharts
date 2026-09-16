@@ -120,12 +120,32 @@ function chartScale(scene: ChartScene): 'linear' | 'logarithmic' {
 		?.yAxes.find((axis) => axis.role === 'primary')?.scale ?? 'linear';
 }
 
-function axisValue(value: number, scale: WeeklyProjectionSnapshot['scale']): number {
-	return scale === 'logarithmic' ? Math.log(value) : value;
+function priceThreshold(scene: ChartScene): number {
+	return 10 ** -(scene.symbol?.pricePrecision ?? 2);
 }
 
-function priceValue(value: number, scale: WeeklyProjectionSnapshot['scale']): number {
-	return scale === 'logarithmic' ? Math.exp(value) : value;
+function axisValue(
+	value: number,
+	scale: WeeklyProjectionSnapshot['scale'],
+	linearThreshold: number,
+): number {
+	if (scale !== 'logarithmic') return value;
+	const boundary = Math.log(linearThreshold);
+	if (value >= linearThreshold) return Math.log(value);
+	if (value > -linearThreshold) return boundary + value / linearThreshold - 1;
+	return boundary - 2 - Math.log(Math.abs(value) / linearThreshold);
+}
+
+function priceValue(
+	value: number,
+	scale: WeeklyProjectionSnapshot['scale'],
+	linearThreshold: number,
+): number {
+	if (scale !== 'logarithmic') return value;
+	const boundary = Math.log(linearThreshold);
+	if (value >= boundary) return Math.exp(value);
+	if (value > boundary - 2) return linearThreshold * (value - boundary + 1);
+	return -linearThreshold * Math.exp(boundary - 2 - value);
 }
 
 /** Capture source-week geometry once, when a new weekly trend line is confirmed. */
@@ -146,16 +166,20 @@ export function captureWeeklyProjection(drawing: Drawing, scene: ChartScene): Dr
 	const future = end.timestamp > last.timestamp;
 	if (!future && endIndex <= startIndex) return drawing;
 	const scale = chartScale(scene);
-	if (scale === 'logarithmic' && (start.value <= 0 || end.value <= 0)) return drawing;
+	const linearThreshold = priceThreshold(scene);
 	const virtualWeeks = future
 		? Math.max(1, Math.round((end.timestamp - last.timestamp) / (7 * 86_400_000)))
 		: 0;
 	const referenceIndex = future ? lastIndex : endIndex;
-	const slope = (axisValue(end.value, scale) - axisValue(start.value, scale)) /
+	const slope = (axisValue(end.value, scale, linearThreshold) - axisValue(start.value, scale, linearThreshold)) /
 		(referenceIndex + virtualWeeks - startIndex);
 	const atWeek = (index: number): WeeklyProjectionPoint => ({
 		timestamp: scene.data[index]!.timestamp,
-		value: priceValue(axisValue(start.value, scale) + slope * (index - startIndex), scale),
+		value: priceValue(
+			axisValue(start.value, scale, linearThreshold) + slope * (index - startIndex),
+			scale,
+			linearThreshold,
+		),
 	});
 	const checkpoints: WeeklyProjectionPoint[] = [{ timestamp: start.timestamp, value: start.value }];
 	for (let index = startIndex + 4; index < referenceIndex; index += 4) {
@@ -197,7 +221,7 @@ export function readWeeklyProjection(drawing: Drawing): WeeklyProjectionSnapshot
 function isPoint(value: unknown): value is WeeklyProjectionPoint {
 	if (typeof value !== 'object' || value === null) return false;
 	const point = value as Partial<WeeklyProjectionPoint>;
-	return Number.isFinite(point.timestamp) && Number.isFinite(point.value) && point.value! > 0;
+	return Number.isFinite(point.timestamp) && Number.isFinite(point.value);
 }
 
 const weekFormatters = new Map<string, Intl.DateTimeFormat>();
@@ -257,10 +281,16 @@ export function projectWeeklyDrawing(drawing: Drawing, scene: ChartScene): Weekl
 		? snapshot.future.value
 		: right.point.value;
 	if (rightIndex === left.index) return null;
-	const slope = (axisValue(rightValue, snapshot.scale) - axisValue(left.point.value, snapshot.scale)) /
+	const linearThreshold = priceThreshold(scene);
+	const slope = (
+		axisValue(rightValue, snapshot.scale, linearThreshold) -
+		axisValue(left.point.value, snapshot.scale, linearThreshold)
+	) /
 		(rightIndex - left.index);
 	const atIndex = (index: number): number => priceValue(
-		axisValue(left.point.value, snapshot.scale) + slope * (index - left.index), snapshot.scale,
+		axisValue(left.point.value, snapshot.scale, linearThreshold) + slope * (index - left.index),
+		snapshot.scale,
+		linearThreshold,
 	);
 	const points = drawing.type === 'straightLine'
 		? [left.index, rightIndex]

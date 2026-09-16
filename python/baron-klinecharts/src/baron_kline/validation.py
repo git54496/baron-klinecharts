@@ -129,14 +129,6 @@ def _unique(values: list[str], path: str, label: str, issues: list[SceneIssue]) 
 
 
 def _validate_market_data(scene: dict[str, Any], issues: list[SceneIssue]) -> None:
-    candle_pane = next(
-        (pane for pane in scene["panes"] if pane["kind"] == "candle"),
-        None,
-    )
-    logarithmic = bool(candle_pane and any(
-        axis["role"] == "primary" and axis.get("scale") == "logarithmic"
-        for axis in candle_pane["yAxes"]
-    ))
     previous = -math.inf
     for index, bar in enumerate(scene["data"]):
         path = f"/data/{index}"
@@ -167,11 +159,6 @@ def _validate_market_data(scene: dict[str, Any], issues: list[SceneIssue]) -> No
             issues.append(_issue(
                 "INVALID_MARKET_DATA", path,
                 "OHLC values must satisfy low <= close <= high.",
-            ))
-        if logarithmic and any(bar[key] <= 0 for key in ("open", "high", "low", "close")):
-            issues.append(_issue(
-                "INVALID_MARKET_DATA", path,
-                "Logarithmic candle OHLC values must all be greater than zero.",
             ))
     if not any(
         bar["timestamp"] == scene["viewport"]["anchorTimestamp"]
@@ -390,51 +377,10 @@ def _validate_overlay_shape(
         _require_overlay_keys(overlay, path, ["point"], issues)
 
 
-def _overlay_price_coordinates(
-    overlay: dict[str, Any],
-    path: str,
-) -> list[tuple[str, float]]:
-    result: list[tuple[str, float]] = []
-
-    def add(value: Any, value_path: str) -> None:
-        if value is not None:
-            result.append((value_path, value))
-
-    overlay_type = overlay["type"]
-    if overlay_type in {"horizontalStraightLine", "priceLine", "simpleTag"}:
-        add(overlay.get("anchor", {}).get("value"), f"{path}/anchor/value")
-    elif overlay_type in {"horizontalRayLine", "horizontalSegment"}:
-        add(overlay.get("value"), f"{path}/value")
-    elif overlay_type in {"verticalRayLine", "verticalSegment"}:
-        add(overlay.get("startValue"), f"{path}/startValue")
-        add(overlay.get("endValue"), f"{path}/endValue")
-    elif overlay_type in {
-        "rayLine", "segment", "straightLine", "fibonacciLine",
-        "priceChannelLine", "parallelStraightLine", "brush",
-    }:
-        for index, point in enumerate(overlay.get("points", [])):
-            add(point.get("value"), f"{path}/points/{index}/value")
-    elif overlay_type in {"simpleAnnotation", "crossLine", "callout", "text"}:
-        add(overlay.get("point", {}).get("value"), f"{path}/point/value")
-    elif overlay_type in {"rectangle", "arrow", "priceMeasurement"}:
-        add(overlay.get("start", {}).get("value"), f"{path}/start/value")
-        add(overlay.get("end", {}).get("value"), f"{path}/end/value")
-    return result
-
-
 def _validate_overlays(scene: dict[str, Any], issues: list[SceneIssue]) -> None:
     overlays = scene["overlays"]
     _unique([overlay["id"] for overlay in overlays], "/overlays", "Overlay", issues)
     pane_ids = {pane["id"] for pane in scene["panes"]}
-    candle_pane = next(
-        (pane for pane in scene["panes"] if pane["kind"] == "candle"),
-        None,
-    )
-    candle_pane_id = candle_pane["id"] if candle_pane else None
-    logarithmic = bool(candle_pane and any(
-        axis["role"] == "primary" and axis.get("scale") == "logarithmic"
-        for axis in candle_pane["yAxes"]
-    ))
     timestamps = {bar["timestamp"] for bar in scene["data"]}
     for index, overlay in enumerate(overlays):
         path = f"/overlays/{index}"
@@ -452,19 +398,6 @@ def _validate_overlays(scene: dict[str, Any], issues: list[SceneIssue]) -> None:
                 "SCENE_SCHEMA_INVALID", f"{path}/type",
                 "Runtime 0.1.0 does not support priceMeasurement.",
             ))
-        for coordinate_path, value in _overlay_price_coordinates(overlay, path):
-            if (
-                overlay["type"] == "priceMeasurement"
-                or (logarithmic and overlay["paneId"] == candle_pane_id)
-            ) and value <= 0:
-                message = (
-                    "priceMeasurement values must be greater than zero."
-                    if overlay["type"] == "priceMeasurement"
-                    else "Logarithmic Overlay price coordinates must be greater than zero."
-                )
-                issues.append(_issue(
-                    "SCENE_SCHEMA_INVALID", coordinate_path, message,
-                ))
         if overlay["type"] == "priceMeasurement":
             for key in ("start", "end"):
                 point = overlay.get(key)

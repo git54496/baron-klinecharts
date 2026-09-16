@@ -152,7 +152,7 @@ describe('DrawingProjectionService time buckets', () => {
 		expect(projected.drawings.every((entry) => entry.visible)).toBe(true);
 	});
 
-	it('rejects non-positive values on a logarithmic axis', () => {
+	it('projects non-positive values on a logarithmic axis', () => {
 		const logarithmic = structuredClone(chartWorkspaceFixture.scene.document);
 		const pane = logarithmic.panes.find(
 			(candidate: { kind: string }) => candidate.kind === 'candle',
@@ -160,8 +160,7 @@ describe('DrawingProjectionService time buckets', () => {
 		pane.yAxes[0].scale = 'logarithmic';
 		const drawing = structuredClone(allDrawingsFixture.drawings[0]);
 		drawing.geometry.value = 0;
-		expect(() =>
-			service.projectDrawing({
+		const projected = service.projectDrawing({
 				scene: projectionScene(logarithmic as unknown as Record<string, unknown>),
 				drawing,
 				valueAxes: [
@@ -172,12 +171,8 @@ describe('DrawingProjectionService time buckets', () => {
 					},
 				],
 				path: '/drawings/0',
-			}),
-		).toThrowError(
-			expect.objectContaining({
-				code: 'VALUE_AXIS_SCALE_UNSUPPORTED',
-			}),
-		);
+			});
+		expect(projected.drawing.geometry.value).toBe(0);
 	});
 });
 

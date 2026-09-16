@@ -262,33 +262,20 @@ describe('ChartScene semantic validation', () => {
 		});
 	});
 
-	it.each([
-		['open', 0],
-		['high', -1],
-		['low', 0],
-		['close', -0.01],
-	] as const)('rejects non-positive logarithmic candle %s=%s', (field, value) => {
+	it.each([0, -1])('accepts logarithmic candle OHLC value %s', (value) => {
 		const scene = makeScene();
 		promoteToM2(scene, 'logarithmic');
-		scene.data[0]![field] = value;
-		if (field === 'high') {
-			scene.data[0]!.open = value;
-			scene.data[0]!.low = value;
-			scene.data[0]!.close = value;
-		}
+		Object.assign(scene.data[0]!, { open: value, high: value, low: value, close: value });
 
-		expect(captureSceneError(scene).code).toBe('INVALID_MARKET_DATA');
+		expect(() => parseChartScene(scene)).not.toThrow();
 	});
 
-	it.each([0, -1])('rejects priceMeasurement start value %s in both axis modes', (value) => {
+	it.each([0, -1])('accepts priceMeasurement start value %s', (value) => {
 		const scene = makeScene();
 		promoteToM2(scene);
 		addMeasurement(scene, value, 12.9);
 
-		expect(captureSceneError(scene)).toMatchObject({
-			code: 'SCENE_SCHEMA_INVALID',
-			path: '/overlays/0/start/value',
-		});
+		expect(() => parseChartScene(scene)).not.toThrow();
 	});
 
 	it('requires priceMeasurement timestamps to reference embedded bars', () => {

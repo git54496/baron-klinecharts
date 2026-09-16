@@ -93,6 +93,20 @@ describe('weekly progressive projection', () => {
 		expect(readWeeklyProjection(captured)?.sourceWeekCount).toBe(5);
 	});
 
+	it('captures logarithmic lines through zero with finite checkpoints', () => {
+		const logarithmic = scene({ type: 'week', span: 1 }, days);
+		(logarithmic.panes[0]!.yAxes[0] as { scale: string }).scale = 'logarithmic';
+		const signed = line(days[5]!);
+		(signed.geometry.points[0] as { value: number }).value = -2;
+		(signed.geometry.points[1] as { value: number }).value = 2;
+		const captured = captureWeeklyProjection(signed, logarithmic);
+		const snapshot = readWeeklyProjection(captured);
+		expect(snapshot).not.toBeNull();
+		expect(snapshot?.checkpoints.every((point) => Number.isFinite(point.value))).toBe(true);
+		expect(snapshot?.checkpoints.some((point) => point.value < 0)).toBe(true);
+		expect(snapshot?.checkpoints.some((point) => point.value > 0)).toBe(true);
+	});
+
 	it('keeps a draw-time latest K anchor usable when A and R are the same week', () => {
 		const newLine = {
 			...line('2026-09-04'),

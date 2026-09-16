@@ -35,13 +35,10 @@ export function translatePanRange(
 	const shift = (axis.reverse ? -deltaY : deltaY) / height * start.realRange;
 	const realFrom = start.realFrom + shift;
 	const realTo = start.realTo + shift;
-	// KLineCharts 10's signed logarithm inverse treats negative log coordinates
-	// as negative prices. Positive prices below 1 still need the positive inverse.
-	const positiveLog = axis.name === 'logarithm' && start.from > 0 && start.to > 0;
-	const from = positiveLog ? 10 ** realFrom : axis.realValueToValue(realFrom, { range: start });
-	const to = positiveLog ? 10 ** realTo : axis.realValueToValue(realTo, { range: start });
-	const displayFrom = positiveLog ? from : axis.realValueToDisplayValue(realFrom, { range: start });
-	const displayTo = positiveLog ? to : axis.realValueToDisplayValue(realTo, { range: start });
+	const from = axis.realValueToValue(realFrom, { range: start });
+	const to = axis.realValueToValue(realTo, { range: start });
+	const displayFrom = axis.realValueToDisplayValue(realFrom, { range: start });
+	const displayTo = axis.realValueToDisplayValue(realTo, { range: start });
 	const result = {
 		from, to, range: to - from,
 		realFrom, realTo, realRange: start.realRange,

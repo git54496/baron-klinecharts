@@ -2607,7 +2607,9 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		const previousAxis = previousPane.yAxes[axisIndex]!;
 		const path = `/panes/${paneIndex}/yAxes/${axisIndex}`;
 		try {
-			overrideSceneYAxis(this.#chart, this.#idMap, axis, pane.id, path, true);
+			overrideSceneYAxis(
+				this.#chart, this.#idMap, axis, pane.id, path, true, candidate.symbol.pricePrecision,
+			);
 			// KLineCharts batches Y-axis recreation in a microtask; await that formal
 			// layout boundary before making the upgraded Scene externally visible.
 			await Promise.resolve();
@@ -2624,6 +2626,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				previousPane.id,
 				path,
 				true,
+				this.#scene.symbol.pricePrecision,
 			);
 			await Promise.resolve();
 			if (error instanceof SceneError) {

@@ -20,12 +20,13 @@ class ValidationTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(validate_scene(load_fixture(name))["version"], 1)
 
-    def test_rejects_nonpositive_logarithmic_prices_and_invalid_measurement_references(self) -> None:
+    def test_accepts_nonpositive_logarithmic_prices_and_rejects_invalid_measurement_references(self) -> None:
         scene = load_fixture("m2-measurement-log.json")
         scene["overlays"][0]["anchor"]["value"] = 0
-        with self.assertRaises(SceneError) as captured:
-            validate_scene(scene)
-        self.assertEqual(captured.exception.code, "SCENE_SCHEMA_INVALID")
+        scene["data"][0].update(open=-1, high=0, low=-1, close=0)
+        validated = validate_scene(scene)
+        self.assertEqual(validated["overlays"][0]["anchor"]["value"], 0)
+        self.assertEqual(validated["data"][0]["low"], -1)
 
         measurement = load_fixture("m2-measurement-linear.json")
         measurement["overlays"][2]["start"]["timestamp"] += 1

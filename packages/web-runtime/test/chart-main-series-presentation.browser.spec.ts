@@ -406,7 +406,7 @@ test('@browser Workspace keeps confirmed Drawings after Scene replacement and ou
 	expect(result.unchanged).toBe(true);
 });
 
-test('@browser Workspace rejects logarithmic scale when a Drawing value is non-positive', async ({ page }) => {
+test('@browser Workspace accepts a zero Drawing value on logarithmic scale', async ({ page }) => {
 	const workspaceWithZero = structuredClone(chartWorkspace);
 	workspaceWithZero.drawings.drawings[0].geometry.value = 0;
 	await page.goto('/test/fixture.html');
@@ -422,15 +422,12 @@ test('@browser Workspace rejects logarithmic scale when a Drawing value is non-p
 		const runtime = (window as unknown as {
 			__runtime: {
 				setValueAxisScale(scale: string): Promise<unknown>;
-				listDrawings(): readonly unknown[];
+				listDrawings(): readonly { geometry: { value: number } }[];
 			};
 		}).__runtime;
-		const before = JSON.stringify(runtime.listDrawings());
 		return runtime.setValueAxisScale('logarithmic')
-			.then(() => 'no-error')
-			.catch((error: { message?: string }) => error.message ?? String(error))
-			.then((message) => ({ message, unchanged: before === JSON.stringify(runtime.listDrawings()) }));
+			.then(() => ({ drawings: runtime.listDrawings() }));
 	});
-	expect(result.message).toContain('non-positive');
-	expect(result.unchanged).toBe(true);
+	expect(result.drawings).toHaveLength(workspaceWithZero.drawings.drawings.length);
+	expect(result.drawings[0].geometry.value).toBe(0);
 });
