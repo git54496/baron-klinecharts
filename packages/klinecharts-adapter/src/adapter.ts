@@ -85,6 +85,7 @@ import {
 import {
 	createDragCandidate,
 	type DragDataPoint,
+	type DragValueAxis,
 } from './interaction/dragging.js';
 import {
 	DEFAULT_OVERLAY_MOUSE_HIT_TOLERANCE,
@@ -188,6 +189,7 @@ interface PointerInteraction {
 	readonly pointerId: number;
 	readonly originClient: PixelCoordinate;
 	readonly originData: DragDataPoint;
+	readonly valueAxis: DragValueAxis;
 	readonly hit: OverlayHitResult;
 	readonly before: SceneOverlay;
 	readonly interactionId: string;
@@ -1917,6 +1919,20 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		};
 	}
 
+	/** 冻结引擎 Y 轴的正式数值变换，保证整个 Drawing 手势使用同一坐标空间。 */
+	#dragValueAxis(paneId: string): DragValueAxis {
+		const filter = this.#primaryAxisFilter(paneId);
+		const axis = this.#chart.getYAxes({ paneId: filter.paneId, id: filter.yAxisId })[0];
+		if (axis === undefined) {
+			throw new SceneError('INVALID_REFERENCE', '/panes', 'Overlay primary Y-axis is unavailable.');
+		}
+		const range = { ...axis.getRange() };
+		return {
+			toAxisValue: (value) => axis.valueToRealValue(value, { range }),
+			fromAxisValue: (value) => axis.realValueToValue(value, { range }),
+		};
+	}
+
 	#measurementAnchor(
 		point: PixelCoordinate,
 		paneId: string,
@@ -2362,6 +2378,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			pointerId: event.pointerId,
 			originClient: coordinate,
 			originData: this.#fromPixel(coordinate, before.paneId),
+			valueAxis: this.#dragValueAxis(before.paneId),
 			hit,
 			before: structuredClone(before),
 			interactionId: `interaction-${this.#interactionSequence++}`,
@@ -2410,6 +2427,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				this.#scene.data.map((bar) => bar.timestamp),
 				this.#drawingValuePrecision(interaction.before.paneId),
 				this.#scene.period,
+				interaction.valueAxis,
 			);
 			const active = this.#activeOverlays();
 			const index = active.findIndex((overlay) => overlay.id === candidate.id);

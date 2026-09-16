@@ -149,6 +149,7 @@ async function installWorkspace(
 		readonly exclusiveSelection?: boolean;
 		readonly subUnitLogarithmic?: boolean;
 		readonly fineDrawingPrecision?: boolean;
+		readonly reverseYAxis?: boolean;
 	} = {},
 ): Promise<void> {
 	await page.addInitScript(SNAPSHOT_BUILDER);
@@ -162,6 +163,7 @@ async function installWorkspace(
 			exclusiveSelection,
 			subUnitLogarithmic,
 			fineDrawingPrecision,
+			reverseYAxis,
 		}) => {
 			const { KLineChartsSceneAdapter, TimeSeriesChartsAdapter } =
 				await import('/src/index.ts');
@@ -187,9 +189,14 @@ async function installWorkspace(
 				}));
 				scene.symbol.pricePrecision = 3;
 				scene.panes[0].yAxes[0].scale = 'logarithmic';
-				selectedChartWorkspace.drawings.coordinateSystem.valueAxes[0].valuePrecision = 3;
+				selectedChartWorkspace.drawings.coordinateSystem.valueAxes[0].valuePrecision =
+					fineDrawingPrecision ? 6 : 3;
 				selectedChartWorkspace.drawings.drawings = [];
-				selectedChartWorkspace.binding.valueAxes[0].valuePrecision = 3;
+				selectedChartWorkspace.binding.valueAxes[0].valuePrecision =
+					fineDrawingPrecision ? 6 : 3;
+			}
+			if (reverseYAxis && kind === 'chart') {
+				selectedChartWorkspace.scene.document.panes[0].yAxes[0].reverse = true;
 			}
 			const adapter = kind === 'chart'
 				? await KLineChartsSceneAdapter.createWorkspace(
@@ -219,6 +226,7 @@ async function installWorkspace(
 			exclusiveSelection: options.exclusiveSelection,
 			subUnitLogarithmic: options.subUnitLogarithmic,
 			fineDrawingPrecision: options.fineDrawingPrecision,
+			reverseYAxis: options.reverseYAxis,
 		},
 	);
 }
@@ -302,6 +310,42 @@ async function settle(page: Page): Promise<void> {
 	await page.evaluate(
 		() => new Promise<void>((resolve) => setTimeout(resolve, 40)),
 	);
+}
+
+async function verticalSegmentPixels(page: Page): Promise<{
+	readonly start: { readonly x: number; readonly y: number };
+	readonly end: { readonly x: number; readonly y: number };
+	readonly events: readonly string[];
+}> {
+	return page.evaluate(() => {
+		const adapter = (window as unknown as {
+			__adapter: {
+				getDrawing(id: string): {
+					readonly geometry: {
+						readonly time: number;
+						readonly startValue: number;
+						readonly endValue: number;
+					};
+				} | undefined;
+				projectToPixel(
+					anchor: { readonly timestamp: number; readonly value: number },
+					paneRole: string,
+				): { readonly x: number; readonly y: number };
+			};
+		}).__adapter;
+		const drawing = adapter.getDrawing('port-verticalSegment-0')!;
+		return {
+			start: adapter.projectToPixel(
+				{ timestamp: drawing.geometry.time, value: drawing.geometry.startValue },
+				'candle',
+			),
+			end: adapter.projectToPixel(
+				{ timestamp: drawing.geometry.time, value: drawing.geometry.endValue },
+				'candle',
+			),
+			events: (window as unknown as { __drawingEvents?: string[] }).__drawingEvents ?? [],
+		};
+	});
 }
 
 async function completeDrawing(
@@ -887,6 +931,75 @@ test('@browser logarithmic sub-unit prices stay positive through projection and 
 		expect(point.value).toBeLessThan(1);
 	}
 });
+
+for (const reverseYAxis of [false, true]) {
+	test(`@browser logarithmic vertical segment keeps its length while dragging reverse=${reverseYAxis}`, async ({ page }) => {
+		await installWorkspace(page, 'chart', {
+			exclusiveSelection: true,
+			fineDrawingPrecision: true,
+			reverseYAxis,
+			subUnitLogarithmic: true,
+		});
+		await page.locator('#chart').scrollIntoViewIfNeeded();
+		await page.evaluate(() => {
+			const adapter = (window as unknown as {
+				__adapter: {
+					restoreDrawings(drawings: readonly unknown[]): void;
+					subscribeDrawingEvents(
+						listener: (event: { readonly type: string; readonly id: string }) => void,
+					): () => void;
+				};
+				__baronSnapshots(types: string[], paneRole: string): Array<{
+					geometry: { time: number; startValue: number; endValue: number };
+				}>;
+			}).__adapter;
+			const drawing = (window as unknown as {
+				__baronSnapshots(types: string[], paneRole: string): Array<{
+					geometry: { time: number; startValue: number; endValue: number };
+				}>;
+			}).__baronSnapshots(['verticalSegment'], 'candle')[0]!;
+			drawing.geometry = {
+				time: 1784822400000,
+				startValue: 0.72,
+				endValue: 0.82,
+			};
+			adapter.restoreDrawings([drawing]);
+			const events: string[] = [];
+			adapter.subscribeDrawingEvents((event) => events.push(`${event.type}:${event.id}`));
+			(window as unknown as { __drawingEvents: string[] }).__drawingEvents = events;
+		});
+		const initial = await verticalSegmentPixels(page);
+		const initialMiddle = {
+			x: (initial.start.x + initial.end.x) / 2,
+			y: (initial.start.y + initial.end.y) / 2,
+		};
+		await page.mouse.move(initialMiddle.x, initialMiddle.y);
+		await page.mouse.down();
+		await page.mouse.move(initialMiddle.x, initialMiddle.y - 60, { steps: 4 });
+		await page.mouse.up();
+		await settle(page);
+
+		const moved = await verticalSegmentPixels(page);
+		expect(moved.events).toContain('updated:port-verticalSegment-0');
+		expect(Math.abs((moved.end.y - moved.start.y) - (initial.end.y - initial.start.y)))
+			.toBeLessThan(0.75);
+		expect(Math.abs((moved.start.y - initial.start.y) + 60)).toBeLessThan(0.75);
+		expect(Math.abs((moved.end.y - initial.end.y) + 60)).toBeLessThan(0.75);
+
+		const movedMiddle = {
+			x: (moved.start.x + moved.end.x) / 2,
+			y: (moved.start.y + moved.end.y) / 2,
+		};
+		await page.mouse.move(movedMiddle.x, movedMiddle.y);
+		await page.mouse.down();
+		await page.mouse.move(movedMiddle.x, movedMiddle.y + 60, { steps: 4 });
+		await page.mouse.up();
+		await settle(page);
+		const returned = await verticalSegmentPixels(page);
+		expect(Math.abs(returned.start.y - initial.start.y)).toBeLessThan(0.75);
+		expect(Math.abs(returned.end.y - initial.end.y)).toBeLessThan(0.75);
+	});
+}
 
 test.describe('DrawingEnginePort precision touch Drawing', () => {
 	test('@browser touch drag moves the virtual cursor and only taps confirm segment anchors', async ({ browser }) => {

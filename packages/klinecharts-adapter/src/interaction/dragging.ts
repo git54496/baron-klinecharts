@@ -14,6 +14,17 @@ export interface DragTarget {
 	readonly anchorIndex: number | null;
 }
 
+/** 拖动期间冻结的 Y 轴数值空间；整体平移必须在这个空间保持距离。 */
+export interface DragValueAxis {
+	readonly toAxisValue: (value: number) => number;
+	readonly fromAxisValue: (value: number) => number;
+}
+
+const LINEAR_DRAG_VALUE_AXIS: DragValueAxis = {
+	toAxisValue: (value) => value,
+	fromAxisValue: (value) => value,
+};
+
 function requireDataIndex(value: number, path: string): number {
 	if (!Number.isFinite(value)) {
 		throw new SceneError('INVALID_REFERENCE', path, 'Drag data index must be finite.');
@@ -160,18 +171,35 @@ function normalizedValue(value: number, pricePrecision: number, path: string): n
 	return normalizePriceValue(value, pricePrecision, path);
 }
 
+function translatedValue(
+	value: number,
+	deltaAxisValue: number,
+	valueAxis: DragValueAxis,
+	pricePrecision: number,
+	path: string,
+): number {
+	const translated = valueAxis.fromAxisValue(valueAxis.toAxisValue(value) + deltaAxisValue);
+	if (!Number.isFinite(translated)) {
+		throw new SceneError('SCENE_SCHEMA_INVALID', path, 'Dragged price must remain finite.');
+	}
+	return normalizedValue(translated, pricePrecision, path);
+}
+
 function translatedPoint(
 	point: { readonly timestamp: number; readonly value: number },
 	deltaIndex: number,
-	deltaValue: number,
+	deltaAxisValue: number,
 	timestamps: readonly number[],
 	pricePrecision: number,
 	path: string,
 	period?: Period,
+	valueAxis: DragValueAxis = LINEAR_DRAG_VALUE_AXIS,
 ): { readonly timestamp: number; readonly value: number } {
 	return {
 		timestamp: translatedTimestamp(point.timestamp, deltaIndex, timestamps, `${path}/timestamp`, period),
-		value: normalizedValue(point.value + deltaValue, pricePrecision, `${path}/value`),
+		value: translatedValue(
+			point.value, deltaAxisValue, valueAxis, pricePrecision, `${path}/value`,
+		),
 	};
 }
 
@@ -188,7 +216,7 @@ function currentPoint(
 	};
 }
 
-/** 根据冻结的绝对平移语义构造未提交候选，不修改输入 Overlay。 */
+/** 根据冻结的时间索引与 Y 轴数值空间构造未提交候选，不修改输入 Overlay。 */
 export function createDragCandidate(
 	before: SceneOverlay,
 	dragTarget: DragTarget,
@@ -197,10 +225,11 @@ export function createDragCandidate(
 	timestamps: readonly number[],
 	pricePrecision: number,
 	period?: Period,
+	valueAxis: DragValueAxis = LINEAR_DRAG_VALUE_AXIS,
 ): SceneOverlay {
-	const deltaValue = current.value - origin.value;
-	if (!Number.isFinite(deltaValue)) {
-		throw new SceneError('SCENE_SCHEMA_INVALID', '/overlays', 'Drag price delta must be finite.');
+	const deltaAxisValue = valueAxis.toAxisValue(current.value) - valueAxis.toAxisValue(origin.value);
+	if (!Number.isFinite(deltaAxisValue)) {
+		throw new SceneError('SCENE_SCHEMA_INVALID', '/overlays', 'Drag axis delta must be finite.');
 	}
 	const candidate = structuredClone(before);
 	const deltaIndex =
@@ -216,11 +245,12 @@ export function createDragCandidate(
 				throw new SceneError('SCENE_SCHEMA_INVALID', '/overlays/anchor', 'Missing price anchor.');
 			}
 			candidate.anchor = {
-				value: normalizedValue(
-					dragTarget.target === 'anchor' ? current.value : anchor.value + deltaValue,
-					pricePrecision,
-					'/overlays/anchor/value',
-				),
+				value: dragTarget.target === 'anchor'
+					? normalizedValue(current.value, pricePrecision, '/overlays/anchor/value')
+					: translatedValue(
+						anchor.value, deltaAxisValue, valueAxis,
+						pricePrecision, '/overlays/anchor/value',
+					),
 			};
 			return candidate;
 		}
@@ -246,11 +276,11 @@ export function createDragCandidate(
 			) {
 				throw new SceneError('SCENE_SCHEMA_INVALID', '/overlays', 'Missing horizontal line geometry.');
 			}
-			candidate.value = normalizedValue(
-				dragTarget.target === 'anchor' ? current.value : before.value + deltaValue,
-				pricePrecision,
-				'/overlays/value',
-			);
+			candidate.value = dragTarget.target === 'anchor'
+				? normalizedValue(current.value, pricePrecision, '/overlays/value')
+				: translatedValue(
+					before.value, deltaAxisValue, valueAxis, pricePrecision, '/overlays/value',
+				);
 			if (dragTarget.target === 'anchor') {
 				const timestamp = timestampAtCurrentPoint(
 					current, timestamps, '/overlays/anchor', period,
@@ -287,11 +317,13 @@ export function createDragCandidate(
 				else if (dragTarget.anchorIndex === 1) candidate.endValue = value;
 				else throw new SceneError('INVALID_REFERENCE', '/overlays/anchorIndex', 'Invalid anchor index.');
 			} else {
-				candidate.startValue = normalizedValue(
-					before.startValue + deltaValue, pricePrecision, '/overlays/startValue',
+				candidate.startValue = translatedValue(
+					before.startValue, deltaAxisValue, valueAxis,
+					pricePrecision, '/overlays/startValue',
 				);
-				candidate.endValue = normalizedValue(
-					before.endValue + deltaValue, pricePrecision, '/overlays/endValue',
+				candidate.endValue = translatedValue(
+					before.endValue, deltaAxisValue, valueAxis,
+					pricePrecision, '/overlays/endValue',
 				);
 			}
 			return candidate;
@@ -315,7 +347,8 @@ export function createDragCandidate(
 				);
 			} else {
 				candidate.points = before.points.map((point, index) => translatedPoint(
-					point, deltaIndex, deltaValue, timestamps, pricePrecision, `/overlays/points/${index}`, period,
+					point, deltaIndex, deltaAxisValue, timestamps, pricePrecision,
+					`/overlays/points/${index}`, period, valueAxis,
 				)) as NonNullable<SceneOverlay['points']>;
 			}
 			return candidate;
@@ -330,7 +363,8 @@ export function createDragCandidate(
 			candidate.point = dragTarget.target === 'anchor'
 				? currentPoint(current, timestamps, pricePrecision, '/overlays/point', period)
 				: translatedPoint(
-					before.point, deltaIndex, deltaValue, timestamps, pricePrecision, '/overlays/point', period,
+					before.point, deltaIndex, deltaAxisValue, timestamps, pricePrecision,
+					'/overlays/point', period, valueAxis,
 				);
 			return candidate;
 		}
@@ -349,10 +383,12 @@ export function createDragCandidate(
 				else throw new SceneError('INVALID_REFERENCE', '/overlays/anchorIndex', 'Invalid anchor index.');
 			} else {
 				candidate.start = translatedPoint(
-					before.start, deltaIndex, deltaValue, timestamps, pricePrecision, '/overlays/start', period,
+					before.start, deltaIndex, deltaAxisValue, timestamps, pricePrecision,
+					'/overlays/start', period, valueAxis,
 				);
 				candidate.end = translatedPoint(
-					before.end, deltaIndex, deltaValue, timestamps, pricePrecision, '/overlays/end', period,
+					before.end, deltaIndex, deltaAxisValue, timestamps, pricePrecision,
+					'/overlays/end', period, valueAxis,
 				);
 			}
 			return candidate;

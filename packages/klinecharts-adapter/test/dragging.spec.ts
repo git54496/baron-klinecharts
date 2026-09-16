@@ -1,6 +1,7 @@
 import type { SceneOverlay } from '@baron1996/kline-scene-schema';
 import { describe, expect, it } from 'vitest';
 
+import { signedLogPrice, signedLogValue } from '../src/conversion/log-price-ticks.js';
 import { createDragCandidate } from '../src/interaction/dragging.js';
 
 const styles: SceneOverlay['styles'] = {
@@ -31,6 +32,11 @@ const measurement: SceneOverlay = {
 	metadata: { opaque: 'preserved' },
 };
 
+const logarithmicAxis = {
+	toAxisValue: (value: number) => Math.log10(value),
+	fromAxisValue: (value: number) => 10 ** value,
+};
+
 describe('M2 drag candidate semantics', () => {
 	it('moves the whole measurement by one bar and one absolute price delta', () => {
 		const candidate = createDragCandidate(
@@ -47,6 +53,69 @@ describe('M2 drag candidate semantics', () => {
 		expect(candidate.end!.value - candidate.start!.value).toBe(30);
 		expect(candidate.metadata).toEqual(measurement.metadata);
 		expect(measurement.start).toEqual({ timestamp: 1000, value: 300 });
+	});
+
+	it.each([
+		{ current: 5, expected: [1, 100] },
+		{ current: 0.05, expected: [0.01, 1] },
+	])('keeps a vertical segment length while translating through logarithmic prices', ({ current, expected }) => {
+		const verticalSegment: SceneOverlay = {
+			...measurement,
+			id: 'logarithmic-vertical-segment',
+			type: 'verticalSegment',
+			start: undefined,
+			end: undefined,
+			timestamp: 2000,
+			startValue: 0.1,
+			endValue: 10,
+		};
+
+		const candidate = createDragCandidate(
+			verticalSegment,
+			{ target: 'body', anchorIndex: null },
+			{ dataIndex: 1, value: 0.5 },
+			{ dataIndex: 1, value: current },
+			timestamps,
+			6,
+			undefined,
+			logarithmicAxis,
+		);
+
+		expect([candidate.startValue, candidate.endValue]).toEqual(expected);
+		expect(Math.log10(candidate.endValue!) - Math.log10(candidate.startValue!)).toBe(2);
+	});
+
+	it('keeps the extended-log span when a whole segment moves through zero', () => {
+		const linearThreshold = 0.01;
+		const valueAxis = {
+			toAxisValue: (value: number) => signedLogValue(value, linearThreshold),
+			fromAxisValue: (value: number) => signedLogPrice(value, linearThreshold),
+		};
+		const verticalSegment: SceneOverlay = {
+			...measurement,
+			id: 'signed-logarithmic-vertical-segment',
+			type: 'verticalSegment',
+			start: undefined,
+			end: undefined,
+			timestamp: 2000,
+			startValue: -10,
+			endValue: 10,
+		};
+		const candidate = createDragCandidate(
+			verticalSegment,
+			{ target: 'body', anchorIndex: null },
+			{ dataIndex: 1, value: 0 },
+			{ dataIndex: 1, value: 0.5 },
+			timestamps,
+			6,
+			undefined,
+			valueAxis,
+		);
+		const initialSpan = valueAxis.toAxisValue(10) - valueAxis.toAxisValue(-10);
+		const movedSpan = valueAxis.toAxisValue(candidate.endValue!) -
+			valueAxis.toAxisValue(candidate.startValue!);
+
+		expect(movedSpan).toBeCloseTo(initialSpan, 6);
 	});
 
 	it('moves only the selected anchor and snaps its timestamp to an embedded bar', () => {
