@@ -190,11 +190,11 @@ CI 分别使用 `tests/rendering/baselines/github-macos-15` 和
 
 ## 发布
 
-当前 Web Runtime 版本为 `0.9.25`，Adapter、Scene Schema、CLI 与私有 Render Runtime
-版本为 `0.9.24`，Python 版本为 `0.9.21`，所有内部依赖使用精确版本。本次 Web Runtime
-增加当前页面会话内的 Drawing 修改级撤回，并允许宿主选择启用 `Command/Ctrl + Z`。
-撤回仍发布普通候选文档，由宿主保存成新的前进 revision；该改动兼容已有 Scene，
-不改变宿主持久化接口，也不提升 Drawing/Workspace Schema 版本或 Runtime 事件协议版本。
+当前 Web Runtime 与 Adapter 版本为 `0.9.31`，Scene Schema、CLI 与私有 Render Runtime
+版本为 `0.9.30`，Python 版本为 `0.9.22`，所有内部依赖使用精确版本。本次发布让
+Drawing 整体拖动使用价格轴的真实坐标空间，因此在线性轴与扩展对数轴上都能保持
+图形的屏幕长度不变；该改动兼容已有 Scene，不改变宿主持久化接口，也不提升
+Drawing/Workspace Schema 版本或 Runtime 事件协议版本。
 ChartScene `version` 仍为 `1`；Runtime protocol `0.2.0` 增加显式线性/对数轴、
 价格量度、精确命中与过程事件，同时继续读取 Runtime `0.1.0` 的 M1 场景。
 发布流水线先执行完整验证，再只为版本与 tag 相同的公共包构建一次不可变产物。
