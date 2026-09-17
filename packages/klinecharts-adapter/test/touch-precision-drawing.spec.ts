@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	isTouchPrecisionTap,
+	resolveTouchPrecisionContinuationCursor,
 	resolveTouchPrecisionCursor,
 } from '../src/interaction/touch-precision-drawing.js';
 
@@ -22,6 +23,22 @@ describe('touch precision drawing geometry', () => {
 			{ x: 1_200, y: 900 },
 			{ left: 20, top: 60, right: 900, bottom: 560 },
 		)).toEqual({ x: 900, y: 560 });
+	});
+
+	it('continues from the saved cursor instead of snapping to a new touch origin', () => {
+		const bounds = { left: 20, top: 60, right: 900, bottom: 560 };
+		expect(resolveTouchPrecisionContinuationCursor(
+			{ x: 784, y: 436 },
+			{ x: 220, y: 540 },
+			{ x: 280, y: 480 },
+			bounds,
+		)).toEqual({ x: 844, y: 376 });
+		expect(resolveTouchPrecisionContinuationCursor(
+			{ x: 880, y: 80 },
+			{ x: 220, y: 540 },
+			{ x: 280, y: 480 },
+			bounds,
+		)).toEqual({ x: 900, y: 60 });
 	});
 
 	it('distinguishes a confirming tap from a positioning drag', () => {

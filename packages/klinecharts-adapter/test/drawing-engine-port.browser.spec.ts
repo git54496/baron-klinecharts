@@ -1071,6 +1071,25 @@ test.describe('DrawingEnginePort precision touch Drawing', () => {
 			expect(await page.evaluate(() => (
 				window as unknown as { __drawingEvents: string[] }
 			).__drawingEvents)).not.toContain('created:port-segment-0');
+
+			// A fresh touch continues from the saved endpoint by finger delta.
+			await dispatchTouchPointer(page, 'pointerdown', { x: 300, y: 500 });
+			await expect(guide).toHaveAttribute('data-cursor-x', '784');
+			await expect(guide).toHaveAttribute('data-cursor-y', '436');
+			await dispatchTouchPointer(page, 'pointermove', { x: 360, y: 440 });
+			await expect(guide).toHaveAttribute('data-cursor-x', '844');
+			await expect(guide).toHaveAttribute('data-cursor-y', '376');
+			await dispatchTouchPointer(page, 'pointerup', { x: 360, y: 440 });
+			await expect(guide).toHaveAttribute('data-phase', 'confirm-end');
+
+			// Repeated lift-and-drag gestures keep accumulating without snapping.
+			await dispatchTouchPointer(page, 'pointerdown', { x: 240, y: 500 });
+			await expect(guide).toHaveAttribute('data-cursor-x', '844');
+			await expect(guide).toHaveAttribute('data-cursor-y', '376');
+			await dispatchTouchPointer(page, 'pointermove', { x: 260, y: 480 });
+			await dispatchTouchPointer(page, 'pointerup', { x: 260, y: 480 });
+			await expect(guide).toHaveAttribute('data-cursor-x', '864');
+			await expect(guide).toHaveAttribute('data-cursor-y', '356');
 			await dispatchTouchPointer(page, 'pointerdown', { x: 500, y: 300 });
 			await dispatchTouchPointer(page, 'pointermove', { x: 505, y: 303 });
 			await dispatchTouchPointer(page, 'pointerup', { x: 505, y: 303 });
@@ -1111,8 +1130,8 @@ test.describe('DrawingEnginePort precision touch Drawing', () => {
 			expect(result.anchors).toHaveLength(2);
 			expect(Math.abs((result.anchors[0]?.x ?? 0) - 644)).toBeLessThanOrEqual(3);
 			expect(Math.abs((result.anchors[0]?.y ?? 0) - 366)).toBeLessThanOrEqual(3);
-			expect(Math.abs((result.anchors[1]?.x ?? 0) - 784)).toBeLessThanOrEqual(3);
-			expect(Math.abs((result.anchors[1]?.y ?? 0) - 436)).toBeLessThanOrEqual(3);
+			expect(Math.abs((result.anchors[1]?.x ?? 0) - 864)).toBeLessThanOrEqual(3);
+			expect(Math.abs((result.anchors[1]?.y ?? 0) - 356)).toBeLessThanOrEqual(3);
 		} finally {
 			await context.close();
 		}

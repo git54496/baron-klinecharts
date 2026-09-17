@@ -34,6 +34,24 @@ export function resolveTouchPrecisionCursor(
 	};
 }
 
+export function resolveTouchPrecisionContinuationCursor(
+	cursorOrigin: TouchPrecisionPoint,
+	pointerOrigin: TouchPrecisionPoint,
+	pointer: TouchPrecisionPoint,
+	bounds: TouchPrecisionBounds,
+): TouchPrecisionPoint {
+	return {
+		x: Math.max(
+			bounds.left,
+			Math.min(cursorOrigin.x + pointer.x - pointerOrigin.x, bounds.right),
+		),
+		y: Math.max(
+			bounds.top,
+			Math.min(cursorOrigin.y + pointer.y - pointerOrigin.y, bounds.bottom),
+		),
+	};
+}
+
 export function isTouchPrecisionTap(
 	origin: TouchPrecisionPoint,
 	current: TouchPrecisionPoint,
