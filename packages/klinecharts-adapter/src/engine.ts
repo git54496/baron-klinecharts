@@ -6,6 +6,7 @@ import { toKLineChartsOptions } from './conversion/chart-options.js';
 import { createStaticDataLoader } from './static-data-loader.js';
 import { engineDataForScene } from './gap-aware-series.js';
 import { installScalePreservingPan } from './engine-pan.js';
+import { installCandleSpacing } from './engine-candle-spacing.js';
 import {
 	KLINECHARTS_ENGINE_VERSION,
 	KLINECHARTS_RUNTIME_VERSION,
@@ -146,6 +147,7 @@ export async function createEngine(
 	}
 	engineRoot.style.touchAction = 'none';
 	installScalePreservingPan(chart);
+	installCandleSpacing(chart);
 	chart.setSymbol({
 		ticker: scene.symbol.ticker,
 		pricePrecision: scene.symbol.pricePrecision,

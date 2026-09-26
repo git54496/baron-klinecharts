@@ -34,7 +34,7 @@
   },
   "dependencies": {
     "@baron1996/kline-scene-schema": "0.9.30",
-    "@baron1996/klinecharts-runtime": "0.9.32",
+    "@baron1996/klinecharts-runtime": "0.9.34",
     "fflate": "0.8.3",
     "playwright": "1.61.0"
   }

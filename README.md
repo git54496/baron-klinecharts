@@ -190,11 +190,11 @@ CI 分别使用 `tests/rendering/baselines/github-macos-15` 和
 
 ## 发布
 
-当前 Web Runtime 与 Adapter 版本为 `0.9.32`，Scene Schema、CLI 与私有 Render Runtime
-版本为 `0.9.30`，Python 版本为 `0.9.22`，所有内部依赖使用精确版本。本次发布让
-触摸精准画线在确认阶段重新落指时保留虚拟光标位置，并按新的手指位移继续移动，
-避免线段端点跳到新的落指位置；该改动兼容已有 Scene，不改变宿主持久化接口，也不
-提升 Drawing/Workspace Schema 版本或 Runtime 事件协议版本。
+当前 Web Runtime 与 Adapter 源码构建版本为 `0.9.34`，Scene Schema、CLI 与私有 Render Runtime
+版本为 `0.9.30`，Python 版本为 `0.9.22`，所有内部依赖使用精确版本。0.9.34 目前用于
+本地验证，在 KLineCharts 10.0.0 上使用固定缩放档位，统一实体宽度、留白和横向步长。
+旧视口的小数 barSpace 就近映射到档位；不改变行情或 Scene / Drawing 协议。
+具体档位、像素对齐、缩放入口和测试见 [固定档位与等间隙](docs/candle-spacing.md)。
 ChartScene `version` 仍为 `1`；Runtime protocol `0.2.0` 增加显式线性/对数轴、
 价格量度、精确命中与过程事件，同时继续读取 Runtime `0.1.0` 的 M1 场景。
 发布流水线先执行完整验证，再只为版本与 tag 相同的公共包构建一次不可变产物。

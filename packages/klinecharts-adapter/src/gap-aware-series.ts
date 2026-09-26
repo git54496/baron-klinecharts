@@ -204,7 +204,8 @@ export const gapAwareCandleIndicatorTemplate: IndicatorTemplate<
 				if (data.current == null || data.current.close === null) {
 					return null;
 				}
-				const width = Math.max(1, barSpace.bar * 0.62);
+				// Use the same resolved body width as native candles and the X lattice.
+				const width = barSpace.gapBar;
 				const open = yAxis.convertToPixel(data.current.open!);
 				const close = yAxis.convertToPixel(data.current.close);
 				const top = Math.min(open, close);
