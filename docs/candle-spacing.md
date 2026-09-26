@@ -129,4 +129,19 @@ npm run test:browser --workspace @baron1996/klinecharts-runtime
   自动／手动范围的连续平移与双击复位。
 - 全 workspace build / typecheck 和 v0.9.35 版本依赖检查通过。
 - Cage 接入本地 tgz，两个包的 SHA-512 与锁文件一致；check / build 和 93 项前端测试通过。
-- 未发布 npm，未部署服务器，移动端实机手感尚未验证。
+- 本地验收时未发布 npm、未部署服务器；随后完成的部署见下一节。移动端实机手感尚未验证。
+
+## 双指缩放上海部署验证（2026-09-27）
+
+- 图表库实现 `30c964f` 和 Cage 应用 `dfb3015` 均先合入 main 并推送，再通过 Git
+  部署到 `ubuntu@1.117.229.170:/home/ubuntu/new_cage`。
+- 服务器按锁文件安装 Adapter / Web Runtime 0.9.35，包 SHA-512 与锁文件一致，
+  已安装 Adapter 包包含 `PINCH_STEP_DISTANCE = 20`。服务器 Node 22.23.2 下
+  TypeScript / Vite 构建及 93 项前端测试通过。
+- 新前端在独立目录构建，先复制资源再原子替换各 HTML；保留旧哈希资源。
+  回退产物位于 `/home/ubuntu/new-cage-web-before-pinch-20260927-dfb3015`。
+- 公网 `https://1.117.229.170/` 的 HTML 和 8 个入口／图表资源与服务器构建 SHA-256
+  相同。HTML 为 `a66cc04f2d2fe1c6253314de0413895955d43a573f53e95745a5ef6f82e8d884`。
+- 公网和内部 `/healthz` 均返回 `ok`，`new-cage.service` 持续 active，PID 1212531
+  未改变，部署期间无新增 error 级服务日志。未重启后端、未修改数据库。
+- 原生触摸输入的自动化验证已通过；真实手机上的操作手感仍待用户复核。
