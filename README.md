@@ -191,8 +191,9 @@ CI 分别使用 `tests/rendering/baselines/github-macos-15` 和
 ## 发布
 
 当前 Web Runtime 与 Adapter 源码构建版本为 `0.9.34`，Scene Schema、CLI 与私有 Render Runtime
-版本为 `0.9.30`，Python 版本为 `0.9.22`，所有内部依赖使用精确版本。0.9.34 目前用于
-本地验证，在 KLineCharts 10.0.0 上使用固定缩放档位，统一实体宽度、留白和横向步长。
+版本为 `0.9.30`，Python 版本为 `0.9.22`，所有内部依赖使用精确版本。0.9.34 本地构建制品
+已通过 Cage 的 Git 部署完成线上验证，尚未发布 npm；在 KLineCharts 10.0.0 上使用固定
+缩放档位，统一实体宽度、留白和横向步长。
 旧视口的小数 barSpace 就近映射到档位；不改变行情或 Scene / Drawing 协议。
 具体档位、像素对齐、缩放入口和测试见 [固定档位与等间隙](docs/candle-spacing.md)。
 ChartScene `version` 仍为 `1`；Runtime protocol `0.2.0` 增加显式线性/对数轴、

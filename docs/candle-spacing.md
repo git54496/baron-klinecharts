@@ -5,7 +5,8 @@
 KLineCharts 固定为 10.0.0，Adapter / Web Runtime 本地构建版本 0.9.34。
 开发工作树为 `baron-klinecharts-discrete-zoom`，分支 `codex/discrete-candle-zoom`，
 基于 a7f726e 并承接前一轮 0.9.33 未提交的实体宽度修复；原目录改动保持不动。
-交付本地 npm-pack 产物供 Cage 接入，不包含 npm 发布或远端部署。
+交付本地 npm-pack 产物供 Cage 接入，尚未发布 npm。
+2026-09-26 两仓合入并推送 main 后，Cage 通过 Git 部署到腾讯云上海完成线上验证。
 
 适用于普通 ChartScene 和带缺口的 Scene v2 主蜡烛；TimeSeries 独立引擎不变。
 不改变行情值、历史/实时数据生命周期和 Scene / Drawing 协议。
@@ -85,6 +86,13 @@ Schema / Adapter / Web Runtime 单元测试共 400 项通过，Web Runtime 浏�
 174 项中 173 项直接通过，1 项因并行构建引起 Vite 页面刷新而中断，停止构建后
 使用 `--last-failed` 单独重跑通过。DPR 用例同时改变模拟窗口宽度以触发真实的
 resolution 事件，并断言图表 CSS 边界始终不变，覆盖 1 → 1.25 → 2 → 1 的切换。
+
+线上应用提交为 Cage `f7dbad9`，图表库源码为 `dd34e58`。服务器锁定依赖安装、
+TypeScript 检查和 Vite 构建通过，Adapter / Runtime 制品 SHA256 与本地一致。
+公网首页与主入口脚本逐字节匹配服务器构建，服务重启后 `/healthz` 返回 `ok`。
+实际浏览器在 US.AAPL 日 K／前复权／对数轴下连续缩小五档到最密档，再放大恢复；
+水平拖动 100px 后能反向恢复，更早历史加载返回 274 根，Drawing revision 始终为 1。
+验收结束重新加载默认视口。Cage 的额外部署记录和旧产物回退路径见其 `vendor/README.md`。
 
 - 单元测试覆盖 24 档、DPR 1/1.25/1.5/2/3、平移相位、远近索引、连续 Drawing
   投影、实体边框、实例隔离、非法输入和历史补页不漂移。
