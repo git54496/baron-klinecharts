@@ -8,6 +8,11 @@ interface Rect { x: number; y: number; width: number; height: number }
 interface CandleFigure { name: string; attrs: Rect | Rect[]; styles: Record<string, unknown> }
 type CreateBar = (x: number, priceY: number[], space: BarSpace, colors: string[], correction: number) => CandleFigure[];
 interface CandleView { _createSolidBar: CreateBar; _createStrokeBar: CreateBar }
+interface PinchEvents {
+	_event: { _startPinchDistance: number };
+	pinchStartEvent(event: Coordinate): boolean;
+	pinchEvent(event: Coordinate, scale: number): boolean;
+}
 interface CandleStore {
 	_barSpace: number;
 	_totalBarSpace: number;
@@ -22,6 +27,7 @@ interface CandleStore {
 }
 
 const installedCharts = new WeakSet<Chart>();
+const PINCH_STEP_DISTANCE = 20; // Two-finger separation in CSS px, independent of DPR.
 
 function unavailable(): SceneError {
 	return new SceneError('RUNTIME_INIT_FAILED', '/runtime',
@@ -37,13 +43,18 @@ function unavailable(): SceneError {
 export function installCandleSpacing(chart: Chart): void {
 	if (installedCharts.has(chart)) return;
 	const internal = chart as unknown as {
+		_chartEvent?: PinchEvents;
 		destroy?: () => void;
 		getChartStore?: () => CandleStore;
 		getDrawPaneById?: (id: string) => { getMainWidget?: () => { _candleBarView?: CandleView } } | null;
 	};
 	const store = internal.getChartStore?.();
+	const events = internal._chartEvent;
 	const view = internal.getDrawPaneById?.('candle_pane')?.getMainWidget?.()._candleBarView;
-	if (store === undefined || view === undefined ||
+	if (events === undefined || typeof events.pinchStartEvent !== 'function' ||
+		typeof events.pinchEvent !== 'function' ||
+		typeof events._event?._startPinchDistance !== 'number' ||
+		store === undefined || view === undefined ||
 		!['getBarSpace', 'setBarSpace', 'dataIndexToCoordinate', 'coordinateToFloatIndex', 'zoom', 'getLayoutOptions']
 			.every(key => typeof (store as unknown as Record<string, unknown>)[key] === 'function') ||
 		!Array.isArray(store._dataList) ||
@@ -84,11 +95,37 @@ export function installCandleSpacing(chart: Chart): void {
 	updateLimits();
 	originalSetSpace(geometry.pitch);
 
-	// Wheel/pinch/X-axis gestures change a stop, independent of small wheel deltas.
+	// Wheel/X-axis inputs move one stop. Pinches supply the number of 20px steps.
+	let pinchSteps: number | null = null;
 	store.zoom = (scale, coordinate, position) => {
-		if (!Number.isFinite(scale) || scale === 0) return;
-		const next = candleGeometry(geometry.level + Math.sign(scale), geometry.dpr);
+		if (!Number.isFinite(scale) || scale === 0 || pinchSteps === 0) return;
+		const next = candleGeometry(geometry.level + (pinchSteps ?? Math.sign(scale)), geometry.dpr);
 		originalZoom((next.pitch / geometry.pitch - 1) * 10, coordinate, position);
+	};
+	const originalPinchStart = events.pinchStartEvent.bind(events);
+	const originalPinch = events.pinchEvent.bind(events);
+	let consumedDistance = 0;
+	events.pinchStartEvent = event => {
+		consumedDistance = events._event._startPinchDistance;
+		return originalPinchStart(event);
+	};
+	events.pinchEvent = (event, scale) => {
+		const startDistance = events._event._startPinchDistance;
+		if (!Number.isFinite(startDistance) || startDistance <= 0 ||
+			!Number.isFinite(scale) || scale <= 0) return false;
+		const distance = startDistance * scale;
+		if (!Number.isFinite(distance)) return false;
+		const delta = distance - consumedDistance;
+		// Ratios can round an exact 20px boundary a few ULPs below the threshold.
+		const tolerance = Number.EPSILON * Math.max(distance, consumedDistance, 1) * 4;
+		const steps = Math.sign(delta) * Math.floor((Math.abs(delta) + tolerance) / PINCH_STEP_DISTANCE);
+		consumedDistance += steps * PINCH_STEP_DISTANCE;
+		pinchSteps = steps;
+		try {
+			return originalPinch(event, scale);
+		} finally {
+			pinchSteps = null;
+		}
 	};
 	// API multiplicative targets snap to a stop, at least one for a non-neutral
 	// request. No fractional animation frames or per-frame stop overshoot.

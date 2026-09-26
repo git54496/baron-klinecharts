@@ -53,8 +53,18 @@ function fixture() {
 		coordinateToFloatIndex: (_x: number): number => 0,
 		zoom: vi.fn(), getLayoutOptions: () => limits,
 	};
-	const chart = { getChartStore: () => store, getDrawPaneById: () => ({ getMainWidget: () => ({ _candleBarView: view }) }), resize: vi.fn(), zoomAtCoordinate: vi.fn(), destroy: vi.fn() } as unknown as Chart;
-	return { original, view, store, chart };
+	let previousScale = 1;
+	const events = {
+		_event: { _startPinchDistance: 100 },
+		pinchStartEvent: (_event: { x: number; y: number }) => { previousScale = 1; return true; },
+		pinchEvent: (event: { x: number; y: number }, scale: number) => {
+			store.zoom((scale - previousScale) * 5, event, 'main');
+			previousScale = scale;
+			return true;
+		},
+	};
+	const chart = { _chartEvent: events, getChartStore: () => store, getDrawPaneById: () => ({ getMainWidget: () => ({ _candleBarView: view }) }), resize: vi.fn(), zoomAtCoordinate: vi.fn(), destroy: vi.fn() } as unknown as Chart;
+	return { original, view, store, chart, events };
 }
 
 describe('instance-local discrete zoom bridge', () => {
@@ -82,6 +92,46 @@ describe('instance-local discrete zoom bridge', () => {
 		installCandleSpacing(chart);
 		for (const invalid of [NaN, Infinity, -Infinity, 0, -1]) store.setBarSpace(invalid);
 		expect(store._barSpace).toBe(4);
+	});
+	it.each([100, 137, 240])('accumulates net separation in CSS px from an initial distance of %s', startDistance => {
+		const { chart, store, events } = fixture();
+		const zoom = store.zoom;
+		installCandleSpacing(chart);
+		events._event._startPinchDistance = startDistance;
+		const point = { x: 200, y: 100 };
+		events.pinchStartEvent(point);
+		for (const delta of [1, 5, 19, 7, 19.999]) events.pinchEvent(point, (startDistance + delta) / startDistance);
+		expect(zoom).not.toHaveBeenCalled();
+		events.pinchEvent(point, (startDistance + 20) / startDistance);
+		expect(zoom).toHaveBeenCalledTimes(1);
+		expect(zoom).toHaveBeenLastCalledWith((6 / 4 - 1) * 10, point, 'main');
+		events.pinchEvent(point, (startDistance + 59) / startDistance);
+		expect(zoom).toHaveBeenCalledTimes(2);
+		events.pinchEvent(point, (startDistance + 60) / startDistance);
+		expect(zoom).toHaveBeenCalledTimes(3);
+	});
+	it('handles multiple steps in one event, reversals, and a fresh gesture', () => {
+		const { chart, store, events } = fixture();
+		const zoom = store.zoom;
+		installCandleSpacing(chart);
+		const point = { x: 200, y: 100 };
+		events.pinchStartEvent(point);
+		events.pinchEvent(point, 1.6); // +60px = three stops from level 2 to 5.
+		expect(zoom).toHaveBeenLastCalledWith((8 / 4 - 1) * 10, point, 'main');
+		events.pinchEvent(point, 1.41);
+		expect(zoom).toHaveBeenCalledTimes(1);
+		events.pinchEvent(point, 1.4); // -20px = one stop in reverse.
+		expect(zoom).toHaveBeenLastCalledWith((3 / 4 - 1) * 10, point, 'main');
+		events.pinchEvent(point, 1.59);
+		expect(zoom).toHaveBeenCalledTimes(2);
+		events._event._startPinchDistance = 200;
+		events.pinchStartEvent(point);
+		events.pinchEvent(point, 1.005); // Old 19px residual must be discarded.
+		expect(zoom).toHaveBeenCalledTimes(2);
+		events.pinchEvent(point, 0.9);
+		expect(zoom).toHaveBeenCalledTimes(3);
+		store.zoom(0.00001, point, 'main'); // Wheel still takes one stop.
+		expect(zoom).toHaveBeenCalledTimes(4);
 	});
 	it('keeps the same timestamp at exactly the same pixel after history prepend', () => {
 		const { chart, store } = fixture();

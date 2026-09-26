@@ -5,6 +5,60 @@ import { loadScene } from './load-scene.js';
 const scene = loadScene('minimal-valid.json');
 const styles = ['candle_solid', 'candle_stroke', 'candle_up_stroke', 'candle_down_stroke'];
 
+for (const dpr of [1, 3]) {
+	test.describe(`mobile pinch DPR ${dpr}`, () => {
+		test.use({ deviceScaleFactor: dpr, hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+		for (const initialDistance of [100, 137, 240]) {
+			test(`@browser pinch switches once per 20 CSS px from ${initialDistance}px`, async ({ page, context }) => {
+				await setup(page);
+				await page.evaluate(() => {
+					document.querySelector<HTMLElement>('#chart')!.style.width = '390px';
+					(window as any).__spacing.chart.resize();
+				});
+				const session = await context.newCDPSession(page);
+				const touches = (distance: number) => [
+					{ id: 1, x: 195 - distance / 2, y: 200 },
+					{ id: 2, x: 195 + distance / 2, y: 200 },
+				];
+				const start = async (distance: number) => {
+					await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: touches(distance).slice(0, 1) });
+					await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: touches(distance) });
+				};
+				const move = async (distance: number, level: number) => {
+					await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: touches(distance) });
+					await flush(page);
+					expect((await snapshot(page)).space.bar).toBe(candleGeometry(level, dpr).pitch);
+				};
+				await start(initialDistance);
+				for (const delta of [1, 10, 19, 5, 19]) await move(initialDistance + delta, 5);
+				await move(initialDistance + 20, 6);
+				await move(initialDistance + 39, 6);
+				await move(initialDistance + 40, 7);
+				await move(initialDistance + 80, 9); // One event can cross two thresholds.
+				await move(initialDistance + 61, 9);
+				await move(initialDistance + 60, 8);
+				await move(initialDistance + 79, 8); // 19px remainder discarded on release.
+				await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+				await start(100);
+				await move(101, 8);
+				await move(80, 7);
+				await page.evaluate(() => (window as any).__spacing.chart.setZoomEnabled(false));
+				await move(120, 7);
+				await page.evaluate(() => (window as any).__spacing.chart.setZoomEnabled(true));
+				await move(101, 7);
+				await move(100, 6);
+				await session.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+				await start(100);
+				await move(119, 6);
+				await move(120, 7);
+				await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+				assertSpacing(await snapshot(page), 7, dpr);
+				expect(await page.evaluate(() => window.visualViewport!.scale)).toBe(1);
+			});
+		}
+	});
+}
+
 async function setup(page: Page) {
 	await page.goto('/test/fixture.html');
 	await page.evaluate(async scene => {
