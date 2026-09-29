@@ -3844,13 +3844,13 @@ function drawingFromSnapshot(
 	} as unknown as Drawing;
 }
 
-function placeholderGeometry(type: Drawing['type']): Drawing['geometry'] {
+function placeholderGeometry(type: Drawing['type'], text = ''): Drawing['geometry'] {
 	switch (type) {
 		case 'horizontalStraightLine':
 		case 'priceLine':
 			return { value: 0 };
 		case 'simpleTag':
-			return { value: 0, text: '' };
+			return { value: 0, text };
 		case 'verticalStraightLine':
 			return { time: 0 };
 		case 'horizontalRayLine':
@@ -3890,7 +3890,7 @@ function placeholderGeometry(type: Drawing['type']): Drawing['geometry'] {
 		case 'text':
 			return {
 				point: { timestamp: 0, granularity: { type: 'day', span: 1 }, value: 0 },
-				text: '',
+				text,
 			};
 		case 'crossLine':
 			return {
@@ -3914,7 +3914,7 @@ function placeholderDrawing(
 		type: request.type,
 		...(request.groupId === undefined ? {} : { groupId: request.groupId }),
 		target: structuredClone(request.target),
-		geometry: placeholderGeometry(request.type),
+		geometry: placeholderGeometry(request.type, request.text),
 		styles: structuredClone(request.styles),
 		metadata: structuredClone(request.metadata ?? {}),
 		visible: true,

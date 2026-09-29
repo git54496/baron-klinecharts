@@ -1677,13 +1677,14 @@ function timeSeriesDrawingFromSnapshot(
 
 function timeSeriesPlaceholderGeometry(
 	type: Drawing['type'],
+	text = '',
 ): Drawing['geometry'] {
 	switch (type) {
 		case 'horizontalStraightLine':
 		case 'priceLine':
 			return { value: 0 };
 		case 'simpleTag':
-			return { value: 0, text: '' };
+			return { value: 0, text };
 		case 'verticalStraightLine':
 			return { time: 0 };
 		case 'horizontalRayLine':
@@ -1723,7 +1724,7 @@ function timeSeriesPlaceholderGeometry(
 		case 'text':
 			return {
 				point: { timestamp: 0, granularity: { type: 'day', span: 1 }, value: 0 },
-				text: '',
+				text,
 			};
 		case 'crossLine':
 			return {
@@ -1747,7 +1748,7 @@ function timeSeriesPlaceholderDrawing(
 		type: request.type,
 		...(request.groupId === undefined ? {} : { groupId: request.groupId }),
 		target: structuredClone(request.target),
-		geometry: timeSeriesPlaceholderGeometry(request.type),
+		geometry: timeSeriesPlaceholderGeometry(request.type, request.text),
 		styles: structuredClone(request.styles),
 		metadata: structuredClone(request.metadata ?? {}),
 		visible: true,

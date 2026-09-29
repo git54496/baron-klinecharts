@@ -832,6 +832,36 @@ test('@browser composite chart toolbar keeps controls in one horizontally scroll
 	expect(result.topScrollWidth).toBeGreaterThan(result.topClientWidth);
 });
 
+test('@browser text popover keeps focus and input when a mobile keyboard resizes the viewport', async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto('/test/fixture.html');
+	await page.evaluate(async (workspace) => {
+		const { createChartWorkspaceToolbar, createDrawableWorkspaceRuntime } = await import('/src/index.ts');
+		const runtime = await createDrawableWorkspaceRuntime(
+			document.querySelector<HTMLElement>('#chart')!, workspace,
+			{ commitMode: 'immediate' },
+		);
+		const left = document.createElement('div');
+		Object.assign(left.style, {
+			position: 'fixed', top: '10px', left: '10px', height: '720px',
+		});
+		document.body.append(left);
+		createChartWorkspaceToolbar({ top: document.querySelector<HTMLElement>('#toolbar')!, left }, runtime);
+	}, chartWorkspaceFixture);
+
+	await page.locator('[data-overlay-type="text"]').click();
+	const input = page.getByRole('textbox', { name: '文本文本' });
+	await input.fill('键盘测试');
+	await page.setViewportSize({ width: 390, height: 560 });
+	await expect(input).toBeVisible();
+	await expect(input).toBeFocused();
+	await expect(input).toHaveValue('键盘测试');
+	const bottom = await input.evaluate((element) => element.getBoundingClientRect().bottom);
+	expect(bottom).toBeLessThanOrEqual(552);
+	await input.press('Escape');
+	await expect(input).toBeHidden();
+});
+
 test('@browser indicator settings update EMA parameters and survive a scene replacement', async ({ page }) => {
 	await page.goto('/test/fixture.html');
 	const result = await page.evaluate(async (workspace) => {

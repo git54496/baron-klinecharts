@@ -760,6 +760,9 @@ for (const kind of ['chart', 'time-series'] as const) {
 					}).__baronGeometryComplete(geometry);
 				}, snapshot?.geometry);
 				expect(complete).toBe(true);
+				if (type === 'simpleTag' || type === 'simpleAnnotation' || type === 'callout' || type === 'text') {
+					expect((snapshot?.geometry as { text: string }).text).toBe(`${type}-content`);
+				}
 			}
 		});
 	});

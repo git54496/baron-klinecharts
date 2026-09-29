@@ -254,6 +254,7 @@ function createPopover(
 	button: HTMLButtonElement,
 	id: string,
 	cleanupCallbacks: Array<() => void>,
+	preserveOnViewportChange = false,
 ): PopoverControl {
 	const element = document.createElement('div');
 	element.id = id;
@@ -266,12 +267,21 @@ function createPopover(
 	const position = (): void => {
 		const anchor = button.getBoundingClientRect();
 		const bounds = element.getBoundingClientRect();
+		const viewport = window.visualViewport;
+		const viewportLeft = viewport?.offsetLeft ?? 0;
+		const viewportTop = viewport?.offsetTop ?? 0;
+		const viewportRight = viewportLeft + (viewport?.width ?? window.innerWidth);
+		const viewportBottom = viewportTop + (viewport?.height ?? window.innerHeight);
 		const left = Math.min(
-			Math.max(8, anchor.left),
-			Math.max(8, window.innerWidth - bounds.width - 8),
+			Math.max(viewportLeft + 8, anchor.left),
+			Math.max(viewportLeft + 8, viewportRight - bounds.width - 8),
+		);
+		const top = Math.min(
+			Math.max(viewportTop + 8, anchor.bottom + 7),
+			Math.max(viewportTop + 8, viewportBottom - bounds.height - 8),
 		);
 		element.style.left = `${Math.round(left)}px`;
-		element.style.top = `${Math.round(anchor.bottom + 7)}px`;
+		element.style.top = `${Math.round(top)}px`;
 	};
 	const close = (): void => {
 		button.setAttribute('aria-expanded', 'false');
@@ -316,7 +326,15 @@ function createPopover(
 			button.focus();
 		}
 	};
-	const handleViewportChange = (): void => close();
+	const handleViewportChange = (): void => {
+		if (!element.hidden) {
+			if (preserveOnViewportChange) {
+				position();
+			} else {
+				close();
+			}
+		}
+	};
 	const handleFullscreenChange = (): void => {
 		const portalHost = resolvePortalHost(button);
 		if (element.parentNode !== portalHost) {
@@ -332,6 +350,10 @@ function createPopover(
 	document.addEventListener('fullscreenchange', handleFullscreenChange);
 	window.addEventListener('resize', handleViewportChange);
 	window.addEventListener('scroll', handleViewportChange, true);
+	if (preserveOnViewportChange) {
+		window.visualViewport?.addEventListener('resize', handleViewportChange);
+		window.visualViewport?.addEventListener('scroll', handleViewportChange);
+	}
 	cleanupCallbacks.push(() => {
 		button.removeEventListener('click', handleButtonClick);
 		document.removeEventListener('pointerdown', handleOutsidePointer, true);
@@ -339,6 +361,8 @@ function createPopover(
 		document.removeEventListener('fullscreenchange', handleFullscreenChange);
 		window.removeEventListener('resize', handleViewportChange);
 		window.removeEventListener('scroll', handleViewportChange, true);
+		window.visualViewport?.removeEventListener('resize', handleViewportChange);
+		window.visualViewport?.removeEventListener('scroll', handleViewportChange);
 	});
 	return {
 		element,
@@ -959,6 +983,7 @@ export function createChartWorkspaceToolbar(
 					button,
 					`baron-workspace-text-${toolbarId}-${overlayType}`,
 					cleanupCallbacks,
+					true,
 				);
 				openPopovers.push(textPopover);
 				const form = document.createElement('form');
