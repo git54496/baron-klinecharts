@@ -1211,6 +1211,44 @@ test.describe('DrawingEnginePort precision touch Drawing', () => {
 });
 
 test.describe('DrawingEnginePort exclusive Drawing selection', () => {
+	test('@browser a captured text drag keeps native touch events out of chart panning', async ({ page }) => {
+		await installWorkspace(page, 'chart', { exclusiveSelection: true });
+		const hit = await page.evaluate(() => {
+			const adapter = (window as unknown as {
+				__adapter: {
+					restoreDrawings(drawings: readonly unknown[]): void;
+					projectToPixel(anchor: { timestamp: number; value: number }, paneRole: string): { x: number; y: number };
+				};
+			}).__adapter;
+			adapter.restoreDrawings((window as unknown as {
+				__baronSnapshots(types: string[], paneRole: string): unknown[];
+			}).__baronSnapshots(['text'], 'candle'));
+			return adapter.projectToPixel({ timestamp: 1784822400000, value: 12.55 }, 'candle');
+		});
+		expect(await dispatchTouchPointer(page, 'pointerdown', hit)).toBe(false);
+		const touch = await page.evaluate((hit) => {
+			const target = document.querySelector<HTMLElement>('#chart')!;
+			const rect = target.getBoundingClientRect();
+			const point = new Touch({ identifier: 1, target, clientX: rect.left + hit.x, clientY: rect.top + hit.y });
+			let reachedDocument = false;
+			const listener = () => { reachedDocument = true; };
+			document.addEventListener('touchstart', listener);
+			const allowed = target.dispatchEvent(new TouchEvent('touchstart', {
+				bubbles: true, cancelable: true, touches: [point], targetTouches: [point], changedTouches: [point],
+			}));
+			document.removeEventListener('touchstart', listener);
+			return { allowed, reachedDocument };
+		}, hit);
+		expect(touch).toEqual({ allowed: false, reachedDocument: false });
+		await dispatchTouchPointer(page, 'pointerup', hit);
+		await page.evaluate(() => {
+			const target = document.querySelector<HTMLElement>('#chart')!;
+			target.dispatchEvent(new TouchEvent('touchend', {
+				bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [],
+			}));
+		});
+	});
+
 	test('@browser selected segment keeps Baron anchor handles after pointer leaves', async ({ page }) => {
 		await installWorkspace(page, 'chart', { exclusiveSelection: true });
 		const hit = await page.evaluate(() => {

@@ -32,6 +32,7 @@ import type { WorkspaceRuntimeEvent } from '../src/drawing/workspace-events.js';
 class MockEngine implements DrawingEnginePort {
 	public readonly sceneKind = 'chart' as const;
 	public drawings = new Map<string, EngineDrawingSnapshot>();
+	public restoredDrawingIds: string[] = [];
 	public listener: ((event: EngineDrawingEvent) => void) | null = null;
 	public scene: ChartScene = structuredClone(
 		chartWorkspaceFixture.scene.document,
@@ -95,6 +96,7 @@ class MockEngine implements DrawingEnginePort {
 	}
 
 	public restoreDrawing(snapshot: EngineDrawingSnapshot): void {
+		this.restoredDrawingIds.push(snapshot.id);
 		this.drawings.set(snapshot.id, structuredClone(snapshot));
 	}
 
@@ -525,6 +527,24 @@ describe('DrawableWorkspaceRuntime', () => {
 		expect(runtime.commitDrawingChange(candidate.requestId, candidate.canonicalHash))
 			.toBe(true);
 		expect(runtime.listDrawings()).toHaveLength(23);
+	});
+
+	it('reapplies a dragged text drawing when host persistence confirms it', async () => {
+		const { runtime, events } = await makeRuntime(chartWorkspaceFixture, 'host-confirmed');
+		const before = structuredClone(mockEngine!.getDrawing('drawing-text-18')!);
+		const after = structuredClone(before);
+		if (after.type !== 'text') throw new Error('Expected a text drawing fixture.');
+		after.geometry.point.value += 0.1;
+		mockEngine!.drawings.set(after.id, after);
+		mockEngine!.listener?.({ type: 'updated', id: after.id, drawing: after });
+		const candidate = await waitForEvent(events, 'drawing-candidate');
+		if (candidate?.type !== 'drawing-candidate') throw new Error('Expected a drawing candidate.');
+		// A chart redraw can leave its canvas at the old position while the adapter snapshot is current.
+		expect(mockEngine!.getDrawing(after.id)?.geometry).toEqual(after.geometry);
+		expect(mockEngine!.restoredDrawingIds).not.toContain(after.id);
+		expect(runtime.commitDrawingChange(candidate.requestId, candidate.canonicalHash)).toBe(true);
+		expect(mockEngine!.restoredDrawingIds).toContain(after.id);
+		expect(mockEngine!.getDrawing(after.id)?.geometry).toEqual(after.geometry);
 	});
 
 	it('preserves opaque document and Drawing metadata in a candidate', async () => {

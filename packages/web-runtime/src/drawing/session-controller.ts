@@ -790,10 +790,11 @@ export class DrawingSessionController {
 	}
 
 	#commitCandidate(candidate: SessionCandidate): void {
-		if (candidate.operation !== 'delete' &&
-			JSON.stringify(this.#options.engine.getDrawing(candidate.after.id)?.metadata) !== JSON.stringify(candidate.after.metadata)) {
+		if (candidate.operation !== 'delete') {
 			this.#suppressEngineEvents = true;
 			try {
+				// The engine may redraw the pre-drag overlay while persistence is in flight.
+				// Always apply the confirmed geometry, even when its snapshot already matches.
 				this.#options.engine.restoreDrawing(candidate.after);
 			} finally {
 				this.#suppressEngineEvents = false;

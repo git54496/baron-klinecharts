@@ -421,6 +421,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	#touchPrecisionPointer: TouchPrecisionPointerInteraction | undefined;
 	/** 阻断触摸结束后浏览器补发的兼容鼠标事件。 */
 	#suppressCompatibilityMouseUntil = 0;
+	#suppressControlledTouchSequence = false;
 	/** 确定性 opaque 交互 ID 序号。 */
 	#interactionSequence = 0;
 	/** 显式 Workspace 模式；Legacy 与 Workspace 状态严格隔离。 */
@@ -1709,14 +1710,24 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 
 	readonly #handleCompatibilityTouch = (event: TouchEvent): void => {
 		if (
+			event.type === 'touchstart' &&
+			(this.#pointerInteraction !== undefined || this.#deselectingPointerId !== undefined)
+		) {
+			this.#suppressControlledTouchSequence = true;
+		}
+		if (
 			(this.#touchPrecisionDrawing !== undefined ||
-				performance.now() < this.#suppressCompatibilityMouseUntil) &&
+				performance.now() < this.#suppressCompatibilityMouseUntil ||
+				this.#suppressControlledTouchSequence) &&
 			!this.#isTouchPrecisionCancelTarget(event.target)
 		) {
 			if (event.cancelable) {
 				event.preventDefault();
 			}
 			event.stopImmediatePropagation();
+		}
+		if ((event.type === 'touchend' || event.type === 'touchcancel') && event.touches.length === 0) {
+			this.#suppressControlledTouchSequence = false;
 		}
 	};
 
