@@ -58,8 +58,10 @@ export const scaledTextFigure: FigureTemplate<TextAttrs, TextStyle> = {
 			ctx.fillRect(a.x, a.y, a.width, a.height);
 			const text = `${a.label ? a.label + ' ' : ''}${a.text}`;
 			const measured = Math.max(1, ctx.measureText(text).width);
+			// Fit within the projected box without distorting the glyphs when its axes scale differently.
+			const scale = Math.min(Math.max(1, a.width - 8) / measured, Math.max(1, a.height - 6) / (size * 1.4));
 			ctx.translate(a.x + 4, a.y + 3);
-			ctx.scale(Math.max(1, a.width - 8) / measured, Math.max(1, a.height - 6) / (size * 1.4));
+			ctx.scale(scale, scale);
 			ctx.fillStyle = s.color ?? '#fff';
 			ctx.textAlign = 'left';
 			ctx.textBaseline = 'top';
