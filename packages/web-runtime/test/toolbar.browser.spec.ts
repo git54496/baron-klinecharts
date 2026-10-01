@@ -2060,10 +2060,12 @@ for (const [kind, fixture] of [
 				const before = structuredClone(runtime.getDrawing('toolbar-text')!.styles);
 				color.value = '#ff0000';
 				color.dispatchEvent(new Event('change', { bubbles: true }));
+				await new Promise((resolve) => setTimeout(resolve, 0));
 				const after = structuredClone(runtime.getDrawing('toolbar-text')!.styles);
 				const textAfterColor = input.value;
 				input.value = '修改后的文字';
 				input.dispatchEvent(new Event('change', { bubbles: true }));
+				await new Promise((resolve) => setTimeout(resolve, 0));
 				runtime.selectDrawing(null);
 				runtime.selectDrawing('toolbar-text');
 				const reselectedText = input.value;
