@@ -5,6 +5,14 @@ const fixture = JSON.parse(await readFile(new URL('../../../tests/fixtures/works
 test('@browser text records period, resizes corners, collapses across periods and persists', async ({ page }, testInfo) => {
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
+	await page.addInitScript(() => {
+		(window as any).__textCornerArcs = [];
+		const arc = CanvasRenderingContext2D.prototype.arc;
+		CanvasRenderingContext2D.prototype.arc = function (...args) {
+			if (args[2] === 5) (window as any).__textCornerArcs.push(args.slice(0, 3));
+			return arc.apply(this, args);
+		};
+	});
 	await page.goto('/test/fixture.html');
 	await page.evaluate(async (fixture) => {
 		const { createDrawableWorkspaceRuntime, createDrawingFloatingToolbar } = await import('/src/index.ts');
@@ -25,6 +33,16 @@ test('@browser text records period, resizes corners, collapses across periods an
 	await expect(page.locator('[data-action="drawing-text"]')).toHaveValue('震荡区间下沿，加仓');
 	await expect(page.locator('[data-action="text-period"]')).toHaveValue('hour:2');
 	await expect(page.locator('[data-drawing-selection-anchors] circle')).toHaveCount(4);
+	await page.evaluate(async () => {
+		(window as any).__textCornerArcs = [];
+		const runtime = (window as any).__runtime;
+		runtime.selectDrawing(null);
+		runtime.selectDrawing('period-text');
+		await new Promise(requestAnimationFrame);
+		await new Promise(requestAnimationFrame);
+	});
+	// The SVG layer owns all four handles; the canvas must not paint a second set.
+	expect(await page.evaluate(() => (window as any).__textCornerArcs)).toEqual([]);
 	const before = await page.evaluate(() => (window as any).__runtime.getDrawing('period-text'));
 	expect(before.geometry.point.granularity).toEqual({ type: 'hour', span: 2 });
 	expect(before.metadata.baronTextBox.width).toBeGreaterThan(80);
@@ -94,5 +112,6 @@ test('@browser text records period, resizes corners, collapses across periods an
 		const overflow = await page.locator('.baron-drawing-toolbar').evaluate(el => el.scrollWidth > el.clientWidth);
 		expect(overflow).toBe(false);
 	}
+	expect(await page.evaluate(() => (window as any).__textCornerArcs)).toEqual([]);
 	expect(errors).toEqual([]);
 });

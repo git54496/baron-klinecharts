@@ -87,8 +87,8 @@ export function textExtendData(overlay: {
 	type: string;
 	metadata?: SceneOverlay['metadata'] | undefined;
 	text?: string | undefined;
-}, selected = false): unknown {
-	return overlay.type === 'text' ? { text: overlay.text ?? '', box: readTextBox(overlay.metadata), period: readTextPeriod(overlay.metadata), selected } : overlay.text;
+}, selected = false, nativeHandles = true): unknown {
+	return overlay.type === 'text' ? { text: overlay.text ?? '', box: readTextBox(overlay.metadata), period: readTextPeriod(overlay.metadata), selected, nativeHandles } : overlay.text;
 }
 export function engineText(value: unknown): string {
 	if (typeof value === 'string')

@@ -6,6 +6,7 @@ type TextData = {
 	box?: TextBox;
 	period?: Period;
 	selected?: boolean;
+	nativeHandles?: boolean;
 };
 type TextAttrs = {
 	x: number;
@@ -86,7 +87,7 @@ export const textOverlay: Parameters<typeof registerOverlay>[0] = {
 		const end = projectTextPoint(chart, overlay.paneId, data.box.end);
 		const layout = textBoxLayout(start, end, data.box);
 		const figure = { type: 'baronScaledText', attrs: { ...layout, text: data.text, label: textPeriodLabel(data.period), selected: data.selected === true, limit: bounding.width }, styles: overlay.styles?.text };
-		const corners = data.selected && !layout.collapsed && !overlay.lock
+		const corners = data.selected && data.nativeHandles !== false && !layout.collapsed && !overlay.lock
 			? [start, end, { x: end.x, y: start.y }, { x: start.x, y: end.y }].map(point => ({
 				type: 'circle', attrs: { x: point.x, y: point.y, r: 5 }, ignoreEvent: true,
 				styles: { style: 'stroke_fill', color: '#fff', borderColor: overlay.styles?.text?.backgroundColor ?? '#2962ff', borderSize: 2 },

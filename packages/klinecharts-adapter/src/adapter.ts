@@ -1213,7 +1213,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		const previousId = this.#selectedOverlayId;
 		if (previousId === id) {
 			const selected = this.#activeOverlays().find(overlay => overlay.id === id);
-			if (selected?.type === 'text') this.#chart.overrideOverlay({ id: selected.id, extendData: textExtendData(selected, true) });
+			if (selected?.type === 'text') this.#chart.overrideOverlay({ id: selected.id, extendData: textExtendData(selected, true, this.#selectionAnchors === undefined) });
 			this.#renderSelectionAnchors();
 			return;
 		}
@@ -1224,7 +1224,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		}
 		this.#selectedOverlayId = id;
 		for (const overlay of this.#activeOverlays()) {
-			if (overlay.type === 'text') this.#chart.overrideOverlay({ id: overlay.id, extendData: textExtendData(overlay, overlay.id === id) });
+			if (overlay.type === 'text') this.#chart.overrideOverlay({ id: overlay.id, extendData: textExtendData(overlay, overlay.id === id, this.#selectionAnchors === undefined) });
 		}
 		this.#renderSelectionAnchors();
 		if (this.#workspaceMode) {
@@ -3126,7 +3126,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				`Drawing ${id} does not exist.`,
 			);
 		}
-		if (!this.#chart.overrideOverlay({ id, extendData: textExtendData({ type: source.type, metadata: source.metadata, text }, this.#selectedOverlayId === id) })) {
+		if (!this.#chart.overrideOverlay({ id, extendData: textExtendData({ type: source.type, metadata: source.metadata, text }, this.#selectedOverlayId === id, this.#selectionAnchors === undefined) })) {
 			throw new SceneError(
 				'RUNTIME_INIT_FAILED',
 				`/drawings/${id}/text`,
@@ -3166,7 +3166,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		if (source.type === 'text' && period && !readTextBox(metadata)) {
 			metadata = textMetadata(metadata, period, initialTextBox(this.#chart, this.#primaryAxisFilter(overlay.paneId).paneId!, source.geometry.point, source.geometry.text, source.styles, period));
 		}
-		if (!this.#chart.overrideOverlay({ id, extendData: textExtendData({ type: source.type, metadata, text: 'text' in source.geometry ? source.geometry.text : undefined }, this.#selectedOverlayId === id) })) {
+		if (!this.#chart.overrideOverlay({ id, extendData: textExtendData({ type: source.type, metadata, text: 'text' in source.geometry ? source.geometry.text : undefined }, this.#selectedOverlayId === id, this.#selectionAnchors === undefined) })) {
 			throw new SceneError(
 				'RUNTIME_INIT_FAILED',
 				`/drawings/${id}/text`,
