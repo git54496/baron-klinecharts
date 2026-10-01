@@ -8,6 +8,8 @@ export const DRAWING_FLOATING_TOOLBAR_STYLES = String.raw`
 	position: fixed;
 	z-index: 9998;
 	display: flex;
+	flex-wrap: wrap;
+	max-width: calc(100vw - 16px);
 	align-items: center;
 	min-height: 48px;
 	padding: 5px 7px 5px 4px;
@@ -27,6 +29,7 @@ export const DRAWING_FLOATING_TOOLBAR_STYLES = String.raw`
 		box-shadow 120ms ease;
 }
 
+.baron-drawing-toolbar__control[hidden],
 .baron-drawing-toolbar[hidden] {
 	display: none;
 }

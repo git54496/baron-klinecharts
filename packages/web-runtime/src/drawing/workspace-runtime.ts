@@ -356,6 +356,10 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 		return this.#session.updateDrawingText(id, text);
 	}
 
+	public updateDrawingMetadata(id: string, metadata: NonNullable<Drawing['metadata']>): EngineDrawingSnapshot {
+		return this.#session.updateDrawingMetadata(id, metadata);
+	}
+
 	public updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot {
 		return this.#session.updateDrawingLocked(id, locked);
 	}

@@ -177,6 +177,7 @@ export interface DrawingEnginePort {
 		styles: Drawing['styles'],
 	): EngineDrawingSnapshot;
 	updateDrawingText(id: string, text: string): EngineDrawingSnapshot;
+	updateDrawingMetadata?(id: string, metadata: NonNullable<Drawing['metadata']>): EngineDrawingSnapshot;
 	updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot;
 	restoreDrawing(snapshot: EngineDrawingSnapshot): void;
 	removeDrawing(id: string): boolean;

@@ -143,8 +143,8 @@ export function sceneOverlayToDrawing(
 	if (source.groupId !== undefined) {
 		result.groupId = source.groupId;
 	}
-	if (source.metadata !== undefined) {
-		result.metadata = structuredClone(source.metadata);
+	if (overlay.metadata !== undefined || source.metadata !== undefined) {
+		result.metadata = structuredClone(overlay.metadata ?? source.metadata);
 	}
 	switch (overlay.type) {
 		case 'horizontalStraightLine':

@@ -1,3 +1,4 @@
+import { engineText, textExtendData } from '../drawing/text-box.js';
 import type {
 	ChartScene,
 	SceneOverlay,
@@ -171,7 +172,7 @@ export function toEngineOverlay(
 	}
 	const text = overlayText(overlay);
 	if (text !== undefined) {
-		value.extendData = text;
+		value.extendData = textExtendData(overlay);
 	}
 	return value;
 }
@@ -200,7 +201,7 @@ export function toEngineOverlayDrawing(
 		value.groupId = source.groupId;
 	}
 	if (source.text !== undefined) {
-		value.extendData = source.text;
+		value.extendData = textExtendData({ ...source, text: source.text });
 	}
 	return value;
 }
@@ -230,6 +231,7 @@ function requirePoint(
 }
 
 function requireText(overlay: Overlay, path: string): string {
+	if (overlay.name === 'text') return engineText(overlay.extendData);
 	if (typeof overlay.extendData !== 'string') {
 		throw new SceneError('EXPORT_INVALID', path, 'KLineCharts returned an Overlay without text.');
 	}

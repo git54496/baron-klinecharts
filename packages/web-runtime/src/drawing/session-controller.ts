@@ -1,4 +1,4 @@
-import type { DrawingDocument, ValueAxis } from '@baron1996/kline-scene-schema';
+import type { Drawing, DrawingDocument, ValueAxis } from '@baron1996/kline-scene-schema';
 import {
 	hashCanonicalDrawingDocument,
 	captureWeeklyProjection,
@@ -205,6 +205,13 @@ export class DrawingSessionController {
 		this.#assertReady();
 		this.#assertDrawingEditable(id);
 		return this.#options.engine.updateDrawingText(id, text);
+	}
+
+	public updateDrawingMetadata(id: string, metadata: NonNullable<Drawing['metadata']>): EngineDrawingSnapshot {
+		this.#assertReady();
+		this.#assertDrawingEditable(id);
+		if (!this.#options.engine.updateDrawingMetadata) throw new Error('Drawing metadata updates are unsupported.');
+		return this.#options.engine.updateDrawingMetadata(id, metadata);
 	}
 
 	public updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot {

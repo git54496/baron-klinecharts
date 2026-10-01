@@ -1,11 +1,11 @@
-import type { registerIndicator, registerOverlay } from 'klinecharts';
+import type { registerFigure, registerIndicator, registerOverlay } from 'klinecharts';
 
 import { arrowOverlay } from './arrow.js';
 import { calloutOverlay } from './callout.js';
 import { crossLineOverlay } from './cross-line.js';
 import { rectangleOverlay } from './rectangle.js';
 import { priceMeasurementOverlay } from './price-measurement.js';
-import { textOverlay } from './text.js';
+import { scaledTextFigure, textOverlay } from './text.js';
 import { turnoverIndicator } from './turnover.js';
 
 type KLineOverlayTemplate = Parameters<typeof registerOverlay>[0];
@@ -21,9 +21,14 @@ const projectExtensions = [
 ] as const;
 
 let registered = false;
+let figureRegistered = false;
 
 /** 在当前浏览器 Runtime 内恰好注册一次项目扩展。 */
-export function registerProjectOverlays(register: RegisterOverlay): void {
+export function registerProjectOverlays(register: RegisterOverlay, figure?: typeof registerFigure): void {
+	if (figure && !figureRegistered) {
+		figure(scaledTextFigure);
+		figureRegistered = true;
+	}
 	if (registered) {
 		return;
 	}

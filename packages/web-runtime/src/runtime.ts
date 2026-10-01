@@ -403,6 +403,12 @@ export class KLineSceneRuntime implements DrawingRuntimeCapability, RuntimeAuxil
 		);
 	}
 
+	public updateDrawingMetadata(id: string, metadata: NonNullable<SceneOverlay['metadata']>): EngineDrawingSnapshot {
+		const overlay = this.getOverlay(id);
+		if (!overlay) throw new Error('Drawing does not exist.');
+		return overlayToDrawingSnapshot(this.updateOverlay({ ...overlay, metadata }), this.getScene().period);
+	}
+
 	public updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot {
 		const overlay = this.getOverlay(id);
 		if (overlay === undefined) {

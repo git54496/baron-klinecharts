@@ -293,6 +293,10 @@ export class ProgressiveDrawableWorkspaceRuntime
 		return this.#requireReady().updateDrawingText(id, text);
 	}
 
+	public updateDrawingMetadata(id: string, metadata: NonNullable<Drawing['metadata']>): EngineDrawingSnapshot {
+		return this.#requireReady().updateDrawingMetadata(id, metadata);
+	}
+
 	public updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot {
 		return this.#requireReady().updateDrawingLocked(id, locked);
 	}

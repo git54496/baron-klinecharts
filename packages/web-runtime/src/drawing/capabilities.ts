@@ -40,6 +40,7 @@ export interface DrawingRuntimeCapability {
 		styles: Drawing['styles'],
 	): EngineDrawingSnapshot;
 	updateDrawingText(id: string, text: string): EngineDrawingSnapshot;
+	updateDrawingMetadata?(id: string, metadata: NonNullable<Drawing['metadata']>): EngineDrawingSnapshot;
 	updateDrawingLocked(id: string, locked: boolean): EngineDrawingSnapshot;
 	removeDrawing(id: string): boolean;
 	/** 将多个 Drawing 的删除收敛为一次 Runtime 变更。 */

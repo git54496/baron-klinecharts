@@ -1,3 +1,5 @@
+import { projectOverlayGeometry } from '../interaction/overlay-geometry.js';
+import { textMetadata, engineText, initialTextBox, textExtendData, readTextBox, projectTextPoint, readTextPeriod, TEXT_BOX_KEY, TEXT_PERIOD_KEY } from '../drawing/text-box.js';
 import type {
 	Drawing,
 	DrawableWorkspaceDocument,
@@ -304,7 +306,7 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 				pricePrecision: scene.series[0].precision,
 				volumePrecision: 0,
 			});
-			registerProjectOverlays(engine.registerOverlay);
+			registerProjectOverlays(engine.registerOverlay, engine.registerFigure);
 			chart.setPeriod(structuredClone(scene.period));
 			chart.setDataLoader(dataLoader(scene.data));
 			engine.registerIndicator(timeSeriesIndicatorTemplate);
@@ -401,7 +403,7 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 				pricePrecision: scene.series[0].precision,
 				volumePrecision: 0,
 			});
-			registerProjectOverlays(engine.registerOverlay);
+			registerProjectOverlays(engine.registerOverlay, engine.registerFigure);
 			chart.setPeriod(structuredClone(scene.period));
 			chart.setDataLoader(dataLoader(scene.data));
 			engine.registerIndicator(timeSeriesIndicatorTemplate);
@@ -588,6 +590,9 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 			});
 		}
 		this.#selectedOverlayId = id;
+		for (const overlay of this.#drawings) {
+			if (overlay.type === 'text') this.#chart.overrideOverlay({id:overlay.id,extendData:textExtendData(overlay,overlay.id===id)});
+		}
 	}
 
 	#timeSeriesDimensionsForHit(
@@ -619,7 +624,12 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 		kind: 'created' | 'updated',
 	): void {
 		const existingIndex = this.#drawings.findIndex((overlay) => overlay.id === source.id);
-		const currentSource = existingIndex < 0 ? source : this.#drawings[existingIndex]!;
+		let currentSource = existingIndex < 0 ? source : this.#drawings[existingIndex]!;
+		if (kind === 'created' && currentSource.type === 'text' && !readTextBox(currentSource.metadata)) {
+			const period = readTextPeriod(currentSource.metadata) ?? this.#scene.period;
+			currentSource = { ...currentSource, metadata: { ...currentSource.metadata, [TEXT_PERIOD_KEY]: { ...period }, [TEXT_BOX_KEY]: initialTextBox(this.#chart, engineOverlay.paneId, engineOverlay.points[0]!, engineText(engineOverlay.extendData), currentSource.styles, period) } };
+			this.#chart.overrideOverlay({ id: engineOverlay.id, extendData: textExtendData({ ...currentSource, text: engineText(engineOverlay.extendData) }) });
+		}
 		const overlay = fromEngineOverlay(
 			engineOverlay,
 			currentSource,
@@ -943,6 +953,16 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 		for (let index = 0; index < this.#drawings.length; index++) {
 			const overlay = this.#drawings[index];
 			if (overlay === undefined || !overlay.visible) {
+				continue;
+			}
+			if (overlay.type === 'text' && readTextBox(overlay.metadata)) {
+				const rect=this.#container.getBoundingClientRect();
+				const geometry=projectOverlayGeometry(overlay,index,{
+					bounds:{left:0,top:0,right:rect.width,bottom:rect.height},referenceTimestamp:this.#scene.data[0]!.timestamp,referenceValue:0,
+					project:point=>projectTextPoint(this.#chart,TIME_SERIES_PANE_ID,point as {timestamp:number;value:number},true),
+					measureText:text=>({width:text.length*12,height:18}),
+				});
+				if(geometry)geometries.push(geometry);
 				continue;
 			}
 			if (overlay.type === 'horizontalStraightLine') {
@@ -1336,13 +1356,46 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 				`Drawing ${id} does not exist.`,
 			);
 		}
-		if (!this.#chart.overrideOverlay({ id, extendData: text })) {
+		if (!this.#chart.overrideOverlay({ id, extendData: textExtendData({ type: source.type, metadata: source.metadata, text }, false) })) {
 			throw adapterError(`KLineCharts failed to update Drawing ${id} text.`);
 		}
 		const updated = timeSeriesWithDrawingText(
 			structuredClone(source),
 			text,
 		);
+		this.#workspaceSources.set(id, updated);
+		this.#drawings = this.#drawings.map((candidate) =>
+			candidate.id === id
+				? drawingToSceneOverlay(updated, TIME_SERIES_PANE_ID)
+				: candidate,
+		);
+		this.#emitPort({
+			type: 'updated',
+			id,
+			drawing: timeSeriesSnapshotOfDrawing(updated),
+			editDimensions: { horizontal: false, vertical: false },
+		});
+		return timeSeriesSnapshotOfDrawing(updated);
+	}
+
+	public updateDrawingMetadata(id: string, metadata: NonNullable<Drawing['metadata']>): EngineDrawingSnapshot {
+		this.#assertActive();
+		const source = this.#workspaceSources.get(id);
+		if (source === undefined) {
+			throw new TimeSeriesSceneError(
+				'TIME_SERIES_SCENE_SCHEMA_INVALID',
+				`/drawings/${id}`,
+				`Drawing ${id} does not exist.`,
+			);
+		}
+		const period = readTextPeriod(metadata);
+		if (source.type === 'text' && period && !readTextBox(metadata)) {
+			metadata = textMetadata(metadata, period, initialTextBox(this.#chart, TIME_SERIES_PANE_ID, source.geometry.point, source.geometry.text, source.styles, period));
+		}
+		if (!this.#chart.overrideOverlay({ id, extendData: textExtendData({ type: source.type, metadata, text: 'text' in source.geometry ? source.geometry.text : undefined }, false) })) {
+			throw adapterError(`KLineCharts failed to update Drawing ${id} text.`);
+		}
+		const updated = { ...structuredClone(source), metadata: structuredClone(metadata) } as Drawing;
 		this.#workspaceSources.set(id, updated);
 		this.#drawings = this.#drawings.map((candidate) =>
 			candidate.id === id
@@ -1634,7 +1687,7 @@ export class TimeSeriesChartsAdapter implements DrawingEnginePort {
 }
 
 function isControlledInteractionOverlay(overlay: SceneOverlay): boolean {
-	return overlay.type === 'horizontalStraightLine' || overlay.type === 'priceMeasurement';
+	return overlay.type === 'horizontalStraightLine' || overlay.type === 'priceMeasurement' || (overlay.type === 'text' && readTextBox(overlay.metadata) !== undefined);
 }
 
 function timeSeriesSnapshotOfDrawing(drawing: Drawing): EngineDrawingSnapshot {

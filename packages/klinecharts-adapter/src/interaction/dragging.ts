@@ -1,3 +1,4 @@
+import { readTextBox, TEXT_BOX_KEY, textTimeIndex, textIndexTime, periodMilliseconds } from '../drawing/text-box.js';
 import type { Period, SceneOverlay } from '@baron1996/kline-scene-schema';
 import { SceneError } from '@baron1996/kline-scene-schema';
 
@@ -236,6 +237,29 @@ export function createDragCandidate(
 		requireDataIndex(current.dataIndex, '/overlays/body/dataIndex') -
 		requireDataIndex(origin.dataIndex, '/overlays/body/originDataIndex');
 
+	if (before.type === 'text' && before.point && readTextBox(before.metadata)) {
+		const box = readTextBox(before.metadata)!;
+		const start = structuredClone(before.point), end = { ...box.end };
+		if (dragTarget.target === 'anchor') {
+			const point = currentPoint(current, timestamps, pricePrecision, '/overlays/point', period);
+			switch (dragTarget.anchorIndex) {
+				case 0: Object.assign(start,point); break;
+				case 1: Object.assign(end,point); break;
+				case 2: end.timestamp=point.timestamp;start.value=point.value;break;
+				case 3: start.timestamp=point.timestamp;end.value=point.value;break;
+				default: throw new SceneError('INVALID_REFERENCE','/overlays/anchorIndex','Invalid text corner.');
+			}
+		} else {
+			const step=periodMilliseconds(period ?? {type:'day',span:1});
+			start.timestamp=textIndexTime(textTimeIndex(start.timestamp,timestamps,step)+deltaIndex,timestamps,step);
+			end.timestamp=box.end.timestamp+(start.timestamp-before.point.timestamp);
+			start.value=translatedValue(start.value,deltaAxisValue,valueAxis,pricePrecision,'/overlays/point');
+			end.value=translatedValue(end.value,deltaAxisValue,valueAxis,pricePrecision,'/overlays/end');
+		}
+		candidate.point=start;
+		candidate.metadata={...candidate.metadata,[TEXT_BOX_KEY]:{...box,end}};
+		return candidate;
+	}
 	switch (before.type) {
 		case 'horizontalStraightLine':
 		case 'priceLine':

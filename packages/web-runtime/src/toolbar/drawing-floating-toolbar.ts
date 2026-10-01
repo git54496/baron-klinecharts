@@ -1,4 +1,5 @@
-import type { EngineDrawingSnapshot } from '@baron1996/klinecharts-adapter';
+import type { Period } from '@baron1996/kline-scene-schema';
+import { textMetadata, readTextPeriod, textPeriodLabel, type EngineDrawingSnapshot } from '@baron1996/klinecharts-adapter';
 
 import { registerRuntimeTeardown } from '../lifecycle.js';
 import type { DrawingRuntimeCapability } from '../drawing/capabilities.js';
@@ -159,6 +160,16 @@ export function createDrawingFloatingToolbar(
 	textInput.placeholder = '输入文本';
 	textInput.hidden = true;
 
+	const textPeriod = createSelect(
+		'baron-drawing-toolbar__control--period', 'text-period', '文字时间级别',
+		[{ value: '', label: '未标记' }, ...[['minute',5],['minute',30],['hour',1],['hour',2],['hour',4],['day',1],['week',1],['month',1],['year',1]].map(([type,span]) => {
+			const period = {type,span} as {type:'minute'|'hour'|'day'|'week'|'month'|'year';span:number};
+			return {value:`${type}:${span}`,label:textPeriodLabel(period)};
+		})],
+	);
+	textPeriod.label.hidden = true;
+	textPeriod.select.options[0]!.disabled = true;
+
 	const lock = createButton('toggle-lock', '锁定 Drawing', 'lock');
 	const remove = createButton('delete', '删除 Drawing', 'trash');
 	const status = document.createElement('span');
@@ -175,6 +186,7 @@ export function createDrawingFloatingToolbar(
 		lineStyle.label,
 		lineWidth.label,
 		textInput,
+		textPeriod.label,
 		createSeparator(),
 		lock,
 		remove,
@@ -338,6 +350,16 @@ export function createDrawingFloatingToolbar(
 		}
 		lineWidth.select.value = widthValue;
 		textInput.hidden = !isText;
+		textPeriod.label.hidden = drawing.type !== 'text' || runtime.updateDrawingMetadata === undefined;
+		const period = readTextPeriod(drawing.metadata);
+		const periodValue = period ? `${period.type}:${period.span}` : '';
+		if (period && !Array.from(textPeriod.select.options).some(option => option.value === periodValue)) {
+			const option = document.createElement('option');
+			option.value = periodValue;
+			option.textContent = textPeriodLabel(period);
+			textPeriod.select.append(option);
+		}
+		textPeriod.select.value = periodValue;
 		// Workspace 快照中的权威文字保存在 geometry；Scene 模式兼容顶层 text。
 		textInput.value = isText
 			? ('text' in drawing.geometry ? drawing.geometry.text : drawing.text) ?? ''
@@ -352,6 +374,7 @@ export function createDrawingFloatingToolbar(
 		lineStyle.select.disabled = busy || drawing.locked || readOnly;
 		lineWidth.select.disabled = busy || drawing.locked || readOnly;
 		textInput.disabled = busy || drawing.locked || readOnly;
+		textPeriod.select.disabled = busy || drawing.locked || readOnly;
 		lock.disabled = busy || readOnly;
 		remove.disabled = busy || drawing.locked || readOnly;
 		root.setAttribute('aria-busy', String(busy));
@@ -385,6 +408,11 @@ export function createDrawingFloatingToolbar(
 	});
 	const handleTextChange = (): void => performMutation((drawing) => {
 		runtime.updateDrawingText(drawing.id, textInput.value);
+	});
+	const handleTextPeriodChange = (): void => performMutation((drawing) => {
+		const [type,span] = textPeriod.select.value.split(':');
+		if (!type || !span) return;
+		runtime.updateDrawingMetadata?.(drawing.id, textMetadata(drawing.metadata, { type: type as Period['type'], span: Number(span) }));
 	});
 	const handleLock = (): void => performMutation((drawing) => {
 		runtime.updateDrawingLocked(drawing.id, !drawing.locked);
@@ -436,6 +464,7 @@ export function createDrawingFloatingToolbar(
 	lineStyle.select.addEventListener('change', handleLineStyleChange);
 	lineWidth.select.addEventListener('change', handleLineWidthChange);
 	textInput.addEventListener('change', handleTextChange);
+	textPeriod.select.addEventListener('change', handleTextPeriodChange);
 	lock.addEventListener('click', handleLock);
 	remove.addEventListener('click', handleDelete);
 	grip.addEventListener('pointerdown', handleDragStart);
@@ -485,6 +514,7 @@ export function createDrawingFloatingToolbar(
 			lineStyle.select.removeEventListener('change', handleLineStyleChange);
 			lineWidth.select.removeEventListener('change', handleLineWidthChange);
 			textInput.removeEventListener('change', handleTextChange);
+			textPeriod.select.removeEventListener('change', handleTextPeriodChange);
 			lock.removeEventListener('click', handleLock);
 			remove.removeEventListener('click', handleDelete);
 			grip.removeEventListener('pointerdown', handleDragStart);

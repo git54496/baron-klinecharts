@@ -1,3 +1,4 @@
+import { readTextBox, textBoxLayout, TEXT_BADGE_SIZE } from '../drawing/text-box.js';
 import type { SceneOverlay, TimeValueAnchor } from '@baron1996/kline-scene-schema';
 
 import type {
@@ -306,6 +307,13 @@ export function projectOverlayGeometry(
 		case 'text': {
 			if (overlay.point === undefined) return null;
 			const point = context.project(overlay.point);
+			const box = readTextBox(overlay.metadata);
+			if (box) {
+				const end = context.project(box.end);
+				const layout = textBoxLayout(point, end, box);
+				if (layout.collapsed) return geometry(overlay, sceneIndex, [], [], [{left:layout.x,top:layout.y,right:layout.x+TEXT_BADGE_SIZE,bottom:layout.y+TEXT_BADGE_SIZE}]);
+				return geometry(overlay, sceneIndex, [point, end, {x:end.x,y:point.y}, {x:point.x,y:end.y}], [], [{left:layout.x,top:layout.y,right:layout.x+layout.width,bottom:layout.y+layout.height}]);
+			}
 			return geometry(
 				overlay,
 				sceneIndex,

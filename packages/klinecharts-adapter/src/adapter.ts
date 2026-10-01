@@ -1,3 +1,4 @@
+import { textMetadata, engineText, initialTextBox, textExtendData, readTextBox, projectTextPoint, readTextPeriod, TEXT_BOX_KEY, TEXT_PERIOD_KEY } from './drawing/text-box.js';
 import type {
 	ChartScene,
 	DrawableWorkspaceDocument,
@@ -245,7 +246,7 @@ function promoteSceneToM2(
 }
 
 function isControlledInteractionOverlay(overlay: SceneOverlay): boolean {
-	return overlay.type === 'horizontalStraightLine' || overlay.type === 'priceMeasurement';
+	return overlay.type === 'horizontalStraightLine' || overlay.type === 'priceMeasurement' || (overlay.type === 'text' && readTextBox(overlay.metadata) !== undefined);
 }
 
 /** Schema 解析可以补充默认字段；安装时只要求空壳显式配置保持一致。 */
@@ -550,7 +551,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 					: { displayTimezone: options.displayTimezone }),
 				...(options?.hideCandleTooltip ? { hideCandleTooltip: true } : {}),
 			});
-			registerProjectOverlays(handle.module.registerOverlay);
+			registerProjectOverlays(handle.module.registerOverlay, handle.module.registerFigure);
 			registerProjectIndicators(handle.module.registerIndicator);
 			const idMap = createEngineIdMap(internalScene, handle.chart);
 			applyPanes(internalScene, handle.chart, idMap);
@@ -655,7 +656,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				handle.chart,
 				handle.module.registerIndicator,
 			);
-			registerProjectOverlays(handle.module.registerOverlay);
+			registerProjectOverlays(handle.module.registerOverlay, handle.module.registerFigure);
 			registerProjectIndicators(handle.module.registerIndicator);
 			const idMap = createEngineIdMap(scene, handle.chart);
 			applyPanes(scene, handle.chart, idMap);
@@ -722,7 +723,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				handle.chart,
 				handle.module.registerIndicator,
 			);
-			registerProjectOverlays(handle.module.registerOverlay);
+			registerProjectOverlays(handle.module.registerOverlay, handle.module.registerFigure);
 			registerProjectIndicators(handle.module.registerIndicator);
 			const idMap = createEngineIdMap(scene, handle.chart);
 			applyPanes(scene, handle.chart, idMap);
@@ -1211,6 +1212,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	#selectOverlay(id: string | null): void {
 		const previousId = this.#selectedOverlayId;
 		if (previousId === id) {
+			const selected = this.#activeOverlays().find(overlay => overlay.id === id);
+			if (selected?.type === 'text') this.#chart.overrideOverlay({ id: selected.id, extendData: textExtendData(selected, true) });
 			this.#renderSelectionAnchors();
 			return;
 		}
@@ -1220,6 +1223,9 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			this.#leaveExclusiveSelection();
 		}
 		this.#selectedOverlayId = id;
+		for (const overlay of this.#activeOverlays()) {
+			if (overlay.type === 'text') this.#chart.overrideOverlay({ id: overlay.id, extendData: textExtendData(overlay, overlay.id === id) });
+		}
 		this.#renderSelectionAnchors();
 		if (this.#workspaceMode) {
 			this.#emitPort({
@@ -1335,7 +1341,12 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		const active = this.#activeOverlays();
 		const existingIndex = active.findIndex((overlay) => overlay.id === source.id);
 		const path = existingIndex < 0 ? `/overlays/${active.length}` : `/overlays/${existingIndex}`;
-		const currentSource = existingIndex < 0 ? source : active[existingIndex]!;
+		let currentSource = existingIndex < 0 ? source : active[existingIndex]!;
+		if (kind === 'created' && currentSource.type === 'text' && !readTextBox(currentSource.metadata)) {
+			const period = readTextPeriod(currentSource.metadata) ?? this.#scene.period;
+			currentSource = { ...currentSource, metadata: { ...currentSource.metadata, [TEXT_PERIOD_KEY]: { ...period }, [TEXT_BOX_KEY]: initialTextBox(this.#chart, engineOverlay.paneId, engineOverlay.points[0]!, engineText(engineOverlay.extendData), currentSource.styles, period) } };
+			this.#chart.overrideOverlay({ id: engineOverlay.id, extendData: textExtendData({ ...currentSource, text: engineText(engineOverlay.extendData) }) });
+		}
 		const overlay = fromEngineOverlay(
 			engineOverlay,
 			currentSource,
@@ -2056,7 +2067,9 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				},
 				referenceTimestamp: this.#scene.data[0]!.timestamp,
 				referenceValue: this.#scene.data[0]!.close,
-				project: (point) => this.#toPixel(point, overlay.paneId),
+				project: (point) => overlay.type === 'text' && readTextBox(overlay.metadata)
+					? projectTextPoint(this.#chart, this.#primaryAxisFilter(overlay.paneId).paneId!, point as {timestamp:number;value:number}, true)
+					: this.#toPixel(point, overlay.paneId),
 				...(weeklyProjection === undefined ? {} : {
 					projectedPoints: weeklyProjection.points.map((point) =>
 						this.#toPixel(point, overlay.paneId)),
@@ -3003,6 +3016,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#assertActive();
 		this.#assertNotTerminated();
 		const drawing = placeholderDrawing(request);
+		if (drawing.type === 'text') drawing.geometry.point.granularity = structuredClone(this.#scene.period);
 		if (this.#workspaceSources.has(request.id)) {
 			throw new SceneError(
 				'DUPLICATE_ID',
@@ -3112,7 +3126,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				`Drawing ${id} does not exist.`,
 			);
 		}
-		if (!this.#chart.overrideOverlay({ id, extendData: text })) {
+		if (!this.#chart.overrideOverlay({ id, extendData: textExtendData({ type: source.type, metadata: source.metadata, text }, this.#selectedOverlayId === id) })) {
 			throw new SceneError(
 				'RUNTIME_INIT_FAILED',
 				`/drawings/${id}/text`,
@@ -3120,6 +3134,46 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			);
 		}
 		const updated = withDrawingText(structuredClone(source), text);
+		this.#workspaceSources.set(id, updated);
+		this.#workspaceOverlays = this.#workspaceOverlays.map((candidate) =>
+			candidate.id === id
+				? drawingToSceneOverlay(updated, candidate.paneId)
+				: candidate,
+		);
+		this.#renderSelectionAnchors();
+		this.#emitPort({
+			type: 'updated',
+			id,
+			drawing: snapshotOfDrawing(updated),
+			editDimensions: { horizontal: false, vertical: false },
+		});
+		return snapshotOfDrawing(updated);
+	}
+
+	public updateDrawingMetadata(id: string, metadata: NonNullable<Drawing['metadata']>): EngineDrawingSnapshot {
+		this.#assertActive();
+		this.#assertNotTerminated();
+		const source = this.#workspaceSources.get(id);
+		const overlay = this.#workspaceOverlays.find((candidate) => candidate.id === id);
+		if (source === undefined || overlay === undefined) {
+			throw new SceneError(
+				'INVALID_REFERENCE',
+				`/drawings/${id}`,
+				`Drawing ${id} does not exist.`,
+			);
+		}
+		const period = readTextPeriod(metadata);
+		if (source.type === 'text' && period && !readTextBox(metadata)) {
+			metadata = textMetadata(metadata, period, initialTextBox(this.#chart, this.#primaryAxisFilter(overlay.paneId).paneId!, source.geometry.point, source.geometry.text, source.styles, period));
+		}
+		if (!this.#chart.overrideOverlay({ id, extendData: textExtendData({ type: source.type, metadata, text: 'text' in source.geometry ? source.geometry.text : undefined }, this.#selectedOverlayId === id) })) {
+			throw new SceneError(
+				'RUNTIME_INIT_FAILED',
+				`/drawings/${id}/text`,
+				`KLineCharts failed to update Drawing ${id} text.`,
+			);
+		}
+		const updated = { ...structuredClone(source), metadata: structuredClone(metadata) } as Drawing;
 		this.#workspaceSources.set(id, updated);
 		this.#workspaceOverlays = this.#workspaceOverlays.map((candidate) =>
 			candidate.id === id

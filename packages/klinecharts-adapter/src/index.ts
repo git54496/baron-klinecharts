@@ -15,3 +15,5 @@ export * from './registry/overlays.js';
 export * from './static-data-loader.js';
 export * from './time-series/adapter.js';
 export * from './version.js';
+
+export { textMetadata, readTextBox, readTextPeriod, textPeriodLabel, TEXT_BOX_KEY, TEXT_PERIOD_KEY } from './drawing/text-box.js';
