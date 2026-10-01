@@ -319,9 +319,15 @@ export function createDrawingFloatingToolbar(
 		type.title = presentation.label;
 		type.setAttribute('aria-label', presentation.label);
 
-		const colorValue = sceneColorToHtmlHex(drawing.styles.line.color);
+		const isText = TEXT_DRAWING_TYPES.has(drawing.type);
+		const colorLabel = isText ? '文字背景色' : '线色';
+		color.setAttribute('aria-label', colorLabel);
+		color.title = colorLabel;
+		colorInput.setAttribute('aria-label', colorLabel);
+		const selectedColor = isText ? drawing.styles.text.backgroundColor : drawing.styles.line.color;
+		const colorValue = sceneColorToHtmlHex(selectedColor);
 		colorInput.value = colorValue;
-		colorIcon.style.setProperty('--baron-drawing-line-color', drawing.styles.line.color);
+		colorIcon.style.setProperty('--baron-drawing-line-color', selectedColor);
 		lineStyle.select.value = drawing.styles.line.style;
 		const widthValue = String(drawing.styles.line.size);
 		if (!Array.from(lineWidth.select.options).some((option) => option.value === widthValue)) {
@@ -331,9 +337,11 @@ export function createDrawingFloatingToolbar(
 			lineWidth.select.append(option);
 		}
 		lineWidth.select.value = widthValue;
-		const isText = TEXT_DRAWING_TYPES.has(drawing.type);
 		textInput.hidden = !isText;
-		textInput.value = isText ? drawing.text ?? '' : '';
+		// Workspace 快照中的权威文字保存在 geometry；Scene 模式兼容顶层 text。
+		textInput.value = isText
+			? ('text' in drawing.geometry ? drawing.geometry.text : drawing.text) ?? ''
+			: '';
 
 		lock.replaceChildren(createToolbarIcon(drawing.locked ? 'lock' : 'lockOpen'));
 		lock.setAttribute('aria-label', drawing.locked ? '解锁 Drawing' : '锁定 Drawing');
@@ -357,7 +365,15 @@ export function createDrawingFloatingToolbar(
 	};
 
 	const handleColorChange = (): void => performMutation((drawing) => {
-		updateStyles(drawing, { color: htmlHexColorToSceneRgba(colorInput.value) });
+		const selectedColor = htmlHexColorToSceneRgba(colorInput.value);
+		if (TEXT_DRAWING_TYPES.has(drawing.type)) {
+			runtime.updateDrawingStyles(drawing.id, {
+				...structuredClone(drawing.styles),
+				text: { ...structuredClone(drawing.styles.text), backgroundColor: selectedColor },
+			});
+		} else {
+			updateStyles(drawing, { color: selectedColor });
+		}
 	});
 	const handleLineStyleChange = (): void => performMutation((drawing) => {
 		updateStyles(drawing, {

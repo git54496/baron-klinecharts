@@ -2030,3 +2030,52 @@ test('@browser M1 horizontal line toolbar supports the touch creation path', asy
 		await context.close();
 	}
 });
+
+for (const [kind, fixture] of [
+	['chart', chartWorkspaceFixture],
+	['time-series', timeSeriesWorkspaceFixture],
+] as const) {
+	for (const drawingType of ['text', 'simpleAnnotation', 'simpleTag', 'callout'] as const) {
+		test(`@browser ${kind} ${drawingType} toolbar restores text and changes its background`, async ({ page }) => {
+			await page.goto('/test/fixture.html');
+			const result = await page.evaluate(async ({ fixture, drawingType }) => {
+				const { createDrawableWorkspaceRuntime, createDrawingFloatingToolbar } = await import('/src/index.ts');
+				const workspace = structuredClone(fixture);
+				const source = workspace.drawings.drawings[0];
+				const point = { timestamp: 1704153600000, value: 11, granularity: { type: 'day', span: 1 } };
+				const text = '震荡区间下沿，加仓';
+				workspace.drawings.drawings = [{
+					...source,
+					id: 'toolbar-text', type: drawingType,
+					geometry: drawingType === 'simpleTag' ? { value: 11, text } : { point, text },
+					styles: { ...source.styles, text: { ...source.styles.text, backgroundColor: 'rgba(0, 128, 0, 1)' } },
+				}];
+				const container = document.querySelector<HTMLElement>('#chart')!;
+				const runtime = await createDrawableWorkspaceRuntime(container, workspace, { commitMode: 'immediate' });
+				const toolbar = createDrawingFloatingToolbar(container, runtime);
+				runtime.selectDrawing('toolbar-text');
+				const input = toolbar.element.querySelector<HTMLInputElement>('[data-action="drawing-text"]')!;
+				const color = toolbar.element.querySelector<HTMLInputElement>('[data-action="line-color"]')!;
+				const initial = { text: input.value, color: color.value, label: color.getAttribute('aria-label') };
+				const before = structuredClone(runtime.getDrawing('toolbar-text')!.styles);
+				color.value = '#ff0000';
+				color.dispatchEvent(new Event('change', { bubbles: true }));
+				const after = structuredClone(runtime.getDrawing('toolbar-text')!.styles);
+				const textAfterColor = input.value;
+				input.value = '修改后的文字';
+				input.dispatchEvent(new Event('change', { bubbles: true }));
+				runtime.selectDrawing(null);
+				runtime.selectDrawing('toolbar-text');
+				const reselectedText = input.value;
+				const geometry = runtime.getDrawing('toolbar-text')!.geometry;
+				runtime.destroy();
+				return { initial, before, after, textAfterColor, reselectedText, geometry };
+			}, { fixture, drawingType });
+			expect(result.initial).toEqual({ text: '震荡区间下沿，加仓', color: '#008000', label: '文字背景色' });
+			expect(result.after).toEqual({ ...result.before, text: { ...result.before.text, backgroundColor: 'rgba(255, 0, 0, 1)' } });
+			expect(result.textAfterColor).toBe('震荡区间下沿，加仓');
+			expect(result.reselectedText).toBe('修改后的文字');
+			expect(result.geometry).toMatchObject({ text: '修改后的文字' });
+		});
+	}
+}
