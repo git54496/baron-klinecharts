@@ -380,6 +380,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	#scene: ChartScene;
 	/** 仅用于画面展示的实时 K 投影，不进入 #scene 与任何导出结果。 */
 	readonly #liveBarProjections = new Map<number, MarketData>();
+	/** Tail lookup stays independent of historical Scene size. */
+	#liveBarTail: readonly MarketData[] | undefined;
 	/** KLineCharts 当前实时单 K 回调；DataLoader 重建后由 subscribeBar 重新绑定。 */
 	#liveBarCallback: ((data: KLineData) => void) | undefined;
 	/** 空图表只属于浏览器加载生命周期；安装首份正式 Scene 后永久关闭。 */
@@ -631,8 +633,10 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		this.#chart.setPeriod(structuredClone(candidate.period));
 		this.#replaceMainPaneIndicators(this.#scene, candidate);
 		this.#liveBarProjections.clear();
-		this.#chart.setDataLoader(this.#staticDataLoader(candidate));
-		this.#chart.resetData();
+		this.#liveBarTail = undefined;
+		this.#chart.setDataLoader(this.#historicalDataLoading === undefined
+			? this.#staticDataLoader(candidate)
+			: this.#historicalDataLoader(candidate));
 		applyViewport(this.#chart, candidate.viewport);
 		this.#scene = candidate;
 		this.#emptyRuntime = false;
@@ -987,22 +991,18 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				'Install the initial historical Scene before projecting live bars.',
 			);
 		}
-		const projectedScene = this.#projectedScene(this.#scene);
-		const projected = projectedScene.data;
-		const validationData = new Map(
-			projected.map((bar) => [bar.timestamp, structuredClone(bar)] as const),
-		);
-		validationData.set(data.timestamp, structuredClone(data));
-		const validatedScene = parseChartScene({
-			...structuredClone(projectedScene),
-			data: [...validationData.values()].sort(
-				(left, right) => left.timestamp - right.timestamp,
-			),
-			gaps: projectedScene.gaps?.filter((gap) => gap.timestamp !== data.timestamp),
-		});
-		const validated = validatedScene.data.find((bar) => bar.timestamp === data.timestamp)!;
-		const current = projected.at(-1)!;
-		const previous = projected.at(-2);
+		// Reuse the validated, privately owned configuration. Only the incoming bar
+		// needs structural/OHLC validation; historical bars and overlays do not change.
+		const validated = parseChartScene({
+			...this.#scene,
+			data: [data],
+			gaps: this.#scene.version === 2 ? [] : undefined,
+			overlays: [],
+			viewport: { ...this.#scene.viewport, anchorTimestamp: data.timestamp },
+		}).data[0]!;
+		const tail = this.#liveBarTail ?? this.#scene.data.slice(-2);
+		const current = tail.at(-1)!;
+		const previous = tail.at(-2) ?? this.#scene.data.at(-2);
 		let action: LiveBarProjectionResult['action'];
 		if (validated.timestamp === current.timestamp) {
 			action = 'replaced_current';
@@ -1017,16 +1017,20 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				'Live bar can only replace the current bar, append a new bar, or reconcile the previous bar.',
 			);
 		}
-		const existing = projected.find((bar) => bar.timestamp === validated.timestamp);
+		const existing = validated.timestamp === current.timestamp ? current
+			: validated.timestamp === previous?.timestamp ? previous : undefined;
 		if (existing !== undefined && JSON.stringify(existing) === JSON.stringify(validated)) {
 			return { action: 'unchanged', timestamp: validated.timestamp };
 		}
-		this.#liveBarProjections.set(validated.timestamp, structuredClone(validated));
+		this.#liveBarProjections.set(validated.timestamp, validated);
+		this.#liveBarTail = action === 'appended' ? [current, validated]
+			: action === 'reconciled_previous' ? [validated, current]
+			: previous === undefined ? [validated] : [previous, validated];
 		if (action === 'reconciled_previous' || this.#liveBarCallback === undefined) {
 			this.#resetProjectedDataPreservingViewport();
 		} else {
 			const engineBar = engineHistoricalDataForScene(
-				this.#projectedScene(this.#scene),
+				this.#scene,
 				[validated],
 			)[0]!;
 			this.#liveBarCallback(engineBar);
@@ -1041,6 +1045,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			return false;
 		}
 		this.#liveBarProjections.clear();
+		this.#liveBarTail = undefined;
 		this.#resetProjectedDataPreservingViewport();
 		return true;
 	}
@@ -2815,7 +2820,9 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		}
 		const previous = this.#scene;
 		const previousLiveBarProjections = new Map(this.#liveBarProjections);
+		const previousLiveBarTail = this.#liveBarTail;
 		this.#liveBarProjections.clear();
+		this.#liveBarTail = undefined;
 		const previousBackground = this.#container.style.backgroundColor;
 		const previousHistoricalHasMore = this.#historicalDataLoading?.hasMore;
 		let indicatorsReplaced = false;
@@ -2839,7 +2846,6 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 					? this.#staticDataLoader(candidate)
 					: this.#historicalDataLoader(candidate),
 			);
-			this.#chart.resetData();
 			applyViewport(this.#chart, candidate.viewport);
 			this.#scene = candidate;
 			this.#container.style.backgroundColor =
@@ -2849,6 +2855,7 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 			return structuredClone(candidate);
 		} catch (error) {
 			this.#liveBarProjections.clear();
+			this.#liveBarTail = previousLiveBarTail;
 			for (const [timestamp, bar] of previousLiveBarProjections) {
 				this.#liveBarProjections.set(timestamp, bar);
 			}
@@ -2875,7 +2882,6 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 						? this.#staticDataLoader(previous)
 						: this.#historicalDataLoader(previous),
 				);
-				this.#chart.resetData();
 				applyViewport(this.#chart, previous.viewport);
 				this.#container.style.backgroundColor = previousBackground;
 			} catch {
@@ -2894,10 +2900,12 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				'Historical data loading requires the Workspace factory.',
 			);
 		}
+		if (this.#historicalDataLoading?.hasMore === hasMore) return;
 		this.#settlePendingHistoricalData(hasMore);
 		this.#historicalDataLoading = { hasMore };
+		// Before initial Scene, configure the final loader without loading empty data.
+		if (this.#emptyRuntime) return;
 		this.#chart.setDataLoader(this.#historicalDataLoader(this.#scene));
-		this.#chart.resetData();
 		applyViewport(this.#chart, this.#scene.viewport);
 	}
 

@@ -98,6 +98,7 @@ export type CrossPeriodDrawingPersistencePort = (
  */
 export interface CrossPeriodWorkspaceRuntimePort {
 	readonly commitMode: 'immediate' | 'host-confirmed';
+	getWorkspaceScope?(): { readonly drawingScopeKey: string; readonly bindingScopeKey: string };
 	exportWorkspace(): DrawableWorkspaceDocument;
 	replaceScene(scene: ChartScene | TimeSeriesScene): ChartScene | TimeSeriesScene;
 	commitDrawingChange(requestId: string, canonicalHash: string): boolean;
@@ -240,7 +241,12 @@ export class CrossPeriodDrawingCoordinator {
 				'Cross-period persistence requires a host-confirmed Workspace Runtime.',
 			);
 		}
-		this.#assertWorkspaceScope(runtime.exportWorkspace(), binding);
+		if (runtime.getWorkspaceScope !== undefined) {
+			const scope = runtime.getWorkspaceScope();
+			this.#assertScopeKeys(scope.drawingScopeKey, scope.bindingScopeKey, binding);
+		} else {
+			this.#assertWorkspaceScope(runtime.exportWorkspace(), binding);
+		}
 		this.#runtime = runtime;
 		this.#binding = structuredClone(binding);
 		this.#options = options;
@@ -540,10 +546,11 @@ export class CrossPeriodDrawingCoordinator {
 		workspace: DrawableWorkspaceDocument,
 		binding: CrossPeriodInstrumentBinding,
 	): void {
-		if (
-			workspace.drawings.scopeKey !== binding.scopeKey ||
-			workspace.binding.scopeKey !== binding.scopeKey
-		) {
+		this.#assertScopeKeys(workspace.drawings.scopeKey, workspace.binding.scopeKey, binding);
+	}
+
+	#assertScopeKeys(drawingScopeKey: string, bindingScopeKey: string, binding: CrossPeriodInstrumentBinding): void {
+		if (drawingScopeKey !== binding.scopeKey || bindingScopeKey !== binding.scopeKey) {
 			throw new CrossPeriodDrawingError(
 				'CROSS_PERIOD_SCOPE_MISMATCH',
 				'/scopeKey',

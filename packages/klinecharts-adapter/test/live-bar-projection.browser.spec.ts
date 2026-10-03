@@ -75,3 +75,33 @@ test('@browser live bars stay outside exported Scene and support previous reconc
 	expect(result.barSpaceAfter).toBe(result.barSpaceBefore);
 	expect(result.rightOffsetAfter).toBe(result.rightOffsetBefore);
 });
+
+test('@browser live tail validation rejects malformed bars without changing history or projection', async ({ page }) => {
+	await page.goto('/test/fixture.html');
+	const result = await page.evaluate(async (workspace) => {
+		const { KLineChartsSceneAdapter } = await import('/src/index.ts');
+		const adapter = await KLineChartsSceneAdapter.createWorkspace(
+			document.querySelector<HTMLElement>('#chart')!, workspace);
+		const before = adapter.exportScene();
+		const latest = before.data.at(-1)!;
+		const first = adapter.projectLiveBar(latest);
+		const rejected: boolean[] = [];
+		for (const bad of [
+			{ ...latest, close: latest.high + 1 },
+			{ ...latest, timestamp: latest.timestamp + 0.5 },
+			{ ...latest, open: NaN },
+			{ ...latest, extra: true },
+		]) {
+			try { adapter.projectLiveBar(bad); rejected.push(false); }
+			catch { rejected.push(true); }
+		}
+		const after = adapter.projectLiveBar(latest);
+		const historyUnchanged = JSON.stringify(before) === JSON.stringify(adapter.exportScene());
+		adapter.dispose();
+		return { first, after, rejected, historyUnchanged };
+	}, chartWorkspace);
+	expect(result.first.action).toBe('unchanged');
+	expect(result.after.action).toBe('unchanged');
+	expect(result.rejected).toEqual([true, true, true, true]);
+	expect(result.historyUnchanged).toBe(true);
+});

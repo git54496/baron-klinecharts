@@ -159,6 +159,27 @@ function nextTimeSeriesScene(): TimeSeriesScene {
 }
 
 describe('CrossPeriodDrawingCoordinator', () => {
+	it('uses lightweight identity without exporting history and still rejects mismatched scopes', () => {
+		const runtime = new FakeWorkspaceRuntime();
+		const port = {
+			commitMode: runtime.commitMode,
+			getWorkspaceScope: () => ({ drawingScopeKey: binding.scopeKey, bindingScopeKey: binding.scopeKey }),
+			exportWorkspace: () => { throw new Error('History export is not needed for initialization'); },
+			replaceScene: runtime.replaceScene.bind(runtime),
+			commitDrawingChange: runtime.commitDrawingChange.bind(runtime),
+			rejectDrawingChange: runtime.rejectDrawingChange.bind(runtime),
+			subscribe: runtime.subscribe.bind(runtime),
+		};
+		const options = { initialRevision: 'r1', loadScene: async () => nextChartScene(),
+			persistCandidate: async () => ({ canonicalHash: 'unused', revision: 'r2' }) };
+		expect(() => createCrossPeriodDrawingCoordinator(port,
+			{ ...binding, scopeKey: 'wrong' }, options)).toThrowError(
+			expect.objectContaining({ code: 'CROSS_PERIOD_SCOPE_MISMATCH' }));
+		const coordinator = createCrossPeriodDrawingCoordinator(port, binding, options);
+		expect(runtime.subscribed).toBe(1);
+		coordinator.destroy();
+	});
+
 	it('rejects scope mismatch before subscribing or calling host ports', () => {
 		const runtime = new FakeWorkspaceRuntime();
 		expect(() => createCrossPeriodDrawingCoordinator(

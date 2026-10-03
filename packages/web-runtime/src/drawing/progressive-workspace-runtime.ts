@@ -9,6 +9,7 @@ import type {
 } from '@baron1996/kline-scene-schema';
 import type {
 	EmptyChartEnginePort,
+	HistoricalDataEnginePort,
 	EmptyChartRuntimeBootstrap,
 	EngineDrawingSnapshot,
 	EngineHistoricalDataCommitResult,
@@ -193,6 +194,10 @@ export class ProgressiveDrawableWorkspaceRuntime
 		this.#assertAlive();
 		if (this.#inner !== undefined) {
 			throw new Error('EMPTY_RUNTIME_ALREADY_READY: initial Scene can only be installed once.');
+		}
+		if (this.#options.historicalDataLoading !== undefined) {
+			(this.#adapter as EmptyChartEnginePort & HistoricalDataEnginePort)
+				.configureHistoricalDataLoading(this.#options.historicalDataLoading.hasMore);
 		}
 		const scene = this.#adapter.installInitialScene(value);
 		const candlePane = scene.panes.find((pane) => pane.kind === 'candle');
@@ -384,6 +389,10 @@ export class ProgressiveDrawableWorkspaceRuntime
 
 	public exportDrawingDocument(): DrawingDocument {
 		return this.#requireReady().exportDrawingDocument();
+	}
+
+	public getWorkspaceScope(): { readonly drawingScopeKey: string; readonly bindingScopeKey: string } {
+		return this.#requireReady().getWorkspaceScope();
 	}
 
 	public exportWorkspace(): DrawableWorkspaceDocument {

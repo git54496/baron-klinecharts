@@ -10,6 +10,7 @@ import type {
 } from '@baron1996/kline-scene-schema';
 import {
 	applyHistoryCoverageUpdate,
+	assertSemanticDrawableWorkspace,
 	parseChartScene,
 	parseDrawableWorkspaceDocument,
 	parseDrawingDocument,
@@ -530,19 +531,24 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 	#applyDrawingDocumentProjection(document: DrawingDocument): DrawingDocument {
 		const previousDrawings = this.#session.confirmedDrawings;
 		const previousWorkspace = this.#workspace;
+		// Scene has already been validated and is owned by this Runtime. A Drawing
+		// change only needs Drawing/binding checks, never a full historical-data parse.
+		const candidate: DrawableWorkspaceDocument = {
+			...this.#workspace,
+			scene: { kind: this.#sceneKind(), document: this.#scene as never },
+			drawings: structuredClone(document),
+			binding: {
+				scopeKey: document.scopeKey,
+				timezone: document.coordinateSystem.timezone,
+				valueAxes: structuredClone(document.coordinateSystem.valueAxes),
+			},
+		};
+		assertSemanticDrawableWorkspace(candidate);
 		try {
 			this.#session.restoreConfirmed(
 				document.drawings.map((drawing) => drawingToSnapshot(drawing)),
 			);
-			this.#workspace = parseDrawableWorkspaceDocument({
-				...structuredClone(this.#workspace),
-				drawings: structuredClone(document),
-				binding: {
-					scopeKey: document.scopeKey,
-					timezone: document.coordinateSystem.timezone,
-					valueAxes: structuredClone(document.coordinateSystem.valueAxes),
-				},
-			});
+			this.#workspace = candidate;
 		} catch (error) {
 			this.#session.restoreConfirmed(previousDrawings);
 			this.#workspace = previousWorkspace;
@@ -556,6 +562,12 @@ export class DrawableWorkspaceRuntime implements DrawableWorkspaceRuntimeHandle 
 			}
 		}
 		return structuredClone(document);
+	}
+
+	/** Lightweight identity query for coordinators; no history is exported. */
+	public getWorkspaceScope(): { readonly drawingScopeKey: string; readonly bindingScopeKey: string } {
+		this.#assertUsable();
+		return { drawingScopeKey: this.#workspace.drawings.scopeKey, bindingScopeKey: this.#workspace.binding.scopeKey };
 	}
 
 	public exportWorkspace(): DrawableWorkspaceDocument {
