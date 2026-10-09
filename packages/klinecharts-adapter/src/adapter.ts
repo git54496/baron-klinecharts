@@ -447,9 +447,12 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	) => void>();
 	/** 历史行情加载开关及服务端是否仍可能存在更早数据。 */
 	#historicalDataLoading: { hasMore: boolean } | undefined;
+	/** Invalidate loaders before engine setters synchronously reload the old snapshot. */
+	#historicalDataGeneration = 0;
 	/** 当前唯一待完成的历史行情请求，防止重复并发前插。 */
 	#pendingHistoricalData: {
 		readonly request: EngineHistoricalDataRequest;
+		readonly generation: number;
 		readonly callback: import('klinecharts').DataLoaderGetBarsParams['callback'];
 	} | undefined;
 	/** 历史行情请求期间冻结平移前的宿主滚动状态。 */
@@ -879,16 +882,19 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 
 	#historicalDataLoader(scene: ChartScene): import('klinecharts').DataLoader {
 		const snapshot = this.#engineDataWithLiveProjection(scene);
+		const generation = this.#historicalDataGeneration;
 		return this.#withLiveSubscription({
 			getBars: ({ type, timestamp, callback }): void => {
 				if (type === 'init') {
 					callback(structuredClone(snapshot), {
-						forward: this.#historicalDataLoading?.hasMore ?? false,
+						forward: generation === this.#historicalDataGeneration &&
+							(this.#historicalDataLoading?.hasMore ?? false),
 						backward: false,
 					});
 					return;
 				}
 				if (
+					generation !== this.#historicalDataGeneration ||
 					type !== 'forward' ||
 					this.#historicalDataLoading?.hasMore !== true ||
 					timestamp === null
@@ -903,11 +909,11 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 				const request: EngineHistoricalDataRequest = {
 					requestId: `historical-data-${++this.#historicalDataSequence}`,
 					beforeTimestamp: timestamp,
-					period: structuredClone(this.#scene.period),
+					period: structuredClone(scene.period),
 					dataCount: this.#scene.data.length,
 				};
 				this.#lockHistoricalScroll();
-				this.#pendingHistoricalData = { request, callback };
+				this.#pendingHistoricalData = { request, generation, callback };
 				for (const listener of this.#historicalDataListeners) {
 					listener(structuredClone(request));
 				}
@@ -2826,7 +2832,11 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 		const previousBackground = this.#container.style.backgroundColor;
 		const previousHistoricalHasMore = this.#historicalDataLoading?.hasMore;
 		let indicatorsReplaced = false;
+		this.#historicalDataGeneration += 1;
 		this.#settlePendingHistoricalData(false);
+		// setSymbol/setPeriod/setDataLoader can request history synchronously.
+		// Publish the new identity first; obsolete loaders cannot request pages.
+		this.#scene = candidate;
 		try {
 			this.#applyDatePresentation(candidate.chart);
 			this.#chart.setSymbol({
@@ -2847,13 +2857,15 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 					: this.#historicalDataLoader(candidate),
 			);
 			applyViewport(this.#chart, candidate.viewport);
-			this.#scene = candidate;
 			this.#container.style.backgroundColor =
 				candidate.chart.layout.backgroundColor;
 			this.#refreshWeeklyDrawingProjections();
 			this.#renderSelectionAnchors();
 			return structuredClone(candidate);
 		} catch (error) {
+			this.#historicalDataGeneration += 1;
+			this.#settlePendingHistoricalData(false);
+			this.#scene = previous;
 			this.#liveBarProjections.clear();
 			this.#liveBarTail = previousLiveBarTail;
 			for (const [timestamp, bar] of previousLiveBarProjections) {
@@ -2930,7 +2942,8 @@ export class KLineChartsSceneAdapter implements DrawingEnginePort, HistoricalDat
 	): EngineHistoricalDataCommitResult {
 		this.#assertActive();
 		const pending = this.#pendingHistoricalData;
-		if (pending === undefined || pending.request.requestId !== requestId) {
+		if (pending === undefined || pending.request.requestId !== requestId ||
+			pending.generation !== this.#historicalDataGeneration) {
 			throw new SceneError(
 				'INVALID_REFERENCE',
 				'/requestId',
