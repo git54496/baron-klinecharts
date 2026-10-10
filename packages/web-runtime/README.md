@@ -216,3 +216,5 @@ The coordinator never derives `scopeKey` from `scene.symbol.ticker`, never acces
 the KLineCharts `Chart`, and never converts legacy `ChartScene.overlays` into a
 Workspace. A Scene switch changes only `workspace.scene`; the confirmed
 `DrawingDocument` remains byte-identical.
+
+A host `onPriceScaleChangeRequested` callback may return `false` when preparation fails or is canceled. The toolbar then retains its committed scale. Returning `void` or `true` keeps the existing successful-switch behavior.

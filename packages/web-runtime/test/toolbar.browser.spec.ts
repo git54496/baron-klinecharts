@@ -2081,3 +2081,28 @@ for (const [kind, fixture] of [
 		});
 	}
 }
+
+
+test('@browser host rejection retains the committed price scale', async ({ page }) => {
+  await page.goto('/test/fixture.html');
+  const result = await page.evaluate(async (workspace) => {
+    const { createChartWorkspaceToolbar, createDrawableWorkspaceRuntime } = await import('/src/index.ts');
+    const runtime = await createDrawableWorkspaceRuntime(document.querySelector<HTMLElement>('#chart')!, workspace, { commitMode: 'immediate' });
+    const left = document.createElement('div'); document.body.append(left);
+    let finish: (value: boolean) => void = () => {};
+    const toolbar = createChartWorkspaceToolbar({ top: document.querySelector<HTMLElement>('#toolbar')!, left }, runtime, {
+      onPriceScaleChangeRequested: () => new Promise<boolean>((resolve) => { finish = resolve; }), fullscreenControl: 'hidden',
+    });
+    const linear = toolbar.topElement.querySelector<HTMLButtonElement>('[data-price-scale="linear"]')!;
+    const log = toolbar.topElement.querySelector<HTMLButtonElement>('[data-price-scale="logarithmic"]')!;
+    log.click();
+    const pending = [linear.getAttribute('aria-pressed'), log.getAttribute('aria-pressed')];
+    finish(false); await new Promise((resolve) => setTimeout(resolve, 0));
+    const rejected = [linear.getAttribute('aria-pressed'), log.getAttribute('aria-pressed')];
+    log.click(); finish(true); await new Promise((resolve) => setTimeout(resolve, 0));
+    const confirmed = [linear.getAttribute('aria-pressed'), log.getAttribute('aria-pressed')];
+    toolbar.destroy(); runtime.destroy(); left.remove();
+    return { pending, rejected, confirmed };
+  }, chartWorkspaceFixture);
+  expect(result).toEqual({ pending: ['true', 'false'], rejected: ['true', 'false'], confirmed: ['false', 'true'] });
+});

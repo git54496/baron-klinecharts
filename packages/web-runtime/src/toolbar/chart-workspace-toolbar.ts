@@ -66,10 +66,10 @@ export interface ChartWorkspaceToolbarOptions {
 	readonly priceScaleStates?: Partial<
 		Readonly<Record<PriceScale, WorkspaceToolbarPriceScaleState>>
 	>;
-	/** 提供后，价格轴入口只请求宿主切换，不直接修改当前 Runtime。 */
+	/** 提供后只请求宿主切换；返回 false 保留原选中状态，void 保持既有成功语义。 */
 	readonly onPriceScaleChangeRequested?: (
 		scale: PriceScale,
-	) => void | Promise<void>;
+	) => void | boolean | Promise<void | boolean>;
 	readonly fullscreenTarget?: HTMLElement;
 	readonly fullscreenControl?: 'hidden' | 'enabled';
 }
@@ -844,7 +844,7 @@ export function createChartWorkspaceToolbar(
 					if (options.onPriceScaleChangeRequested === undefined) {
 						await runtime.setValueAxisScale(scale);
 					} else {
-						await options.onPriceScaleChangeRequested(scale);
+						if (await options.onPriceScaleChangeRequested(scale) === false) return;
 					}
 					if (destroyed) {
 						return;
